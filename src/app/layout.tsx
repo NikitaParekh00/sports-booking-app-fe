@@ -28,8 +28,9 @@ export default function RootLayout({
         <div className="min-h-dvh">
           <header className="border-b">
             <div className="max-w-5xl mx-auto flex items-center justify-between p-4">
-              <a href="/" className="font-semibold">Sports Booking</a>
+              <a href="/" className="font-semibold">Simplifit</a>
               <nav className="text-sm space-x-4">
+                <a href="/dashboard">Dashboard</a>
                 <a href="/search">Search</a>
                 <a href="/owner">Owner</a>
                 <a href="/admin">Admin</a>
