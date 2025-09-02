@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Link from "next/link";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,13 +29,13 @@ export default function RootLayout({
         <div className="min-h-dvh">
           <header className="border-b">
             <div className="max-w-5xl mx-auto flex items-center justify-between p-4">
-              <a href="/" className="font-semibold">Simplifit</a>
+              <Link href="/" className="font-semibold">Simplifit</Link>
               <nav className="text-sm space-x-4">
-                <a href="/dashboard">Dashboard</a>
-                <a href="/search">Search</a>
-                <a href="/owner">Owner</a>
-                <a href="/admin">Admin</a>
-                <a href="/login">Login</a>
+                <Link href="/dashboard">Dashboard</Link>
+                <Link href="/search">Search</Link>
+                <Link href="/owner">Owner</Link>
+                <Link href="/admin">Admin</Link>
+                <Link href="/login">Login</Link>
               </nav>
             </div>
           </header>

@@ -18,7 +18,6 @@ export function createClient() {
 
 	// Basic URL validation to give a clearer error early
 	try {
-		// eslint-disable-next-line no-new
 		new URL(supabaseUrl);
 	} catch {
 		throw new TypeError(
