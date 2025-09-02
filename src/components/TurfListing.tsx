@@ -53,8 +53,8 @@ const sportIcons: { [key: string]: string } = {
   swimming: "🏊"
 };
 
-// Demo facilities data for when database is empty
-const createDemoFacilities = (sport: string): Facility[] => {
+// Demo facilities data for when database is empty (kept for reference but not used)
+const _unusedDemoFacilities = (sport: string): Facility[] => {
   const demoData: { [key: string]: Facility[] } = {
     cricket: [
       {
@@ -270,7 +270,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
 
           if (!radiusError && radiusData && radiusData.length > 0) {
             // Convert the function result to our expected format
-            facilitiesData = radiusData.map(facility => ({
+            facilitiesData = radiusData.map((facility: any) => ({
               id: facility.facility_id,
               name: facility.name,
               city: facility.city,
@@ -285,14 +285,14 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
 
             // Fetch court details for these facilities
             if (facilitiesData.length > 0) {
-              const facilityIds = facilitiesData.map(f => f.id);
+              const facilityIds = facilitiesData.map((f: Facility) => f.id);
               const { data: courtsData } = await supabase
                 .from('courts')
                 .select('id, name, facility_id, capacity, amenities')
                 .in('facility_id', facilityIds);
 
               // Attach courts to facilities
-              facilitiesData = facilitiesData.map(facility => ({
+              facilitiesData = facilitiesData.map((facility: Facility) => ({
                 ...facility,
                 courts: courtsData?.filter(court => court.facility_id === facility.id) || []
               }));
@@ -374,10 +374,10 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
         console.log("Selected sport:", sport);
 
         // Use real data from database
-        let facilitiesToShow = facilitiesData || [];
+        const facilitiesToShow = facilitiesData || [];
 
         // Calculate distances and sort by nearest first
-        const facilitiesWithDistance = facilitiesToShow.map(facility => {
+        const facilitiesWithDistance = facilitiesToShow.map((facility: Facility) => {
           let distance = 0;
           
           if (facility.latitude && facility.longitude) {
@@ -400,7 +400,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
         });
 
         // Sort by distance (nearest first)
-        facilitiesWithDistance.sort((a, b) => (a.distance || 0) - (b.distance || 0));
+        facilitiesWithDistance.sort((a: Facility, b: Facility) => (a.distance || 0) - (b.distance || 0));
 
         setFacilities(facilitiesWithDistance);
       } catch (err) {
@@ -494,7 +494,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
             No {getSportName(sport)} facilities found
           </h3>
           <p className="text-gray-600 mb-4">
-            We couldn't find any {getSportName(sport).toLowerCase()} facilities near your location.
+            We couldn&apos;t find any {getSportName(sport).toLowerCase()} facilities near your location.
           </p>
           <button
             onClick={onBack}

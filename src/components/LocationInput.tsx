@@ -84,7 +84,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
               address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
             });
           }
-        } catch (err) {
+        } catch {
           // Fallback to coordinates if geocoding fails
           onLocationSet({
             lat: latitude,
@@ -95,7 +95,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
         
         setIsGettingLocation(false);
       },
-      (error) => {
+      () => {
         setError("Unable to access your location. Please try manual entry.");
         setIsGettingLocation(false);
       }
@@ -122,7 +122,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
         if (response.ok) {
           const data = await response.json();
           if (data.results && data.results.length > 0) {
-            const results = data.results.map((result: any) => ({
+            const results = data.results.map((result: { geometry: { lat: number; lng: number }; formatted: string }) => ({
               lat: result.geometry.lat,
               lng: result.geometry.lng,
               address: result.formatted,
@@ -144,7 +144,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
       if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
-          const results = data.map((result: any) => ({
+          const results = data.map((result: { lat: string; lon: string; display_name: string }) => ({
             lat: parseFloat(result.lat),
             lng: parseFloat(result.lon),
             address: result.display_name,
@@ -157,8 +157,8 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
           setShowResults(false);
         }
       }
-    } catch (err) {
-      console.error("Search error:", err);
+    } catch {
+      // swallow
       setSearchResults([]);
       setShowResults(false);
     }
