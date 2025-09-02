@@ -69,15 +69,15 @@ export default function Dashboard() {
       {/* User Greeting */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg">
         <h1 className="text-2xl font-semibold text-gray-900">
-          {user.id === 'anonymous' ? 'Welcome to Simplifit! 👋' : `Hi, ${user.full_name}! 👋`}
+          {user?.id === 'anonymous' ? 'Welcome to Simplifit! 👋' : `Hi, ${user?.full_name}! 👋`}
         </h1>
         <p className="text-gray-600 mt-1">
-          {user.id === 'anonymous' 
+          {user?.id === 'anonymous' 
             ? 'Find and book sports facilities near you. No account required to browse!'
             : 'Ready to book your next game? Let\'s find the perfect court for you.'
           }
         </p>
-        {user.id === 'anonymous' && (
+        {user?.id === 'anonymous' && (
           <div className="mt-3">
             <a 
               href="/login" 
