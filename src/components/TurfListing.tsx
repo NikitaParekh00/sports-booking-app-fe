@@ -54,6 +54,7 @@ const sportIcons: { [key: string]: string } = {
 };
 
 // Demo facilities data for when database is empty (kept for reference but not used)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _unusedDemoFacilities = (sport: string): Facility[] => {
   const demoData: { [key: string]: Facility[] } = {
     cricket: [
@@ -270,7 +271,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
 
           if (!radiusError && radiusData && radiusData.length > 0) {
             // Convert the function result to our expected format
-            facilitiesData = radiusData.map((facility: any) => ({
+            facilitiesData = radiusData.map((facility: { facility_id: string; name: string; city: string; address: string; latitude: number; longitude: number; sport: string; price_per_hour: number; distance_km: number }) => ({
               id: facility.facility_id,
               name: facility.name,
               city: facility.city,
@@ -330,7 +331,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
             facilitiesData = regularData;
             facilitiesError = regularError;
           }
-        } catch (err) {
+        } catch {
           // If function doesn't exist or fails, use regular query
           const { data: regularData, error: regularError } = await supabase
             .from('facilities')
