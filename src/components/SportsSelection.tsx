@@ -3,7 +3,6 @@
 import { useState } from 'react';
 
 interface SportsSelectionProps {
-  onSportSelect: (sport: string) => void;
   selectedLocation?: string;
   onLocationChange?: (location: string) => void;
 }
@@ -176,7 +175,7 @@ const sports = [
   }
 ];
 
-export default function SportsSelection({ onSportSelect, selectedLocation = "Rajendra Nagar", onLocationChange }: SportsSelectionProps) {
+export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange }: SportsSelectionProps) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   
   const locations = [

@@ -30,45 +30,6 @@ interface Court {
   amenities?: string[];
 }
 
-const popularSports = [
-  {
-    id: "box-cricket",
-    name: "Box Cricket",
-    icon: "🏏",
-  },
-  {
-    id: "football",
-    name: "Football",
-    icon: "⚽",
-  },
-  {
-    id: "pickleball",
-    name: "Pickleball",
-    icon: "🏓",
-  },
-  {
-    id: "billiard",
-    name: "Billiard",
-    icon: "🎱",
-  },
-  {
-    id: "volleyball",
-    name: "Volleyball",
-    icon: "🏐",
-  },
-  {
-    id: "cricket-nets",
-    name: "Cricket Nets",
-    icon: "🏏",
-  }
-];
-
-const filterCategories = [
-  { id: "all", name: "All", active: true },
-  { id: "venues", name: "Venues", active: false },
-  { id: "groups", name: "Groups", active: false },
-  { id: "games", name: "Games", active: false }
-];
 
 export default function SearchPage() {
   const searchParams = useSearchParams();
@@ -127,7 +88,7 @@ export default function SearchPage() {
 
         if (data) {
           // Calculate distances (mock calculation for now)
-          const facilitiesWithDistance = data.map((facility: any) => ({
+          const facilitiesWithDistance = data.map((facility: Facility) => ({
             ...facility,
             distance: Math.random() * 5 + 0.5 // Random distance between 0.5-5.5 km
           }));
@@ -142,7 +103,7 @@ export default function SearchPage() {
     }
 
     fetchFacilities();
-  }, [searchParams]);
+  }, [searchParams, supabase]);
 
 	return (
     <div className="min-h-screen bg-white">

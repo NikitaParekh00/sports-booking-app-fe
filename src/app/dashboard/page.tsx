@@ -107,7 +107,6 @@ export default function Dashboard() {
       {/* Sports Selection */}
       {location && !selectedSport && (
         <SportsSelection 
-          onSportSelect={setSelectedSport} 
           selectedLocation={selectedLocation}
           onLocationChange={handleLocationChange}
         />
