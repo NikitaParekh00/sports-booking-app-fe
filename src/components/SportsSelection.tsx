@@ -275,7 +275,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
           {sports.map((sport) => (
             <a
               key={sport.id}
-              href={`/search?sport=${sport.id}`}
+              href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
               className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
             >
               <div className="text-4xl mb-2">{sport.icon}</div>

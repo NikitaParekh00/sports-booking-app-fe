@@ -9,7 +9,7 @@ interface Location {
 }
 
 interface LocationInputProps {
-  onLocationSet: (location: Location) => void;
+  onLocationSet: (location: Location, locationName: string) => void;
 }
 
 export default function LocationInput({ onLocationSet }: LocationInputProps) {
@@ -43,7 +43,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
         lat: location.lat,
         lng: location.lng,
         address: location.address
-      });
+      }, locationKey);
     }
   };
 
@@ -75,14 +75,14 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
               lat: latitude,
               lng: longitude,
               address: address
-            });
+            }, "Current Location");
           } else {
             // Fallback to coordinates if reverse geocoding fails
             onLocationSet({
               lat: latitude,
               lng: longitude,
               address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            });
+            }, "Current Location");
           }
         } catch {
           // Fallback to coordinates if geocoding fails
@@ -90,7 +90,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
             lat: latitude,
             lng: longitude,
             address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-          });
+          }, "Current Location");
         }
         
         setIsGettingLocation(false);
@@ -171,7 +171,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
       lat: result.lat,
       lng: result.lng,
       address: result.address
-    });
+    }, result.display_name);
     setManualLocation(result.display_name);
     setShowResults(false);
     setSearchResults([]);

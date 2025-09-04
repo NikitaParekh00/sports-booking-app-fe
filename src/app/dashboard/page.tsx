@@ -100,7 +100,10 @@ export default function Dashboard() {
       {/* Location Input */}
       {!location && (
         <div className="px-4">
-          <LocationInput onLocationSet={setLocation} />
+          <LocationInput onLocationSet={(location, locationName) => {
+            setLocation(location);
+            setSelectedLocation(locationName);
+          }} />
         </div>
       )}
 

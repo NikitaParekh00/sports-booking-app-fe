@@ -64,9 +64,13 @@ export default function SearchPage() {
   };
 
   useEffect(() => {
-    // Get sport from URL parameters
+    // Get sport and location from URL parameters
     const sport = searchParams.get('sport');
+    const location = searchParams.get('location');
     setSelectedSport(sport);
+    if (location) {
+      setSelectedLocation(location);
+    }
 
     async function fetchFacilities() {
       try {
