@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from 'react';
+
 interface SportsSelectionProps {
   onSportSelect: (sport: string) => void;
+  selectedLocation?: string;
+  onLocationChange?: (location: string) => void;
 }
 
 const sports = [
@@ -172,79 +176,112 @@ const sports = [
   }
 ];
 
-export default function SportsSelection({ onSportSelect }: SportsSelectionProps) {
+export default function SportsSelection({ onSportSelect, selectedLocation = "Rajendra Nagar", onLocationChange }: SportsSelectionProps) {
+  const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  
+  const locations = [
+    "Rajendra Nagar",
+    "Koramangala",
+    "Indiranagar", 
+    "Whitefield",
+    "Electronic City",
+    "Marathahalli",
+    "HSR Layout",
+    "JP Nagar",
+    "Borivali",
+    "Andheri",
+    "Bandra",
+    "Powai",
+    "Malad",
+    "Goregaon"
+  ];
+
+  const handleLocationSelect = (location: string) => {
+    console.log('Location selected:', location);
+    onLocationChange?.(location);
+    setShowLocationDropdown(false);
+  };
   return (
     <div className="min-h-screen bg-white">
-      {/* Main Navigation Header */}
-      <div className="bg-gradient-to-r from-red-600 to-red-700 px-4 py-6">
-        {/* Top Status Bar */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-white text-sm">11:07</span>
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-            </svg>
-          </div>
-          <div className="flex items-center gap-2">
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
-            </svg>
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M17.778 8.222c-4.296-4.296-11.26-4.296-15.556 0A1 1 0 01.808 6.808c5.076-5.076 13.308-5.076 18.384 0a1 1 0 01-1.414 1.414zM14.95 11.05c-3.124-3.124-8.19-3.124-11.314 0a1 1 0 01-1.414-1.414c4.01-4.01 10.522-4.01 14.532 0a1 1 0 01-1.414 1.414zM12.12 13.88c-1.171-1.171-3.073-1.171-4.244 0a1 1 0 01-1.415-1.415c2.053-2.053 5.378-2.053 7.431 0a1 1 0 01-1.415 1.415zM9 16a1 1 0 112 0 1 1 0 01-2 0z" clipRule="evenodd"/>
-            </svg>
-            <span className="text-white text-sm">47</span>
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
-            </svg>
-          </div>
-        </div>
+      {/* Header */}
+      <div className="bg-gradient-to-br from-slate-900 via-gray-900 to-black px-4 py-6 relative overflow-hidden">
+        {/* Animated Background Effects */}
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-purple-500/5 to-pink-500/10"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-cyan-400/20 to-purple-600/20 rounded-full blur-3xl transform translate-x-16 -translate-y-16"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-pink-400/15 to-cyan-500/15 rounded-full blur-2xl transform -translate-x-8 translate-y-8"></div>
         
-        {/* Logo and Location Bar */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-            </svg>
-            <span className="text-white font-medium">Rajendra Nagar</span>
-            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd"/>
-            </svg>
-          </div>
-          
-          {/* SIMPLIFIT Logo */}
-          <div className="flex items-center gap-2">
-            {/* Runner Icon */}
-            <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M13.5 5.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM9.8 8.9L7 23h2.1l1.8-8 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1.4-3.9-3.2l-1-.3-.3 1c-.4 1.2-1.5 2-2.8 2-1.7 0-3.1-1.4-3.1-3.1 0-1.7 1.4-3.1 3.1-3.1.8 0 1.5.3 2.1.8l.7-.7c-.7-.7-1.7-1.1-2.8-1.1-2.2 0-4 1.8-4 4s1.8 4 4 4c1.1 0 2.1-.4 2.8-1.1l-.7-.7c-.6.5-1.3.8-2.1.8z"/>
-            </svg>
-            
-            {/* SIMPLIFIT Text */}
-            <div className="text-white font-bold text-lg">
-              <div className="flex items-center">
-                <span className="italic">SIMPLI</span>
-                <div className="w-1 h-6 bg-white rounded-full mx-1"></div>
-                <span className="italic">FIT</span>
-              </div>
+        {/* User Profile and Notification */}
+        <div className="flex items-center justify-between mb-4 relative z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20">
+              <span className="text-white font-bold text-sm">N</span>
+            </div>
+            <div>
+              <h2 className="text-white font-bold text-xl">Nikita</h2>
             </div>
           </div>
+          <div className="relative">
+            <div className="p-2 bg-white/10 rounded-full backdrop-blur-sm border border-white/20">
+              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+              </svg>
+            </div>
+            <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-500 to-red-500 rounded-full border-2 border-slate-900"></div>
+          </div>
         </div>
+
+        {/* Location Section */}
+        <div className="flex items-center gap-2 relative z-10">
+          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+          </svg>
+          <span className="text-white font-medium text-sm">{selectedLocation}</span>
+          <button 
+            onClick={() => setShowLocationDropdown(!showLocationDropdown)}
+            className="hover:opacity-80 transition-opacity"
+          >
+            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd"/>
+            </svg>
+          </button>
+          
+          {/* Location Dropdown */}
+          {showLocationDropdown && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
+              <div className="py-2">
+                {locations.map((location) => (
+                  <button
+                    key={location}
+                    onClick={() => handleLocationSelect(location)}
+                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                      location === selectedLocation ? 'bg-cyan-50 text-cyan-600 font-semibold' : 'text-gray-700'
+                    }`}
+                  >
+                    {location}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Main Content */}
-      <div className="px-4 py-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">PICK A SPORT</h1>
+      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10 shadow-lg">
+        <h1 className="text-lg font-semibold text-gray-700 mb-3">PICK A SPORT</h1>
         
         {/* Sports Grid */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-4 gap-3">
           {sports.map((sport) => (
             <button
               key={sport.id}
               onClick={() => onSportSelect(sport.id)}
-              className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors"
+              className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
             >
-              <div className="text-2xl mb-2">{sport.icon}</div>
-              <span className="text-xs text-gray-700 text-center leading-tight">
-                {sport.name}
+              <div className="text-4xl mb-2">{sport.icon}</div>
+              <span className="text-xs text-gray-700 text-center leading-tight truncate w-full">
+                {sport.name.length > 12 ? `${sport.name.substring(0, 12)}...` : sport.name}
               </span>
             </button>
           ))}
@@ -252,7 +289,7 @@ export default function SportsSelection({ onSportSelect }: SportsSelectionProps)
       </div>
 
       {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-20">
         <div className="flex justify-around items-center">
           <a href="/dashboard" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-red-600 mb-1" fill="currentColor" viewBox="0 0 20 20">
@@ -274,7 +311,7 @@ export default function SportsSelection({ onSportSelect }: SportsSelectionProps)
             <span className="text-xs text-gray-400">Community</span>
           </div>
           <div className="flex flex-col items-center">
-            <span className="text-red-600 font-bold text-sm mb-1">grip</span>
+            <span className="text-red-600 font-bold text-xs mb-1">SIMPLIFIT</span>
             <span className="text-xs text-red-600">Profile</span>
           </div>
         </div>

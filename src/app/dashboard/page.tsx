@@ -22,6 +22,12 @@ export default function Dashboard() {
   const [user, setUser] = useState<User | null>(null);
   const [location, setLocation] = useState<Location | null>(null);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
+  
+  const handleLocationChange = (location: string) => {
+    console.log('Dashboard received location change:', location);
+    setSelectedLocation(location);
+  };
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
@@ -100,7 +106,11 @@ export default function Dashboard() {
 
       {/* Sports Selection */}
       {location && !selectedSport && (
-        <SportsSelection onSportSelect={setSelectedSport} />
+        <SportsSelection 
+          onSportSelect={setSelectedSport} 
+          selectedLocation={selectedLocation}
+          onLocationChange={handleLocationChange}
+        />
       )}
 
       {/* Turf Listing */}
