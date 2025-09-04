@@ -65,33 +65,37 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* User Greeting */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-6 rounded-lg">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          {user?.id === 'anonymous' ? 'Welcome to Simplifit! 👋' : `Hi, ${user?.full_name}! 👋`}
-        </h1>
-        <p className="text-gray-600 mt-1">
-          {user?.id === 'anonymous' 
-            ? 'Find and book sports facilities near you. No account required to browse!'
-            : 'Ready to book your next game? Let\'s find the perfect court for you.'
-          }
-        </p>
-        {user?.id === 'anonymous' && (
-          <div className="mt-3">
-            <a 
-              href="/login" 
-              className="text-sm text-blue-600 hover:text-blue-800 underline"
-            >
-              Sign in for a personalized experience
-            </a>
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen">
+      {/* User Greeting - Only show when no location is set */}
+      {!location && (
+        <div className="bg-gradient-to-r from-red-50 to-red-100 p-6 rounded-lg m-4">
+          <h1 className="text-2xl font-semibold text-gray-900">
+            {user?.id === 'anonymous' ? 'Welcome to Simplifit! 👋' : `Hi, ${user?.full_name}! 👋`}
+          </h1>
+          <p className="text-gray-600 mt-1">
+            {user?.id === 'anonymous' 
+              ? 'Find and book sports facilities near you. No account required to browse!'
+              : 'Ready to book your next game? Let\'s find the perfect court for you.'
+            }
+          </p>
+          {user?.id === 'anonymous' && (
+            <div className="mt-3">
+              <a 
+                href="/login" 
+                className="text-sm text-red-600 hover:text-red-800 underline"
+              >
+                Sign in for a personalized experience
+              </a>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Location Input */}
       {!location && (
-        <LocationInput onLocationSet={setLocation} />
+        <div className="px-4">
+          <LocationInput onLocationSet={setLocation} />
+        </div>
       )}
 
       {/* Sports Selection */}
@@ -101,11 +105,13 @@ export default function Dashboard() {
 
       {/* Turf Listing */}
       {location && selectedSport && (
-        <TurfListing 
-          location={location} 
-          sport={selectedSport}
-          onBack={() => setSelectedSport(null)}
-        />
+        <div className="px-4 pb-20">
+          <TurfListing 
+            location={location} 
+            sport={selectedSport}
+            onBack={() => setSelectedSport(null)}
+          />
+        </div>
       )}
     </div>
   );
