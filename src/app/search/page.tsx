@@ -1,6 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabaseClient";
+
+interface Facility {
+  id: string;
+  name: string;
+  city: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
+  sport: string;
+  price_per_hour: number;
+  description?: string;
+  images?: string[];
+  phone?: string;
+  email?: string;
+  status: string;
+  distance?: number;
+  courts?: Court[];
+}
+
+interface Court {
+  id: string;
+  name: string;
+  facility_id: string;
+  capacity?: number;
+  amenities?: string[];
+}
 
 const popularSports = [
   {
@@ -43,10 +70,12 @@ const filterCategories = [
 ];
 
 export default function SearchPage() {
-  const [activeFilter, setActiveFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
   
   const locations = [
     "Rajendra Nagar",
@@ -69,6 +98,39 @@ export default function SearchPage() {
     setSelectedLocation(location);
     setShowLocationDropdown(false);
   };
+
+  useEffect(() => {
+    async function fetchFacilities() {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('facilities')
+          .select('*')
+          .limit(10);
+
+        if (error) {
+          console.error('Error fetching facilities:', error);
+          return;
+        }
+
+        if (data) {
+          // Calculate distances (mock calculation for now)
+          const facilitiesWithDistance = data.map((facility: any) => ({
+            ...facility,
+            distance: Math.random() * 5 + 0.5 // Random distance between 0.5-5.5 km
+          }));
+          
+          setFacilities(facilitiesWithDistance);
+        }
+      } catch (error) {
+        console.error('Error:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchFacilities();
+  }, []);
 
 	return (
     <div className="min-h-screen bg-white">
@@ -137,66 +199,128 @@ export default function SearchPage() {
       </div>
 
       {/* Search and Availability Section */}
-      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10 shadow-lg">
-        <div className="flex gap-3">
-          <div className="flex-1">
+      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10">
+        <div className="flex gap-3 mb-4">
+          <div className="flex-1 relative">
+            <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
             <input
               type="text"
-              placeholder="Search for venues"
+              placeholder="Pick a Sport (Football, Cricket...)"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-100 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-900 placeholder-gray-500"
+              className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-900 placeholder-gray-500"
             />
           </div>
-          <button className="px-4 py-3 bg-red-100 rounded-lg flex items-center gap-2 hover:bg-red-200 transition-colors">
-            <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+          <button className="px-4 py-3 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600 transition-colors flex items-center gap-2">
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"/>
             </svg>
-            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/>
-            </svg>
-            <span className="text-red-600 font-medium text-sm">Availability</span>
+            Availability
           </button>
         </div>
-      </div>
 
-      {/* Filter Categories */}
-      <div className="px-4 pb-4">
-        <div className="flex gap-2 overflow-x-auto">
-          <button className="px-4 py-2 bg-white border border-gray-300 rounded-full text-gray-600 text-sm font-medium whitespace-nowrap hover:bg-gray-50">
+        {/* Filter Categories */}
+        <div className="flex gap-2 overflow-x-auto mb-6 scrollbar-hide">
+          <button className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
             Filter
           </button>
-          {filterCategories.map((category) => (
-            <button
-              key={category.id}
-              onClick={() => setActiveFilter(category.id)}
-              className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                activeFilter === category.id
-                  ? 'bg-red-500 text-white'
-                  : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {category.name}
-            </button>
-          ))}
+          <button className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-full text-sm font-medium whitespace-nowrap">
+            All
+          </button>
+          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+            Venues
+          </button>
+          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+            Groups
+          </button>
+          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+            Games
+          </button>
         </div>
       </div>
 
-      {/* Popular Sports Section */}
-      <div className="px-4 pb-20">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Popular Sports</h2>
-        <div className="grid grid-cols-4 gap-4">
-          {popularSports.map((sport) => (
-            <button
-              key={sport.id}
-              className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors"
-            >
-              <div className="text-2xl mb-2">{sport.icon}</div>
-              <span className="text-xs text-gray-700 text-center leading-tight">
-                {sport.name}
-              </span>
-            </button>
-          ))}
+      {/* ALL VENUES Section */}
+      <div className="px-4 pb-24">
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">ALL VENUES</h2>
+            <button className="text-cyan-600 text-sm font-medium">See All</button>
+          </div>
+          
+          {/* Venue Cards */}
+          <div className="space-y-4">
+            {loading ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="text-gray-500">Loading venues...</div>
+              </div>
+            ) : facilities.length === 0 ? (
+              <div className="flex justify-center items-center py-8">
+                <div className="text-gray-500">No venues found</div>
+              </div>
+            ) : (
+              facilities.map((facility) => (
+                <div key={facility.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                  <div className="flex gap-4">
+                    <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0">
+                      <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">TURF</span>
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-semibold text-gray-900 text-sm">{facility.name}</h3>
+                        <div className="flex items-center gap-1 bg-blue-900 text-yellow-400 px-2 py-1 rounded text-xs">
+                          <span>-</span>
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                          </svg>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 mb-2">
+                        <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
+                        </svg>
+                        <span className="text-gray-600 text-sm">{facility.city}</span>
+                        <span className="text-gray-400 text-xs">•</span>
+                        <span className="text-gray-500 text-xs">{facility.distance?.toFixed(1)} km away</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <div className="text-lg font-bold text-gray-900">₹ {facility.price_per_hour}</div>
+                          <div className="text-xs text-gray-500">Onwards</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex gap-1">
+                            <div className="w-6 h-6 bg-orange-100 rounded flex items-center justify-center">
+                              <span className="text-orange-600 text-xs">🏏</span>
+                            </div>
+                            <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center">
+                              <span className="text-gray-600 text-xs">⚽</span>
+                            </div>
+                          </div>
+                          <button className="px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600 transition-colors">
+                            Book
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* ALL GAMES Section */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">ALL GAMES</h2>
+            <button className="text-cyan-600 text-sm font-medium">See All</button>
+          </div>
+          {/* Games content would go here */}
         </div>
       </div>
 
@@ -227,7 +351,7 @@ export default function SearchPage() {
             <span className="text-xs text-gray-400">Profile</span>
           </div>
         </div>
-      </div>
+			</div>
 		</div>
 	);
 }
