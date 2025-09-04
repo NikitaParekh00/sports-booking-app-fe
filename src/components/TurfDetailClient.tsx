@@ -69,7 +69,8 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       metro_station: "Poisar",
       metro_distance: 1.6,
       phone: "+91 98765 43210",
-      email: "info@mandarranade.com"
+      email: "info@mandarranade.com",
+      status: "active"
     };
 
     async function fetchFacility() {
