@@ -57,11 +57,11 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       price_per_hour: 600,
       description: "A 6 wooden court badminton facility located in Thakur Public School, Kandivali. This one of a kind venue will surely provide you with an amazing badminton experience. The facility is well-maintained with professional-grade courts and excellent lighting.",
       images: [
-        "/api/placeholder/400/300", // Replace with actual image URLs
-        "/api/placeholder/400/300",
-        "/api/placeholder/400/300",
-        "/api/placeholder/400/300",
-        "/api/placeholder/400/300"
+        "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1544717297-fa95b6ee9643?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&crop=center"
       ],
       rating: 4.4,
       rating_count: 39,
@@ -142,11 +142,15 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       <div className="relative">
         <div className="aspect-[4/3] bg-gray-200 relative overflow-hidden">
           <Image 
-            src={facility.images?.[currentImageIndex] || "/api/placeholder/400/300"} 
+            src={facility.images?.[currentImageIndex] || "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center"} 
             alt={facility.name}
             width={400}
             height={300}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center";
+            }}
           />
           
           {/* H Exclusive Tag */}
