@@ -227,9 +227,12 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
               <div className="text-xs text-gray-500">onwards</div>
             </div>
           </div>
-          <button className="w-full bg-cyan-500 text-white py-3 rounded-lg font-semibold hover:bg-cyan-600 transition-colors">
+          <a 
+            href={`/booking/${facility.id}`}
+            className="block w-full bg-cyan-500 text-white py-3 rounded-lg font-semibold hover:bg-cyan-600 transition-colors text-center"
+          >
             BOOK
-          </button>
+          </a>
         </div>
       </div>
 
