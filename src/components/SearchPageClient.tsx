@@ -253,11 +253,21 @@ function SearchPageContent() {
                 <a key={facility.id} href={`/turf/${facility.id}`} className="block">
                   <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
                     <div className="flex gap-4">
-                      <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0">
-                        <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">TURF</span>
-                        </div>
+                                          <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
+                      <img 
+                        src="https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=80&h=80&fit=crop&crop=center"
+                        alt={facility.name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center hidden">
+                        <span className="text-white text-xs font-bold">TURF</span>
                       </div>
+                    </div>
                       <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
                           <h3 className="font-semibold text-gray-900 text-sm">{facility.name}</h3>

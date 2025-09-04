@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Facility {
@@ -45,32 +46,33 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
   const [showFullDescription, setShowFullDescription] = useState(false);
   const supabase = createClient();
 
-  // Mock data for demonstration - replace with actual data fetching
-  const mockFacility: Facility = {
-    id: turfId,
-    name: "Mandar Ranade",
-    city: "Mumbai",
-    address: "Thakur Public School (Secondary), 1st Floor, Near Saraswat Bank, Thakur Village, Kandivali East, Mumbai 400101",
-    sport: "badminton",
-    price_per_hour: 600,
-    description: "A 6 wooden court badminton facility located in Thakur Public School, Kandivali. This one of a kind venue will surely provide you with an amazing badminton experience. The facility is well-maintained with professional-grade courts and excellent lighting.",
-    images: [
-      "/api/placeholder/400/300", // Replace with actual image URLs
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300"
-    ],
-    rating: 4.4,
-    rating_count: 39,
-    amenities: ["Drinking Water", "Parking", "Coaching Available", "Flood Lights", "Washroom"],
-    metro_station: "Poisar",
-    metro_distance: 1.6,
-    phone: "+91 98765 43210",
-    email: "info@mandarranade.com"
-  };
-
   useEffect(() => {
+    // Mock data for demonstration - replace with actual data fetching
+    const mockFacility: Facility = {
+      id: turfId,
+      name: "Mandar Ranade",
+      city: "Mumbai",
+      address: "Thakur Public School (Secondary), 1st Floor, Near Saraswat Bank, Thakur Village, Kandivali East, Mumbai 400101",
+      sport: "badminton",
+      price_per_hour: 600,
+      description: "A 6 wooden court badminton facility located in Thakur Public School, Kandivali. This one of a kind venue will surely provide you with an amazing badminton experience. The facility is well-maintained with professional-grade courts and excellent lighting.",
+      images: [
+        "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1544717297-fa95b6ee9643?w=400&h=300&fit=crop&crop=center",
+        "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&h=300&fit=crop&crop=center"
+      ],
+      rating: 4.4,
+      rating_count: 39,
+      amenities: ["Drinking Water", "Parking", "Coaching Available", "Flood Lights", "Washroom"],
+      metro_station: "Poisar",
+      metro_distance: 1.6,
+      phone: "+91 98765 43210",
+      email: "info@mandarranade.com",
+      status: "active"
+    };
+
     async function fetchFacility() {
       try {
         setLoading(true);
@@ -142,6 +144,8 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
           <img 
             src={facility.images?.[currentImageIndex] || "/api/placeholder/400/300"} 
             alt={facility.name}
+            width={400}
+            height={300}
             className="w-full h-full object-cover"
           />
           

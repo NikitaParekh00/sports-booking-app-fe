@@ -122,7 +122,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
             sport: "badminton",
             price_per_hour: 600,
             rating: 4.4,
-            rating_count: 39
+            rating_count: 39,
+            status: "active"
           });
         } else {
           setFacility(data);
@@ -137,7 +138,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           sport: "badminton",
           price_per_hour: 600,
           rating: 4.4,
-          rating_count: 39
+          rating_count: 39,
+          status: "active"
         });
       } finally {
         setLoading(false);
@@ -175,11 +177,6 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     setSelectedDate(date); // Auto-select the date when a slot is clicked
   };
 
-  const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    setSelectedTimeSlot(null);
-    // Don't regenerate time slots, just change selected date
-  };
 
   if (loading) {
     return (
