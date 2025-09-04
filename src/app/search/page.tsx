@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Facility {
@@ -70,11 +71,13 @@ const filterCategories = [
 ];
 
 export default function SearchPage() {
+  const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedSport, setSelectedSport] = useState<string | null>(null);
   const supabase = createClient();
   
   const locations = [
@@ -100,13 +103,22 @@ export default function SearchPage() {
   };
 
   useEffect(() => {
+    // Get sport from URL parameters
+    const sport = searchParams.get('sport');
+    setSelectedSport(sport);
+
     async function fetchFacilities() {
       try {
         setLoading(true);
-        const { data, error } = await supabase
-          .from('facilities')
-          .select('*')
-          .limit(10);
+        
+        // Build query with sport filter if provided
+        let query = supabase.from('facilities').select('*');
+        
+        if (sport) {
+          query = query.eq('sport', sport);
+        }
+        
+        const { data, error } = await query.limit(10);
 
         if (error) {
           console.error('Error fetching facilities:', error);
@@ -130,7 +142,7 @@ export default function SearchPage() {
     }
 
     fetchFacilities();
-  }, []);
+  }, [searchParams]);
 
 	return (
     <div className="min-h-screen bg-white">
@@ -201,13 +213,23 @@ export default function SearchPage() {
       {/* Search and Availability Section */}
       <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10">
         <div className="flex gap-3 mb-4">
+          {selectedSport && (
+            <a 
+              href="/dashboard" 
+              className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+              </svg>
+            </a>
+          )}
           <div className="flex-1 relative">
             <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
             </svg>
             <input
               type="text"
-              placeholder="Pick a Sport (Football, Cricket...)"
+              placeholder={selectedSport ? `Search ${selectedSport} venues...` : "Pick a Sport (Football, Cricket...)"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-900 placeholder-gray-500"
@@ -246,12 +268,14 @@ export default function SearchPage() {
       <div className="px-4 pb-24">
         <div className="mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">ALL VENUES</h2>
+            <h2 className="text-lg font-semibold text-gray-900">
+              {selectedSport ? `${selectedSport.toUpperCase()} VENUES` : "ALL VENUES"}
+            </h2>
             <button className="text-cyan-600 text-sm font-medium">See All</button>
           </div>
           
           {/* Venue Cards */}
-          <div className="space-y-4">
+		<div className="space-y-4">
             {loading ? (
               <div className="flex justify-center items-center py-8">
                 <div className="text-gray-500">Loading venues...</div>

@@ -274,16 +274,16 @@ export default function SportsSelection({ onSportSelect, selectedLocation = "Raj
         {/* Sports Grid */}
         <div className="grid grid-cols-4 gap-3">
           {sports.map((sport) => (
-            <button
+            <a
               key={sport.id}
-              onClick={() => onSportSelect(sport.id)}
+              href={`/search?sport=${sport.id}`}
               className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
             >
               <div className="text-4xl mb-2">{sport.icon}</div>
               <span className="text-xs text-gray-700 text-center leading-tight truncate w-full">
                 {sport.name.length > 12 ? `${sport.name.substring(0, 12)}...` : sport.name}
               </span>
-            </button>
+            </a>
           ))}
         </div>
       </div>
