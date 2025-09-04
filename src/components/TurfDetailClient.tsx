@@ -46,32 +46,32 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
   const [showFullDescription, setShowFullDescription] = useState(false);
   const supabase = createClient();
 
-  // Mock data for demonstration - replace with actual data fetching
-  const mockFacility: Facility = {
-    id: turfId,
-    name: "Mandar Ranade",
-    city: "Mumbai",
-    address: "Thakur Public School (Secondary), 1st Floor, Near Saraswat Bank, Thakur Village, Kandivali East, Mumbai 400101",
-    sport: "badminton",
-    price_per_hour: 600,
-    description: "A 6 wooden court badminton facility located in Thakur Public School, Kandivali. This one of a kind venue will surely provide you with an amazing badminton experience. The facility is well-maintained with professional-grade courts and excellent lighting.",
-    images: [
-      "/api/placeholder/400/300", // Replace with actual image URLs
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300",
-      "/api/placeholder/400/300"
-    ],
-    rating: 4.4,
-    rating_count: 39,
-    amenities: ["Drinking Water", "Parking", "Coaching Available", "Flood Lights", "Washroom"],
-    metro_station: "Poisar",
-    metro_distance: 1.6,
-    phone: "+91 98765 43210",
-    email: "info@mandarranade.com"
-  };
-
   useEffect(() => {
+    // Mock data for demonstration - replace with actual data fetching
+    const mockFacility: Facility = {
+      id: turfId,
+      name: "Mandar Ranade",
+      city: "Mumbai",
+      address: "Thakur Public School (Secondary), 1st Floor, Near Saraswat Bank, Thakur Village, Kandivali East, Mumbai 400101",
+      sport: "badminton",
+      price_per_hour: 600,
+      description: "A 6 wooden court badminton facility located in Thakur Public School, Kandivali. This one of a kind venue will surely provide you with an amazing badminton experience. The facility is well-maintained with professional-grade courts and excellent lighting.",
+      images: [
+        "/api/placeholder/400/300", // Replace with actual image URLs
+        "/api/placeholder/400/300",
+        "/api/placeholder/400/300",
+        "/api/placeholder/400/300",
+        "/api/placeholder/400/300"
+      ],
+      rating: 4.4,
+      rating_count: 39,
+      amenities: ["Drinking Water", "Parking", "Coaching Available", "Flood Lights", "Washroom"],
+      metro_station: "Poisar",
+      metro_distance: 1.6,
+      phone: "+91 98765 43210",
+      email: "info@mandarranade.com"
+    };
+
     async function fetchFacility() {
       try {
         setLoading(true);
@@ -105,7 +105,7 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
     }
 
     fetchFacility();
-  }, [turfId, supabase, mockFacility]);
+  }, [turfId, supabase]);
 
   const nextImage = () => {
     if (facility?.images) {

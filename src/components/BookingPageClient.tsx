@@ -122,7 +122,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
             sport: "badminton",
             price_per_hour: 600,
             rating: 4.4,
-            rating_count: 39
+            rating_count: 39,
+            status: "active"
           });
         } else {
           setFacility(data);
@@ -137,7 +138,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           sport: "badminton",
           price_per_hour: 600,
           rating: 4.4,
-          rating_count: 39
+          rating_count: 39,
+          status: "active"
         });
       } finally {
         setLoading(false);
