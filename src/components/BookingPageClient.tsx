@@ -36,7 +36,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [dateAvailability, setDateAvailability] = useState<{[key: string]: any[]}>({});
+  const [dateAvailability, setDateAvailability] = useState<{[key: string]: {available: boolean, price: number}[]}>({});
   const supabase = createClient();
 
   // Generate dates for the next 7 days
@@ -149,13 +149,13 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     setTimeSlots(slots);
     
     // Generate availability for all dates
-    const availability: {[key: string]: any[]} = {};
+    const availability: {[key: string]: {available: boolean, price: number}[]} = {};
     dates.forEach(date => {
       const dateKey = date.toDateString();
       availability[dateKey] = generateDateAvailability(date);
     });
     setDateAvailability(availability);
-  }, [turfId, supabase]);
+  }, [turfId, supabase, dates]);
 
 
   const formatDate = (date: Date) => {
@@ -175,11 +175,6 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     setSelectedDate(date); // Auto-select the date when a slot is clicked
   };
 
-  const handleDateSelect = (date: Date) => {
-    setSelectedDate(date);
-    setSelectedTimeSlot(null);
-    // Don't regenerate time slots, just change selected date
-  };
 
   if (loading) {
     return (

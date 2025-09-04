@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Facility {
@@ -104,7 +105,7 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
     }
 
     fetchFacility();
-  }, [turfId, supabase]);
+  }, [turfId, supabase, mockFacility]);
 
   const nextImage = () => {
     if (facility?.images) {
@@ -139,9 +140,11 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       {/* Image Carousel */}
       <div className="relative">
         <div className="aspect-[4/3] bg-gray-200 relative overflow-hidden">
-          <img 
+          <Image 
             src={facility.images?.[currentImageIndex] || "/api/placeholder/400/300"} 
             alt={facility.name}
+            width={400}
+            height={300}
             className="w-full h-full object-cover"
           />
           
