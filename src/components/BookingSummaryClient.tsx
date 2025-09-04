@@ -79,7 +79,8 @@ export default function BookingSummaryClient({
             sport: "badminton",
             price_per_hour: 800,
             rating: 4.4,
-            rating_count: 39
+            rating_count: 39,
+            status: "active"
           });
         } else {
           setFacility(data);
@@ -94,7 +95,8 @@ export default function BookingSummaryClient({
           sport: "badminton",
           price_per_hour: 800,
           rating: 4.4,
-          rating_count: 39
+          rating_count: 39,
+          status: "active"
         });
       } finally {
         setLoading(false);
