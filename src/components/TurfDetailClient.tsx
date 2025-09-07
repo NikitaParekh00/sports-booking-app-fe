@@ -141,12 +141,16 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       {/* Image Carousel */}
       <div className="relative">
         <div className="aspect-[4/3] bg-gray-200 relative overflow-hidden">
-          <img 
-            src={facility.images?.[currentImageIndex] || "/api/placeholder/400/300"} 
+          <Image 
+            src={facility.images?.[currentImageIndex] || "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center"} 
             alt={facility.name}
             width={400}
             height={300}
             className="w-full h-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=400&h=300&fit=crop&crop=center";
+            }}
           />
           
           {/* H Exclusive Tag */}
