@@ -11,7 +11,8 @@ const sports = [
   {
     id: "pickleball",
     name: "Pickleball",
-    icon: "🏓",
+    icon: "/icons/pickleball.svg",
+    isImage: true,
   },
   {
     id: "football",
@@ -79,21 +80,6 @@ const sports = [
     icon: "🧘",
   },
   {
-    id: "padel-coaching",
-    name: "Padel Coaching",
-    icon: "🎾",
-  },
-  {
-    id: "physiotherapy-pilates",
-    name: "Physiotherapy + Pilates",
-    icon: "🏥",
-  },
-  {
-    id: "pilates-single",
-    name: "Pilates (Single Pers...)",
-    icon: "🧘",
-  },
-  {
     id: "pool",
     name: "Pool",
     icon: "🎱",
@@ -104,19 +90,9 @@ const sports = [
     icon: "🚴",
   },
   {
-    id: "ultimate-frisbee",
-    name: "Ultimate Frisbee",
-    icon: "🥏",
-  },
-  {
     id: "chess",
     name: "Chess",
     icon: "♟️",
-  },
-  {
-    id: "bouldering",
-    name: "Bouldering",
-    icon: "🧗",
   },
   {
     id: "athletics",
@@ -146,7 +122,8 @@ const sports = [
   {
     id: "shooting",
     name: "Shooting",
-    icon: "🎯",
+    icon: "/icons/shooting.svg",
+    isImage: true,
   },
   {
     id: "handball",
@@ -177,6 +154,7 @@ const sports = [
 
 export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange }: SportsSelectionProps) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
+  const [showAllSports, setShowAllSports] = useState(false);
   
   const locations = [
     "Rajendra Nagar",
@@ -200,6 +178,13 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
     onLocationChange?.(location);
     setShowLocationDropdown(false);
   };
+
+  const toggleShowAllSports = () => {
+    setShowAllSports(!showAllSports);
+  };
+
+  // Show only first 8 sports initially (2 rows of 4)
+  const displayedSports = showAllSports ? sports : sports.slice(0, 8);
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
@@ -267,23 +252,55 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       </div>
 
       {/* Main Content */}
-      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10 shadow-lg">
+      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10 pb-20">
         <h1 className="text-lg font-semibold text-gray-700 mb-3">PICK A SPORT</h1>
         
         {/* Sports Grid */}
-        <div className="grid grid-cols-4 gap-3">
-          {sports.map((sport) => (
-            <a
-              key={sport.id}
-              href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
-              className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
-            >
-              <div className="text-4xl mb-2">{sport.icon}</div>
-              <span className="text-xs text-gray-700 text-center leading-tight truncate w-full">
-                {sport.name.length > 12 ? `${sport.name.substring(0, 12)}...` : sport.name}
-              </span>
-            </a>
-          ))}
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+            {displayedSports.map((sport) => (
+              <a
+                key={sport.id}
+                href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
+                className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
+              >
+                <div className="text-4xl mb-2 flex items-center justify-center h-12">
+                  {sport.isImage ? (
+                    <img 
+                      src={sport.icon} 
+                      alt={sport.name}
+                      className={`w-12 h-12 object-contain ${sport.id === 'pickleball' ? 'transform rotate-45' : ''}`}
+                    />
+                  ) : (
+                    <span className="flex items-center justify-center h-12">{sport.icon}</span>
+                  )}
+                </div>
+                <span className="text-xs text-gray-700 text-center leading-tight truncate w-full">
+                  {sport.name.length > 12 ? `${sport.name.substring(0, 12)}...` : sport.name}
+                </span>
+              </a>
+            ))}
+          </div>
+          
+          {/* Show More/Less Button */}
+          {sports.length > 8 && (
+            <div className="flex justify-center mt-6 mb-4">
+              <button
+                onClick={toggleShowAllSports}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium text-gray-700"
+              >
+                <span>{showAllSports ? 'Show Less' : 'Show More'}</span>
+                <svg 
+                  className={`w-4 h-4 transition-transform duration-200 ${showAllSports ? 'rotate-180' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

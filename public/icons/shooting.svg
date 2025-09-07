@@ -1,0 +1,48 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pistol Body -->
+  <rect x="16" y="28" width="24" height="8" rx="4" fill="url(#gunGradient)" stroke="#1F2937" stroke-width="1"/>
+  
+  <!-- Pistol Barrel -->
+  <rect x="40" y="30" width="12" height="4" rx="2" fill="url(#barrelGradient)" stroke="#1F2937" stroke-width="1"/>
+  
+  <!-- Pistol Grip -->
+  <rect x="18" y="36" width="8" height="12" rx="2" fill="url(#gripGradient)" stroke="#1F2937" stroke-width="1"/>
+  
+  <!-- Trigger Guard -->
+  <ellipse cx="26" cy="38" rx="4" ry="2" fill="none" stroke="#1F2937" stroke-width="1.5"/>
+  
+  <!-- Trigger -->
+  <circle cx="26" cy="38" r="1.5" fill="#374151"/>
+  
+  <!-- Sight -->
+  <rect x="38" y="26" width="2" height="2" fill="#1F2937"/>
+  <rect x="48" y="26" width="2" height="2" fill="#1F2937"/>
+  
+  <!-- Bullet -->
+  <circle cx="52" cy="32" r="2" fill="url(#bulletGradient)" stroke="#1F2937" stroke-width="0.5"/>
+  
+  <!-- Motion Lines -->
+  <path d="M56 32 L60 32" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/>
+  <path d="M56 30 L59 29" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M56 34 L59 35" stroke="#F59E0B" stroke-width="1.5" stroke-linecap="round"/>
+  
+  <!-- Gradients -->
+  <defs>
+    <linearGradient id="gunGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6B7280;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#374151;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="barrelGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#9CA3AF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4B5563;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gripGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="bulletGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FDE047;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+</svg>
