@@ -5,6 +5,8 @@ import { useState } from 'react';
 interface SportsSelectionProps {
   selectedLocation?: string;
   onLocationChange?: (location: string) => void;
+  onRequestLocationChange?: () => void;
+  userName?: string;
 }
 
 const sports = [
@@ -152,14 +154,14 @@ const sports = [
   }
 ];
 
-export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange }: SportsSelectionProps) {
+export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange, onRequestLocationChange, userName }: SportsSelectionProps) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showAllSports, setShowAllSports] = useState(false);
-  
+
   const locations = [
     "Rajendra Nagar",
     "Koramangala",
-    "Indiranagar", 
+    "Indiranagar",
     "Whitefield",
     "Electronic City",
     "Marathahalli",
@@ -187,142 +189,149 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
   const displayedSports = showAllSports ? sports : sports.slice(0, 8);
   return (
     <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="bg-gradient-to-br from-slate-900 via-gray-900 to-black px-4 py-6 relative overflow-hidden">
-        {/* Animated Background Effects */}
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-purple-500/5 to-pink-500/10"></div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-cyan-400/20 to-purple-600/20 rounded-full blur-3xl transform translate-x-16 -translate-y-16"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-pink-400/15 to-cyan-500/15 rounded-full blur-2xl transform -translate-x-8 translate-y-8"></div>
-        
-        {/* User Profile and Notification */}
-        <div className="flex items-center justify-between mb-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20">
-              <span className="text-white font-bold text-sm">N</span>
-            </div>
-            <div>
-              <h2 className="text-white font-bold text-xl">Nikita</h2>
-            </div>
-          </div>
-          <div className="relative">
-            <div className="p-2 bg-white/10 rounded-full backdrop-blur-sm border border-white/20">
-              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
+      <div className="px-4 pt-6 pb-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">Hi, {userName || "Player"} 👋</h2>
+            <div className="flex items-center gap-1 text-gray-600 mt-1">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
               </svg>
-            </div>
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-500 to-red-500 rounded-full border-2 border-slate-900"></div>
-          </div>
-        </div>
-
-        {/* Location Section */}
-        <div className="flex items-center gap-2 relative z-10">
-          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd"/>
-          </svg>
-          <span className="text-white font-medium text-sm">{selectedLocation}</span>
-          <button 
-            onClick={() => setShowLocationDropdown(!showLocationDropdown)}
-            className="hover:opacity-80 transition-opacity"
-          >
-            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd"/>
-            </svg>
-          </button>
-          
-          {/* Location Dropdown */}
-          {showLocationDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
-              <div className="py-2">
-                {locations.map((location) => (
-                  <button
-                    key={location}
-                    onClick={() => handleLocationSelect(location)}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                      location === selectedLocation ? 'bg-cyan-50 text-cyan-600 font-semibold' : 'text-gray-700'
-                    }`}
-                  >
-                    {location}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* Main Content */}
-      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10 pb-20">
-        <h1 className="text-lg font-semibold text-gray-700 mb-3">PICK A SPORT</h1>
-        
-        {/* Sports Grid */}
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
-            {displayedSports.map((sport) => (
-              <a
-                key={sport.id}
-                href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
-                className="flex flex-col items-center p-3 hover:bg-gray-50 rounded-lg transition-colors aspect-square"
-              >
-                <div className="text-4xl mb-2 flex items-center justify-center h-12">
-                  {sport.isImage ? (
-                    <img 
-                      src={sport.icon} 
-                      alt={sport.name}
-                      className={`w-12 h-12 object-contain ${sport.id === 'pickleball' ? 'transform rotate-45' : ''}`}
-                    />
-                  ) : (
-                    <span className="flex items-center justify-center h-12">{sport.icon}</span>
-                  )}
-                </div>
-                <span className="text-xs text-gray-700 text-center leading-tight truncate w-full">
-                  {sport.name.length > 12 ? `${sport.name.substring(0, 12)}...` : sport.name}
-                </span>
-              </a>
-            ))}
-          </div>
-          
-          {/* Show More/Less Button */}
-          {sports.length > 8 && (
-            <div className="flex justify-center mt-6 mb-4">
+              <span className="text-sm">{selectedLocation}</span>
               <button
-                onClick={toggleShowAllSports}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium text-gray-700"
+                onClick={() => {
+                  if (onRequestLocationChange) {
+                    onRequestLocationChange();
+                  } else {
+                    setShowLocationDropdown(!showLocationDropdown);
+                  }
+                }}
+                className="ml-1 text-gray-500 hover:text-gray-700"
               >
-                <span>{showAllSports ? 'Show Less' : 'Show More'}</span>
-                <svg 
-                  className={`w-4 h-4 transition-transform duration-200 ${showAllSports ? 'rotate-180' : ''}`} 
-                  fill="none" 
-                  stroke="currentColor" 
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                 </svg>
               </button>
             </div>
-          )}
+            {!onRequestLocationChange && showLocationDropdown && (
+              <div className="mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
+                <div className="py-2">
+                  {locations.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationSelect(location)}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${location === selectedLocation ? 'bg-cyan-50 text-cyan-600 font-semibold' : 'text-gray-700'}`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+            <span className="text-gray-600 font-semibold text-sm">{(userName || 'P').charAt(0)}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 h-32 rounded-2xl bg-black text-white flex items-center justify-center text-2xl font-bold">
+          SUMMER OFFERS
         </div>
       </div>
 
-      {/* Bottom Navigation */}
+      <div className="px-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-900">Play a Sport</h3>
+          <a href="#" className="text-gray-600 text-sm font-medium">See All Sports →</a>
+        </div>
+        <div className="grid grid-cols-4 gap-3 mt-3">
+          {displayedSports.map((sport) => (
+            <a
+              key={sport.id}
+              href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
+              className="flex flex-col items-center p-3 bg-white border border-gray-200 rounded-xl hover:shadow-sm"
+            >
+              <div className="text-2xl mb-2 flex items-center justify-center h-8">
+                {sport.isImage ? (
+                  <img src={sport.icon} alt={sport.name} className={`w-8 h-8 object-contain ${sport.id === 'pickleball' ? 'transform rotate-45' : ''}`} />
+                ) : (
+                  <span>{sport.icon}</span>
+                )}
+              </div>
+              <span className="text-xs text-gray-800 text-center leading-tight truncate w-full">{sport.name}</span>
+            </a>
+          ))}
+        </div>
+        {sports.length > 8 && (
+          <div className="flex justify-center mt-4">
+            <button onClick={toggleShowAllSports} className="text-sm text-gray-700 underline">
+              {showAllSports ? 'Show Less' : 'See More'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 mt-8">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-900">Coaching & Training</h3>
+          <a href="#" className="text-gray-600 text-sm font-medium">See All Coaching →</a>
+        </div>
+        <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
+          {[1, 2, 3, 4].map((i) => (
+            <a key={i} href="#" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="h-28 bg-gray-200">
+                <img src="https://images.unsplash.com/photo-1517649763962-0c623066013b?w=600" className="w-full h-full object-cover" alt="coaching" />
+              </div>
+              <div className="p-3">
+                <div className="text-gray-900 font-medium text-sm">{i % 2 ? 'Football Academy' : 'Yoga Classes'}</div>
+                <div className="text-cyan-700 text-sm font-medium mt-1">Enroll Now</div>
+              </div>
+            </a>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 mt-8 pb-20">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-900">Scoring</h3>
+          <a href="/scoring" className="text-gray-600 text-sm font-medium">See All →</a>
+        </div>
+        <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
+          <a href="/scoring/friendly" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="h-28 bg-gray-100 flex items-center justify-center text-5xl">🏏</div>
+            <div className="p-3">
+              <div className="text-gray-900 font-medium text-sm">Friendly Game</div>
+              <div className="text-gray-500 text-xs">Score casual matches</div>
+            </div>
+          </a>
+          <a href="/scoring/tournaments" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="h-28 bg-gray-100 flex items-center justify-center text-5xl">🏆</div>
+            <div className="p-3">
+              <div className="text-gray-900 font-medium text-sm">Tournaments</div>
+              <div className="text-gray-500 text-xs">Organize and score</div>
+            </div>
+          </a>
+        </div>
+      </div>
+
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-20">
         <div className="flex justify-around items-center">
           <a href="/dashboard" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-red-600 mb-1" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
             </svg>
             <span className="text-xs text-red-600 font-medium">Home</span>
             <div className="w-6 h-0.5 bg-red-600 mt-1"></div>
           </a>
           <a href="/search" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <span className="text-xs text-gray-400">Search</span>
           </a>
           <div className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
             <span className="text-xs text-gray-400">Community</span>
           </div>

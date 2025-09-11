@@ -1,11 +1,12 @@
 import BookingPageClient from "@/components/BookingPageClient";
 
 interface BookingPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function BookingPage({ params }: BookingPageProps) {
-  return <BookingPageClient turfId={params.id} />;
+export default async function BookingPage({ params }: BookingPageProps) {
+  const { id } = await params;
+  return <BookingPageClient turfId={id} />;
 }

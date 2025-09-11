@@ -1,11 +1,12 @@
 import TurfDetailClient from "@/components/TurfDetailClient";
 
 interface TurfDetailPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
+  }>;
 }
 
-export default function TurfDetailPage({ params }: TurfDetailPageProps) {
-  return <TurfDetailClient turfId={params.id} />;
+export default async function TurfDetailPage({ params }: TurfDetailPageProps) {
+  const { id } = await params;
+  return <TurfDetailClient turfId={id} />;
 }

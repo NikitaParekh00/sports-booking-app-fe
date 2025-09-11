@@ -1,23 +1,26 @@
 import BookingSummaryClient from "@/components/BookingSummaryClient";
 
 interface BookingSummaryPageProps {
-  params: {
+  params: Promise<{
     id: string;
-  };
-  searchParams: {
+  }>;
+  searchParams: Promise<{
     date?: string;
     time?: string;
     price?: string;
-  };
+  }>;
 }
 
-export default function BookingSummaryPage({ params, searchParams }: BookingSummaryPageProps) {
+export default async function BookingSummaryPage({ params, searchParams }: BookingSummaryPageProps) {
+  const { id } = await params;
+  const { date, time, price } = await searchParams;
+
   return (
-    <BookingSummaryClient 
-      turfId={params.id}
-      selectedDate={searchParams.date}
-      selectedTime={searchParams.time}
-      selectedPrice={searchParams.price}
+    <BookingSummaryClient
+      turfId={id}
+      selectedDate={date}
+      selectedTime={time}
+      selectedPrice={price}
     />
   );
 }

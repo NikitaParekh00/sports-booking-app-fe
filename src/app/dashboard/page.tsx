@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import LocationInput from "@/components/LocationInput";
+import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
 
@@ -23,7 +24,8 @@ export default function Dashboard() {
   const [location, setLocation] = useState<Location | null>(null);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
-  
+  const [isLocationSheetOpen, setIsLocationSheetOpen] = useState<boolean>(false);
+
   const handleLocationChange = (location: string) => {
     console.log('Dashboard received location change:', location);
     setSelectedLocation(location);
@@ -34,7 +36,7 @@ export default function Dashboard() {
   useEffect(() => {
     async function getUser() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      
+
       if (authUser) {
         // Get user profile
         const { data: profile } = await supabase
@@ -42,7 +44,7 @@ export default function Dashboard() {
           .select('*')
           .eq('user_id', authUser.id)
           .single();
-        
+
         setUser({
           id: authUser.id,
           full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
@@ -62,6 +64,24 @@ export default function Dashboard() {
     getUser();
   }, [supabase]);
 
+  // Load saved location from localStorage and auto-open sheet on first load if not set
+  useEffect(() => {
+    try {
+      const savedLoc = window.localStorage.getItem("sf:selectedLocation");
+      const savedLocObj = window.localStorage.getItem("sf:selectedLocationObj");
+      if (savedLoc && savedLocObj) {
+        setSelectedLocation(savedLoc);
+        const obj = JSON.parse(savedLocObj) as Location;
+        setLocation(obj);
+      } else {
+        setIsLocationSheetOpen(true);
+      }
+    } catch {
+      // ignore
+      setIsLocationSheetOpen(true);
+    }
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -72,59 +92,45 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      {/* User Greeting - Only show when no location is set */}
-      {!location && (
-        <div className="bg-gradient-to-r from-red-50 to-red-100 p-6 rounded-lg m-4">
-          <h1 className="text-2xl font-semibold text-gray-900">
-            {user?.id === 'anonymous' ? 'Welcome to Simplifit! 👋' : `Hi, ${user?.full_name}! 👋`}
-          </h1>
-          <p className="text-gray-600 mt-1">
-            {user?.id === 'anonymous' 
-              ? 'Find and book sports facilities near you. No account required to browse!'
-              : 'Ready to book your next game? Let\'s find the perfect court for you.'
-            }
-          </p>
-          {user?.id === 'anonymous' && (
-            <div className="mt-3">
-              <a 
-                href="/login" 
-                className="text-sm text-red-600 hover:text-red-800 underline"
-              >
-                Sign in for a personalized experience
-              </a>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Location Input */}
-      {!location && (
-        <div className="px-4">
-          <LocationInput onLocationSet={(location, locationName) => {
-            setLocation(location);
-            setSelectedLocation(locationName);
-          }} />
-        </div>
-      )}
-
-      {/* Sports Selection */}
-      {location && !selectedSport && (
-        <SportsSelection 
-          selectedLocation={selectedLocation}
+      {/* Sports Selection - always visible. Location sheet pops over if not set */}
+      {!selectedSport && (
+        <SportsSelection
+          selectedLocation={selectedLocation || "Current Location"}
           onLocationChange={handleLocationChange}
+          onRequestLocationChange={() => setIsLocationSheetOpen(true)}
+          userName={user?.full_name}
         />
       )}
 
       {/* Turf Listing */}
       {location && selectedSport && (
         <div className="px-4 pb-20">
-          <TurfListing 
-            location={location} 
+          <TurfListing
+            location={location}
             sport={selectedSport}
             onBack={() => setSelectedSport(null)}
           />
         </div>
       )}
+
+      {/* Bottom Sheet for Location Selection */}
+      <BottomSheet
+        isOpen={isLocationSheetOpen}
+        onClose={() => setIsLocationSheetOpen(false)}
+        title="Select Location"
+      >
+        <LocationInput
+          onLocationSet={(loc, locationName) => {
+            setLocation(loc);
+            setSelectedLocation(locationName);
+            setIsLocationSheetOpen(false);
+            try {
+              window.localStorage.setItem("sf:selectedLocation", locationName);
+              window.localStorage.setItem("sf:selectedLocationObj", JSON.stringify(loc));
+            } catch { }
+          }}
+        />
+      </BottomSheet>
     </div>
   );
 }

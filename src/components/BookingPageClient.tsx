@@ -36,7 +36,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [dateAvailability, setDateAvailability] = useState<{[key: string]: {available: boolean, price: number}[]}>({});
+  const [dateAvailability, setDateAvailability] = useState<{ [key: string]: { available: boolean, price: number }[] }>({});
   const supabase = createClient();
 
   // Generate dates for the next 7 days
@@ -51,13 +51,11 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     return dates;
   };
 
-  const dates = generateDates();
-
   // Generate time slots from 6 AM to 8 PM
   const generateTimeSlots = () => {
     const slots = [];
     for (let hour = 6; hour <= 20; hour++) {
-      const time = hour <= 12 
+      const time = hour <= 12
         ? `${hour === 12 ? 12 : hour % 12}:00 ${hour < 12 ? 'AM' : 'PM'}`
         : `${hour % 12}:00 PM`;
       slots.push({
@@ -77,11 +75,11 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
       // More realistic availability pattern
       const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday or Saturday
       const isPeakHour = hour >= 18 || hour <= 8; // Evening and morning hours
-      
+
       // Higher availability on weekends, lower on weekdays
       const availabilityChance = isWeekend ? 0.7 : 0.5;
       const isAvailable = Math.random() < availabilityChance;
-      
+
       // Pricing based on time and day
       let price = 0;
       if (isAvailable) {
@@ -91,7 +89,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           price = isPeakHour ? 700 : 500;
         }
       }
-      
+
       availability.push({
         available: isAvailable,
         price: price
@@ -104,7 +102,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     async function fetchFacility() {
       try {
         setLoading(true);
-        
+
         // Try to fetch from database first
         const { data, error } = await supabase
           .from('facilities')
@@ -149,21 +147,22 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     fetchFacility();
     const slots = generateTimeSlots();
     setTimeSlots(slots);
-    
+
     // Generate availability for all dates
-    const availability: {[key: string]: {available: boolean, price: number}[]} = {};
+    const dates = generateDates();
+    const availability: { [key: string]: { available: boolean, price: number }[] } = {};
     dates.forEach(date => {
       const dateKey = date.toDateString();
       availability[dateKey] = generateDateAvailability(date);
     });
     setDateAvailability(availability);
-  }, [turfId, supabase, dates]);
+  }, [turfId, supabase]);
 
 
   const formatDate = (date: Date) => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
+
     return {
       day: days[date.getDay()],
       date: date.getDate().toString().padStart(2, '0'),
@@ -204,7 +203,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           <div className="flex items-center gap-3">
             <a href={`/turf/${turfId}`} className="p-2 hover:bg-gray-100 rounded-full">
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </a>
             <div>
@@ -216,7 +215,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
                   {currentDate.date} {currentDate.month}, {currentDate.year}
                 </span>
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
             </div>
@@ -224,12 +223,12 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           <div className="flex items-center gap-3">
             <button className="p-2 hover:bg-gray-100 rounded-full">
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </button>
             <button className="p-2 hover:bg-gray-100 rounded-full">
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </button>
           </div>
@@ -247,7 +246,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
               <div key={index} className="h-12 flex items-center justify-center border-b border-gray-200">
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4 text-orange-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd"/>
+                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
                   </svg>
                   <span className="text-xs text-gray-600">{slot.time}</span>
                 </div>
@@ -258,45 +257,43 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           {/* Availability Grid */}
           <div className="flex-1 overflow-x-auto" id="pricing-grid">
             <div className="flex">
-              {dates.map((date, dateIndex) => {
+              {generateDates().map((date, dateIndex) => {
                 const dateKey = date.toDateString();
                 const availability = dateAvailability[dateKey] || [];
                 const formatted = formatDate(date);
                 const isSelected = date.toDateString() === selectedDate.toDateString();
-                
+
                 return (
                   <div key={dateIndex} className="min-w-[80px]">
                     {/* Date Header */}
                     <div
-                      className={`w-full h-12 border-b border-gray-200 flex flex-col items-center justify-center text-xs ${
-                        isSelected 
-                          ? 'bg-cyan-100 text-cyan-700' 
+                      className={`w-full h-12 border-b border-gray-200 flex flex-col items-center justify-center text-xs ${isSelected
+                          ? 'bg-cyan-100 text-cyan-700'
                           : 'bg-gray-100 text-gray-700'
-                      }`}
+                        }`}
                     >
                       <span className="font-medium">{formatted.day}</span>
                       <span className="font-semibold">{formatted.date}</span>
                     </div>
-                    
+
                     {/* Time Slots */}
                     {timeSlots.map((slot, timeIndex) => {
                       const slotAvailability = availability[timeIndex] || { available: false, price: 0 };
                       const isAvailable = slotAvailability.available;
                       const price = slotAvailability.price;
                       const isSelected = selectedTimeSlot === slot.time && date.toDateString() === selectedDate.toDateString();
-                      
+
                       return (
                         <button
                           key={`${dateIndex}-${timeIndex}`}
                           onClick={() => isAvailable && handleTimeSlotSelect(slot.time, date)}
                           disabled={!isAvailable}
-                          className={`w-full h-12 border-b border-gray-200 flex items-center justify-center text-xs transition-colors ${
-                            isSelected
+                          className={`w-full h-12 border-b border-gray-200 flex items-center justify-center text-xs transition-colors ${isSelected
                               ? 'bg-cyan-100 text-cyan-700 border-cyan-200'
                               : isAvailable
-                              ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
-                              : 'bg-gray-50 text-gray-400 cursor-not-allowed'
-                          }`}
+                                ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
+                                : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            }`}
                         >
                           {isAvailable && price > 0 && (
                             <span className="font-medium">₹ {price}</span>
@@ -322,7 +319,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
             Next
           </a>
         ) : (
-          <button 
+          <button
             disabled={true}
             className="w-full py-3 rounded-lg font-semibold transition-colors bg-gray-200 text-gray-400 cursor-not-allowed"
           >
@@ -336,19 +333,19 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
         <div className="flex justify-around items-center">
           <a href="/dashboard" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+              <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
             </svg>
             <span className="text-xs text-gray-400">Home</span>
           </a>
           <a href="/search" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd"/>
+              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
             </svg>
             <span className="text-xs text-gray-400">Search</span>
           </a>
           <div className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
             <span className="text-xs text-gray-400">Community</span>
           </div>
