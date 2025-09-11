@@ -302,10 +302,10 @@ export default function FriendlyScoringPage() {
                         </svg>
                         <span className="text-xs text-gray-400">Community</span>
                     </div>
-                    <div className="flex flex-col items-center">
+                    <a href="/profile" className="flex flex-col items-center">
                         <span className="text-red-600 font-bold text-xs mb-1">SIMPLIFIT</span>
                         <span className="text-xs text-gray-400">Profile</span>
-                    </div>
+                    </a>
                 </div>
             </div>
         </div>

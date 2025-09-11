@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import { coachingItemsWithUrls } from '@/data/coachingData';
 
 interface SportsSelectionProps {
   selectedLocation?: string;
@@ -277,14 +278,14 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
           <a href="#" className="text-gray-600 text-sm font-medium">See All Coaching →</a>
         </div>
         <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-          {[1, 2, 3, 4].map((i) => (
-            <a key={i} href="#" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="h-28 bg-gray-200">
-                <img src="https://images.unsplash.com/photo-1517649763962-0c623066013b?w=600" className="w-full h-full object-cover" alt="coaching" />
+          {coachingItemsWithUrls.map((item) => (
+            <a key={item.id} href="#" className="min-w-[160px] bg-white border border-gray-200 rounded-xl overflow-hidden">
+              <div className="h-20 bg-gray-200">
+                <img src={item.image} className="w-full h-full object-cover" alt={item.title} />
               </div>
-              <div className="p-3">
-                <div className="text-gray-900 font-medium text-sm">{i % 2 ? 'Football Academy' : 'Yoga Classes'}</div>
-                <div className="text-cyan-700 text-sm font-medium mt-1">Enroll Now</div>
+              <div className="p-2">
+                <div className="text-gray-900 font-medium text-xs">{item.title}</div>
+                <div className="text-cyan-700 text-xs font-medium mt-1">Enroll Now</div>
               </div>
             </a>
           ))}
@@ -293,21 +294,21 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
 
       <div className="px-4 mt-8 pb-20">
         <div className="flex items-center justify-between">
-          <h3 className="text-xl font-semibold text-gray-900">Scoring</h3>
+          <h3 className="text-xl font-semibold text-gray-900">Start Scoring</h3>
           <a href="/scoring" className="text-gray-600 text-sm font-medium">See All →</a>
         </div>
-        <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-          <a href="/scoring/friendly" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="h-28 bg-gray-100 flex items-center justify-center text-5xl">🏏</div>
-            <div className="p-3">
-              <div className="text-gray-900 font-medium text-sm">Friendly Game</div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          <a href="/scoring/friendly" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏏</div>
+            <div className="p-2">
+              <div className="text-gray-900 font-medium text-xs">Friendly Game</div>
               <div className="text-gray-500 text-xs">Score casual matches</div>
             </div>
           </a>
-          <a href="/scoring/tournaments" className="min-w-[220px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="h-28 bg-gray-100 flex items-center justify-center text-5xl">🏆</div>
-            <div className="p-3">
-              <div className="text-gray-900 font-medium text-sm">Tournaments</div>
+          <a href="/scoring/tournaments" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏆</div>
+            <div className="p-2">
+              <div className="text-gray-900 font-medium text-xs">Tournaments</div>
               <div className="text-gray-500 text-xs">Organize and score</div>
             </div>
           </a>
@@ -335,10 +336,10 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             </svg>
             <span className="text-xs text-gray-400">Community</span>
           </div>
-          <div className="flex flex-col items-center">
+          <a href="/profile" className="flex flex-col items-center">
             <span className="text-red-600 font-bold text-xs mb-1">SIMPLIFIT</span>
             <span className="text-xs text-red-600">Profile</span>
-          </div>
+          </a>
         </div>
       </div>
     </div>
