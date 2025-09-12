@@ -98,7 +98,7 @@ export default function TournamentsPage() {
                     <div className="text-center py-12">
                         <div className="text-gray-500 mb-4">No tournaments found</div>
                         <button
-                            onClick={() => setSelectedSport('')}
+                            onClick={() => setShowCreateForm(true)}
                             className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700"
                         >
                             Create Your First Tournament
