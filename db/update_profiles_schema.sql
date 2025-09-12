@@ -1,5 +1,5 @@
 -- Update profiles table to add new fields for authentication flow
--- This script adds the missing columns to the existing profiles table
+--- This script adds the missing columns to the existing profiles table
 
 -- Create the update_updated_at_column function if it doesn't exist
 CREATE OR REPLACE FUNCTION update_updated_at_column()
