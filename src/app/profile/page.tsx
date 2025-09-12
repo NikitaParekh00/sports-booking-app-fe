@@ -18,9 +18,23 @@ export default function ProfilePage() {
     useEffect(() => {
         async function getUser() {
             try {
-                const { data: { user }, error } = await supabase.auth.getUser();
-                if (error) throw error;
-                setUser(user);
+                // For development: Get user from localStorage
+                const storedUser = localStorage.getItem('sf:user');
+
+                if (storedUser) {
+                    const userData = JSON.parse(storedUser);
+                    setUser({
+                        id: userData.user_id,
+                        full_name: userData.full_name,
+                        email: userData.email || '',
+                        phone: userData.phone || ''
+                    });
+                } else {
+                    // Fallback: Try to get from Supabase auth (for production)
+                    const { data: { user }, error } = await supabase.auth.getUser();
+                    if (error) throw error;
+                    setUser(user);
+                }
             } catch (error) {
                 console.error('Error fetching user:', error);
             } finally {
@@ -33,7 +47,12 @@ export default function ProfilePage() {
 
     const handleLogout = async () => {
         try {
-            await supabase.auth.signOut();
+            // For development: Clear localStorage
+            localStorage.removeItem('sf:user');
+            localStorage.removeItem('sf:selectedLocation');
+            localStorage.removeItem('sf:selectedLocationObj');
+
+            // For production: await supabase.auth.signOut();
             window.location.href = '/login';
         } catch (error) {
             console.error('Error signing out:', error);
@@ -109,7 +128,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Main Content */}
-            <div className="px-4 py-6 pb-20">
+            <div className="px-4 py-6 pb-32 max-h-[calc(100vh-200px)] overflow-y-auto">
                 {/* Menu Items */}
                 <div className="space-y-3">
                     {/* My Games */}

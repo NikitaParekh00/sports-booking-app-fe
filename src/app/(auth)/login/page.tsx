@@ -1,166 +1,155 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabaseClient";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
-	const supabase = createClient();
 	const router = useRouter();
-	const [email, setEmail] = useState("");
-	const [password, setPassword] = useState("");
-	const [sent, setSent] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const supabase = createClient();
 	const [loading, setLoading] = useState(false);
-	const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
+	const [mobileNumber, setMobileNumber] = useState('');
 
-	async function handlePasswordLogin(e: React.FormEvent) {
+	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
-		setError(null);
 		setLoading(true);
 
 		try {
-			const { data, error: err } = await supabase.auth.signInWithPassword({
-				email,
-				password,
-			});
-
-			if (err) {
-				setError(err.message);
+			// Validate mobile number format
+			const mobileRegex = /^[6-9]\d{9}$/;
+			if (!mobileRegex.test(mobileNumber.replace(/\D/g, ''))) {
+				alert('Please enter a valid 10-digit mobile number');
 				return;
 			}
 
-			if (data.user) {
-				// Check user role
-				const { data: profile, error: profileError } = await supabase
+			// Clean mobile number (remove any non-digits)
+			const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
+			const formattedMobileNumber = `+91${cleanMobileNumber}`;
+			const formattedMobileNumberWithDash = `+91-${cleanMobileNumber}`;
+
+			// For development: Skip actual OTP sending and go directly to verification
+			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
+
+			// Debug: Log what we're searching for
+			console.log('🔍 Searching for phone:', formattedMobileNumber);
+			console.log('🔍 Also searching for phone:', formattedMobileNumberWithDash);
+
+			// Check if user exists in profiles table (try multiple formats)
+			let { data: profileData, error: profileError } = await supabase
+				.from('profiles')
+				.select('user_id, full_name')
+				.eq('phone', formattedMobileNumber)
+				.single();
+
+			console.log('🔍 First search result (with +91):', { profileData, profileError });
+
+			// If not found, try with dash format
+			if (profileError || !profileData) {
+				const { data: profileDataDash, error: profileErrorDash } = await supabase
 					.from('profiles')
-					.select('role')
-					.eq('user_id', data.user.id)
+					.select('user_id, full_name')
+					.eq('phone', formattedMobileNumberWithDash)
 					.single();
 
-				if (profileError) {
-					console.error('Profile error:', profileError);
-					setError(`Profile not found. Please visit /admin to fix your profile. User ID: ${data.user.id}`);
-					return;
-				}
+				console.log('🔍 Second search result (with +91-):', { profileDataDash, profileErrorDash });
 
-				console.log('User role:', profile?.role);
-				
-				if (profile?.role === 'owner') {
-					router.push('/owner');
-				} else {
-					router.push('/dashboard');
-				}
+				profileData = profileDataDash;
+				profileError = profileErrorDash;
 			}
-		} catch (err) {
-			setError('An unexpected error occurred');
+
+			// If still not found, try with just the clean number (no +91 prefix)
+			if (profileError || !profileData) {
+				const { data: profileDataClean, error: profileErrorClean } = await supabase
+					.from('profiles')
+					.select('user_id, full_name')
+					.eq('phone', cleanMobileNumber)
+					.single();
+
+				console.log('🔍 Third search result (clean number):', { profileDataClean, profileErrorClean });
+
+				profileData = profileDataClean;
+				profileError = profileErrorClean;
+			}
+
+			// Debug: Let's also try to get ALL profiles to see what's actually in the database
+			const { data: allProfiles, error: allProfilesError } = await supabase
+				.from('profiles')
+				.select('user_id, full_name, phone');
+
+			console.log('🔍 All profiles in database:', allProfiles);
+
+			if (profileError || !profileData) {
+				alert('No account found with this mobile number. Redirecting to signup...');
+				router.push('/signup');
+				return;
+			}
+
+			// Redirect to OTP verification (with hardcoded OTP)
+			router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=login`);
+		} catch (error) {
+			console.error('Unexpected error:', error);
+			alert('An unexpected error occurred. Please try again.');
 		} finally {
 			setLoading(false);
 		}
-	}
-
-	async function handleSendOtp(e: React.FormEvent) {
-		e.preventDefault();
-		setError(null);
-		const { error: err } = await supabase.auth.signInWithOtp({ email });
-		if (err) {
-			setError(err.message);
-			return;
-		}
-		setSent(true);
-	}
+	};
 
 	return (
-		<div className="min-h-dvh flex items-center justify-center p-6">
-			<div className="w-full max-w-sm space-y-4">
-				<h1 className="text-2xl font-semibold">Login</h1>
-				
-				{/* Login Method Toggle */}
-				<div className="flex space-x-2">
+		<div className="min-h-screen bg-white">
+
+			{/* Header */}
+			<div className="bg-gray-100 px-4 py-3">
+				<div className="flex items-center gap-3">
 					<button
-						type="button"
-						onClick={() => setLoginMethod('password')}
-						className={`px-3 py-1 text-sm rounded ${
-							loginMethod === 'password' 
-								? 'bg-blue-600 text-white' 
-								: 'bg-gray-200 text-gray-700'
-						}`}
+						onClick={() => router.back()}
+						className="p-2 hover:bg-gray-200 rounded-full"
 					>
-						Password
+						<svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+						</svg>
 					</button>
-					<button
-						type="button"
-						onClick={() => setLoginMethod('otp')}
-						className={`px-3 py-1 text-sm rounded ${
-							loginMethod === 'otp' 
-								? 'bg-blue-600 text-white' 
-								: 'bg-gray-200 text-gray-700'
-						}`}
-					>
-						Magic Link
-					</button>
-				</div>
-
-				{loginMethod === 'password' ? (
-					<form onSubmit={handlePasswordLogin} className="space-y-3">
-						<input
-							type="email"
-							required
-							placeholder="you@example.com"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							className="w-full border rounded-md px-3 py-2"
-						/>
-						<input
-							type="password"
-							required
-							placeholder="Password"
-							value={password}
-							onChange={(e) => setPassword(e.target.value)}
-							className="w-full border rounded-md px-3 py-2"
-						/>
-						<button
-							type="submit"
-							disabled={loading}
-							className="w-full bg-black text-white rounded-md px-3 py-2 disabled:opacity-50"
-						>
-							{loading ? 'Signing in...' : 'Sign in'}
-						</button>
-					</form>
-				) : (
-					<form onSubmit={handleSendOtp} className="space-y-3">
-						<input
-							type="email"
-							required
-							placeholder="you@example.com"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							className="w-full border rounded-md px-3 py-2"
-						/>
-						<button
-							type="submit"
-							className="w-full bg-black text-white rounded-md px-3 py-2"
-						>
-							Send magic link
-						</button>
-					</form>
-				)}
-
-				{sent && (
-					<p className="text-sm text-green-600">Check your email for the link.</p>
-				)}
-				{error && <p className="text-sm text-red-600">{error}</p>}
-
-				{/* Test Credentials */}
-				<div className="mt-6 p-4 bg-gray-50 rounded-md">
-					<h3 className="text-sm font-medium text-gray-700 mb-2">Test Credentials:</h3>
-					<div className="text-xs text-gray-600 space-y-1">
-						<div><strong>Owner:</strong> nikita@example.com / password123</div>
-						<div><strong>Customer:</strong> customer@example.com / password123</div>
-					</div>
+					<h1 className="text-lg font-bold text-black">Login</h1>
 				</div>
 			</div>
+
+			{/* Form */}
+			<form onSubmit={handleLogin} className="px-4 py-6 space-y-6">
+				{/* Mobile Number */}
+				<div>
+					<input
+						type="tel"
+						value={mobileNumber}
+						onChange={(e) => setMobileNumber(e.target.value)}
+						placeholder="Mobile Number"
+						className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+						required
+					/>
+				</div>
+
+				{/* Login Button */}
+				<button
+					type="submit"
+					disabled={loading}
+					className="w-full bg-gradient-to-r from-teal-500 to-green-500 text-white font-bold py-4 px-6 rounded-lg text-lg hover:from-teal-600 hover:to-green-600 transition-all duration-200 disabled:opacity-50"
+				>
+					{loading ? 'Sending OTP...' : 'LOGIN'}
+				</button>
+
+				{/* Signup Link */}
+				<div className="text-center">
+					<span className="text-gray-700">Don't have an account? </span>
+					<button
+						type="button"
+						onClick={() => router.push('/signup')}
+						className="text-green-500 font-semibold hover:text-green-600"
+					>
+						Sign up
+					</button>
+				</div>
+			</form>
+
+			{/* Home Indicator */}
+			<div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-black rounded-full"></div>
 		</div>
 	);
 }
-

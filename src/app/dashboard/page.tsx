@@ -35,28 +35,50 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function getUser() {
-      const { data: { user: authUser } } = await supabase.auth.getUser();
+      // For development: Get user from localStorage (set during OTP verification)
+      const storedUser = localStorage.getItem('sf:user');
 
-      if (authUser) {
-        // Get user profile
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', authUser.id)
-          .single();
-
-        setUser({
-          id: authUser.id,
-          full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
-          email: authUser.email || ''
-        });
+      if (storedUser) {
+        try {
+          const userData = JSON.parse(storedUser);
+          setUser({
+            id: userData.user_id,
+            full_name: userData.full_name,
+            email: userData.email || ''
+          });
+        } catch (error) {
+          console.error('Error parsing stored user:', error);
+          setUser({
+            id: 'anonymous',
+            full_name: 'Guest',
+            email: ''
+          });
+        }
       } else {
-        // Set a default user for anonymous users
-        setUser({
-          id: 'anonymous',
-          full_name: 'Guest',
-          email: ''
-        });
+        // Fallback: Try to get from Supabase auth (for production)
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+
+        if (authUser) {
+          // Get user profile
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('user_id', authUser.id)
+            .single();
+
+          setUser({
+            id: authUser.id,
+            full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
+            email: authUser.email || ''
+          });
+        } else {
+          // Set a default user for anonymous users
+          setUser({
+            id: 'anonymous',
+            full_name: 'Guest',
+            email: ''
+          });
+        }
       }
       setLoading(false);
     }
