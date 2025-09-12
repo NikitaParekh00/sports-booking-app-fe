@@ -81,7 +81,7 @@ export default function VerifyOtpPage() {
             localStorage.setItem('sf:user', JSON.stringify({
                 user_id: userData.user_id,
                 full_name: userData.full_name,
-                email: userData.email || ''
+                email: ''
             }));
 
             // Success! Redirect to dashboard
