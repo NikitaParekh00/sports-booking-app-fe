@@ -29,10 +29,6 @@ export default function MyGamesPage() {
     const [error, setError] = useState<string | null>(null);
     const supabase = createClient();
 
-    useEffect(() => {
-        fetchMyGames();
-    }, [fetchMyGames]);
-
     const fetchMyGames = useCallback(async () => {
         try {
             // Get current user
@@ -59,6 +55,10 @@ export default function MyGamesPage() {
             setLoading(false);
         }
     }, [supabase]);
+
+    useEffect(() => {
+        fetchMyGames();
+    }, [fetchMyGames]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
