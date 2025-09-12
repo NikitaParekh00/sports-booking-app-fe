@@ -27,18 +27,16 @@ export default function PastBookingsPage() {
     const [error, setError] = useState<string | null>(null);
     const supabase = createClient();
 
-    useEffect(() => {
-        fetchPastBookings();
-    }, [fetchPastBookings]);
-
     const fetchPastBookings = useCallback(async () => {
         try {
-            // Get current user
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
-            if (authError || !user) {
+            // For development: Get user from localStorage
+            const storedUser = localStorage.getItem('sf:user');
+            if (!storedUser) {
                 setError('Please sign in to view your bookings');
                 return;
             }
+
+            const userData = JSON.parse(storedUser);
 
             // Fetch bookings with facility information
             const { data: bookingsData, error: bookingsError } = await supabase
@@ -51,7 +49,7 @@ export default function PastBookingsPage() {
             sport
           )
         `)
-                .eq('user_id', user.id)
+                .eq('user_id', userData.user_id)
                 .order('booking_date', { ascending: false });
 
             if (bookingsError) throw bookingsError;
@@ -72,6 +70,10 @@ export default function PastBookingsPage() {
             setLoading(false);
         }
     }, [supabase]);
+
+    useEffect(() => {
+        fetchPastBookings();
+    }, [fetchPastBookings]);
 
     const getStatusColor = (status: string) => {
         switch (status) {
@@ -184,7 +186,7 @@ export default function PastBookingsPage() {
                             <div key={booking.id} className="bg-white border border-gray-200 rounded-lg p-4">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="flex items-center gap-3">
-                                        <div className="text-2xl">{getSportIcon(booking.sport)}</div>
+                                        <div className="text-2xl">{getSportIcon(booking.sport || 'unknown')}</div>
                                         <div>
                                             <h3 className="font-semibold text-gray-900">{booking.facility_name}</h3>
                                             <p className="text-sm text-gray-600">

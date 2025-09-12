@@ -29,10 +29,6 @@ export default function BadmintonScoring({ matchId, players }: BadmintonScoringP
     const [isLoading, setIsLoading] = useState(false);
     const supabase = createClient();
 
-    useEffect(() => {
-        initializeScores();
-    }, [initializeScores]);
-
     const initializeScores = useCallback(async () => {
         try {
             // Check if scores already exist
@@ -67,6 +63,10 @@ export default function BadmintonScoring({ matchId, players }: BadmintonScoringP
             console.error('Error initializing scores:', error);
         }
     }, [matchId, players, supabase]);
+
+    useEffect(() => {
+        initializeScores();
+    }, [initializeScores]);
 
     const updateScore = async (playerId: string, field: keyof BadmintonScore, value: number) => {
         setIsLoading(true);

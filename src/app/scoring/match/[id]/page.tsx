@@ -31,12 +31,6 @@ export default function MatchScoringPage() {
     const [error, setError] = useState<string | null>(null);
     const supabase = createClient();
 
-    useEffect(() => {
-        if (matchId) {
-            fetchMatchData();
-        }
-    }, [matchId, fetchMatchData]);
-
     const fetchMatchData = useCallback(async () => {
         try {
             // Fetch match details
@@ -65,6 +59,12 @@ export default function MatchScoringPage() {
             setIsLoading(false);
         }
     }, [matchId, supabase]);
+
+    useEffect(() => {
+        if (matchId) {
+            fetchMatchData();
+        }
+    }, [matchId, fetchMatchData]);
 
     const startMatch = async () => {
         try {
