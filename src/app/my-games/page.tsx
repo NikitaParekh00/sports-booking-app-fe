@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabaseClient';
 
 interface Match {
@@ -16,12 +16,12 @@ interface Match {
     completed_at?: string;
 }
 
-interface Player {
-    id: string;
-    player_name: string;
-    team: string;
-    is_captain: boolean;
-}
+// interface Player {
+//     id: string;
+//     player_name: string;
+//     team: string;
+//     is_captain: boolean;
+// }
 
 export default function MyGamesPage() {
     const [matches, setMatches] = useState<Match[]>([]);
@@ -31,9 +31,9 @@ export default function MyGamesPage() {
 
     useEffect(() => {
         fetchMyGames();
-    }, []);
+    }, [fetchMyGames]);
 
-    const fetchMyGames = async () => {
+    const fetchMyGames = useCallback(async () => {
         try {
             // Get current user
             const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -58,7 +58,7 @@ export default function MyGamesPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [supabase]);
 
     const getStatusColor = (status: string) => {
         switch (status) {

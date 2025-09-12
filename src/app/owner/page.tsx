@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { 
-  getOwnerTimeSlots, 
-  getOwnerCourts, 
-  createTimeSlot, 
-  updateTimeSlotAvailability, 
-  deleteTimeSlot, 
+import {
+  getOwnerTimeSlots,
+  getOwnerCourts,
+  createTimeSlot,
+  updateTimeSlotAvailability,
+  deleteTimeSlot,
   getOwnerStats,
   getCurrentUserProfile,
   type TimeSlot,
@@ -32,39 +32,39 @@ export default function OwnerDashboard() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [price, setPrice] = useState('');
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
 
   // Load data on component mount
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      
+
       // Check if user is authenticated and is an owner
       const profile = await getCurrentUserProfile();
       if (!profile) {
         router.push('/login');
         return;
       }
-      
+
       if (profile.role !== 'owner') {
         alert('Access denied. This page is for turf owners only.');
         router.push('/dashboard');
         return;
       }
-      
+
       setUser(profile);
-      
+
       // Load all data in parallel
       const [slotsData, courtsData, statsData] = await Promise.all([
         getOwnerTimeSlots(profile.user_id),
         getOwnerCourts(profile.user_id),
         getOwnerStats(profile.user_id)
       ]);
-      
+
       setSlots(slotsData);
       setCourts(courtsData);
       setStats(statsData);
@@ -74,7 +74,7 @@ export default function OwnerDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
 
   const handleAddSlot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +101,7 @@ export default function OwnerDashboard() {
       setStartTime('');
       setEndTime('');
       setPrice('');
-      
+
       // Reload stats
       const updatedStats = await getOwnerStats(user.user_id);
       setStats(updatedStats);
@@ -115,7 +115,7 @@ export default function OwnerDashboard() {
     try {
       await deleteTimeSlot(slotId);
       setSlots(slots.filter(slot => slot.id !== slotId));
-      
+
       // Reload stats
       if (user) {
         const updatedStats = await getOwnerStats(user.user_id);
@@ -134,7 +134,7 @@ export default function OwnerDashboard() {
 
       const updatedSlot = await updateTimeSlotAvailability(slotId, !slot.is_available);
       setSlots(slots.map(s => s.id === slotId ? updatedSlot : s));
-      
+
       // Reload stats
       if (user) {
         const updatedStats = await getOwnerStats(user.user_id);
@@ -372,11 +372,10 @@ export default function OwnerDashboard() {
                       ₹{slot.price_per_hour}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        slot.is_available 
-                          ? 'bg-green-100 text-green-800' 
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${slot.is_available
+                          ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
-                      }`}>
+                        }`}>
                         {slot.is_available ? 'Available' : 'Booked'}
                       </span>
                     </td>
@@ -384,11 +383,10 @@ export default function OwnerDashboard() {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleToggleAvailability(slot.id)}
-                          className={`${
-                            slot.is_available 
-                              ? 'text-red-600 hover:text-red-900' 
+                          className={`${slot.is_available
+                              ? 'text-red-600 hover:text-red-900'
                               : 'text-green-600 hover:text-green-900'
-                          }`}
+                            }`}
                         >
                           {slot.is_available ? 'Mark Booked' : 'Mark Available'}
                         </button>

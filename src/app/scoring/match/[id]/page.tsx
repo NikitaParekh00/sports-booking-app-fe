@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import BadmintonScoring from "@/components/BadmintonScoring";
@@ -35,9 +35,9 @@ export default function MatchScoringPage() {
         if (matchId) {
             fetchMatchData();
         }
-    }, [matchId]);
+    }, [matchId, fetchMatchData]);
 
-    const fetchMatchData = async () => {
+    const fetchMatchData = useCallback(async () => {
         try {
             // Fetch match details
             const { data: matchData, error: matchError } = await supabase
@@ -64,7 +64,7 @@ export default function MatchScoringPage() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [matchId, supabase]);
 
     const startMatch = async () => {
         try {

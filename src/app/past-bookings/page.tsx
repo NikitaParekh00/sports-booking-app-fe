@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabaseClient';
 
 interface Booking {
@@ -29,9 +29,9 @@ export default function PastBookingsPage() {
 
     useEffect(() => {
         fetchPastBookings();
-    }, []);
+    }, [fetchPastBookings]);
 
-    const fetchPastBookings = async () => {
+    const fetchPastBookings = useCallback(async () => {
         try {
             // Get current user
             const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -71,7 +71,7 @@ export default function PastBookingsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [supabase]);
 
     const getStatusColor = (status: string) => {
         switch (status) {

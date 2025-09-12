@@ -197,7 +197,7 @@ export default function FriendlyScoringPage() {
                     <div className="space-y-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Opponent's Phone Number
+                                Opponent&apos;s Phone Number
                             </label>
                             <input
                                 type="tel"
@@ -210,7 +210,7 @@ export default function FriendlyScoringPage() {
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Opponent's Name (Optional)
+                                Opponent&apos;s Name (Optional)
                             </label>
                             <input
                                 type="text"

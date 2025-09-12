@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Player {
@@ -25,15 +25,15 @@ interface BadmintonScoringProps {
 
 export default function BadmintonScoring({ matchId, players }: BadmintonScoringProps) {
     const [scores, setScores] = useState<BadmintonScore[]>([]);
-    const [currentSet, setCurrentSet] = useState(1);
+    // const [currentSet, setCurrentSet] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const supabase = createClient();
 
     useEffect(() => {
         initializeScores();
-    }, [matchId, players]);
+    }, [initializeScores]);
 
-    const initializeScores = async () => {
+    const initializeScores = useCallback(async () => {
         try {
             // Check if scores already exist
             const { data: existingScores } = await supabase
@@ -66,7 +66,7 @@ export default function BadmintonScoring({ matchId, players }: BadmintonScoringP
         } catch (error) {
             console.error('Error initializing scores:', error);
         }
-    };
+    }, [matchId, players, supabase]);
 
     const updateScore = async (playerId: string, field: keyof BadmintonScore, value: number) => {
         setIsLoading(true);

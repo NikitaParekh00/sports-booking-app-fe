@@ -30,18 +30,12 @@ export default function LoginPage() {
 			// For development: Skip actual OTP sending and go directly to verification
 			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
 
-			// Debug: Log what we're searching for
-			console.log('🔍 Searching for phone:', formattedMobileNumber);
-			console.log('🔍 Also searching for phone:', formattedMobileNumberWithDash);
-
 			// Check if user exists in profiles table (try multiple formats)
 			let { data: profileData, error: profileError } = await supabase
 				.from('profiles')
 				.select('user_id, full_name')
 				.eq('phone', formattedMobileNumber)
 				.single();
-
-			console.log('🔍 First search result (with +91):', { profileData, profileError });
 
 			// If not found, try with dash format
 			if (profileError || !profileData) {
@@ -50,8 +44,6 @@ export default function LoginPage() {
 					.select('user_id, full_name')
 					.eq('phone', formattedMobileNumberWithDash)
 					.single();
-
-				console.log('🔍 Second search result (with +91-):', { profileDataDash, profileErrorDash });
 
 				profileData = profileDataDash;
 				profileError = profileErrorDash;
@@ -65,18 +57,9 @@ export default function LoginPage() {
 					.eq('phone', cleanMobileNumber)
 					.single();
 
-				console.log('🔍 Third search result (clean number):', { profileDataClean, profileErrorClean });
-
 				profileData = profileDataClean;
 				profileError = profileErrorClean;
 			}
-
-			// Debug: Let's also try to get ALL profiles to see what's actually in the database
-			const { data: allProfiles, error: allProfilesError } = await supabase
-				.from('profiles')
-				.select('user_id, full_name, phone');
-
-			console.log('🔍 All profiles in database:', allProfiles);
 
 			if (profileError || !profileData) {
 				alert('No account found with this mobile number. Redirecting to signup...');
@@ -137,7 +120,7 @@ export default function LoginPage() {
 
 				{/* Signup Link */}
 				<div className="text-center">
-					<span className="text-gray-700">Don't have an account? </span>
+					<span className="text-gray-700">Don&apos;t have an account? </span>
 					<button
 						type="button"
 						onClick={() => router.push('/signup')}

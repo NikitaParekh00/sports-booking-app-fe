@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabaseClient";
 
 const sports = [
@@ -38,25 +38,31 @@ export default function TournamentsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const supabase = createClient();
 
-    useEffect(() => {
-        fetchTournaments();
-    }, []);
-
-    const fetchTournaments = async () => {
+    const fetchTournaments = useCallback(async () => {
         try {
             const { data, error } = await supabase
                 .from('tournaments')
                 .select('*')
                 .order('created_at', { ascending: false });
 
-            if (error) throw error;
-            setTournaments(data || []);
+            if (error) {
+                console.error('Error fetching tournaments:', error);
+                // If table doesn't exist or other error, set empty array
+                setTournaments([]);
+            } else {
+                setTournaments(data || []);
+            }
         } catch (error) {
             console.error('Error fetching tournaments:', error);
+            setTournaments([]);
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [supabase]);
+
+    useEffect(() => {
+        fetchTournaments();
+    }, [fetchTournaments]);
 
     const handleSportSelect = (sportId: string) => {
         setSelectedSport(sportId);
@@ -81,7 +87,7 @@ export default function TournamentsPage() {
                 <div className="flex items-center justify-between mb-6">
                     <h1 className="text-2xl font-semibold text-gray-900">Tournaments</h1>
                     <button
-                        onClick={() => setSelectedSport('')}
+                        onClick={() => setShowCreateForm(true)}
                         className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                     >
                         Create Tournament

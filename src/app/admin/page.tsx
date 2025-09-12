@@ -36,7 +36,7 @@ export default function AdminPage() {
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      
+
       if (!user) {
         setResult('No authenticated user found. Please log in first.');
         return;
@@ -56,10 +56,10 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin - Fix User Profiles</h1>
-        
+
         <div className="bg-white p-6 rounded-lg shadow-sm border">
           <h2 className="text-lg font-semibold mb-4">Fix User Profile Role</h2>
-          
+
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -96,7 +96,7 @@ export default function AdminPage() {
               >
                 {loading ? 'Fixing...' : 'Fix Profile'}
               </button>
-              
+
               <button
                 onClick={handleFixCurrentUser}
                 disabled={loading}
@@ -107,9 +107,8 @@ export default function AdminPage() {
             </div>
 
             {result && (
-              <div className={`p-3 rounded-lg ${
-                result.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
-              }`}>
+              <div className={`p-3 rounded-lg ${result.includes('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                }`}>
                 {result}
               </div>
             )}
@@ -119,8 +118,8 @@ export default function AdminPage() {
         <div className="mt-8 bg-white p-6 rounded-lg shadow-sm border">
           <h2 className="text-lg font-semibold mb-4">Instructions</h2>
           <div className="text-sm text-gray-600 space-y-2">
-            <p>1. <strong>For Current User:</strong> Click "Fix Current User" to set the role for the currently logged-in user.</p>
-            <p>2. <strong>For Specific User:</strong> Enter a user ID and click "Fix Profile".</p>
+            <p>1. <strong>For Current User:</strong> Click &quot;Fix Current User&quot; to set the role for the currently logged-in user.</p>
+            <p>2. <strong>For Specific User:</strong> Enter a user ID and click &quot;Fix Profile&quot;.</p>
             <p>3. <strong>After fixing:</strong> Log out and log back in to see the changes.</p>
             <p>4. <strong>Owner role:</strong> Will redirect to /owner dashboard</p>
             <p>5. <strong>Customer role:</strong> Will redirect to /dashboard</p>

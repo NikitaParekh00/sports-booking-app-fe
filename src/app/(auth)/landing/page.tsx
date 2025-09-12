@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 export default function LandingPage() {
     const router = useRouter();
-    const [loading, setLoading] = useState(false);
+    const [loading] = useState(false);
 
     const handleSignup = () => {
         router.push('/signup');
