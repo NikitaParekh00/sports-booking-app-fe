@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabaseClient';
 import {
   getOwnerTimeSlots,
   getOwnerCourts,
@@ -9,7 +10,6 @@ import {
   updateTimeSlotAvailability,
   deleteTimeSlot,
   getOwnerStats,
-  getCurrentUserProfile,
   type TimeSlot,
   type Court,
   type OwnerStats
@@ -17,6 +17,7 @@ import {
 
 export default function OwnerDashboard() {
   const router = useRouter();
+  const supabase = createClient();
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [stats, setStats] = useState<OwnerStats>({
@@ -32,20 +33,31 @@ export default function OwnerDashboard() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [price, setPrice] = useState('');
-  const [user, setUser] = useState<{ id: string; email?: string } | null>(null);
-
-  // Load data on component mount
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  const [user, setUser] = useState<{ user_id: string; full_name?: string; email?: string; role?: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
 
-      // Check if user is authenticated and is an owner
-      const profile = await getCurrentUserProfile();
-      if (!profile) {
+      // For development: Get user from localStorage
+      const storedUser = localStorage.getItem('sf:user');
+
+      if (!storedUser) {
+        router.push('/login');
+        return;
+      }
+
+      const userData = JSON.parse(storedUser);
+
+      // Check if user is an owner by looking up their profile in the database
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userData.user_id)
+        .single();
+
+      if (profileError || !profile) {
+        alert('User profile not found. Please sign up again.');
         router.push('/login');
         return;
       }
@@ -74,7 +86,12 @@ export default function OwnerDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, supabase]);
+
+  // Load data on component mount
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleAddSlot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -373,8 +390,8 @@ export default function OwnerDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${slot.is_available
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
                         }`}>
                         {slot.is_available ? 'Available' : 'Booked'}
                       </span>
@@ -384,8 +401,8 @@ export default function OwnerDashboard() {
                         <button
                           onClick={() => handleToggleAvailability(slot.id)}
                           className={`${slot.is_available
-                              ? 'text-red-600 hover:text-red-900'
-                              : 'text-green-600 hover:text-green-900'
+                            ? 'text-red-600 hover:text-red-900'
+                            : 'text-green-600 hover:text-green-900'
                             }`}
                         >
                           {slot.is_available ? 'Mark Booked' : 'Mark Available'}
