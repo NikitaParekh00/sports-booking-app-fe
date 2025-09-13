@@ -268,8 +268,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
                     {/* Date Header */}
                     <div
                       className={`w-full h-12 border-b border-gray-200 flex flex-col items-center justify-center text-xs ${isSelected
-                          ? 'bg-cyan-100 text-cyan-700'
-                          : 'bg-gray-100 text-gray-700'
+                        ? 'bg-cyan-100 text-cyan-700'
+                        : 'bg-gray-100 text-gray-700'
                         }`}
                     >
                       <span className="font-medium">{formatted.day}</span>
@@ -289,10 +289,10 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
                           onClick={() => isAvailable && handleTimeSlotSelect(slot.time, date)}
                           disabled={!isAvailable}
                           className={`w-full h-12 border-b border-gray-200 flex items-center justify-center text-xs transition-colors ${isSelected
-                              ? 'bg-cyan-100 text-cyan-700 border-cyan-200'
-                              : isAvailable
-                                ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
-                                : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            ? 'bg-cyan-100 text-cyan-700 border-cyan-200'
+                            : isAvailable
+                              ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
+                              : 'bg-gray-50 text-gray-400 cursor-not-allowed'
                             }`}
                         >
                           {isAvailable && price > 0 && (
@@ -349,10 +349,10 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
             </svg>
             <span className="text-xs text-gray-400">Community</span>
           </div>
-          <div className="flex flex-col items-center">
+          <a href="/profile" className="flex flex-col items-center">
             <span className="text-red-600 font-bold text-xs mb-1">SIMPLIFIT</span>
             <span className="text-xs text-gray-400">Profile</span>
-          </div>
+          </a>
         </div>
       </div>
     </div>

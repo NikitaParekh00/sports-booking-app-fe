@@ -52,25 +52,12 @@ function VerifyOtpContent() {
             // For development: Skip actual OTP verification
             // In production, you would use: supabase.auth.verifyOtp({ phone, token: otp })
 
-            // Find user in profiles table (try multiple phone formats)
-            let { data: userData, error: userError } = await supabase
+            // Find user in profiles table (standard format: +91-XXXXXXXXXX)
+            const { data: userData, error: userError } = await supabase
                 .from('profiles')
                 .select('user_id, full_name')
                 .eq('phone', phone)
                 .single();
-
-            // If not found, try with clean number (remove +91 prefix)
-            if (userError || !userData) {
-                const cleanPhone = phone.replace(/^\+91/, '').replace(/^\+91-/, '');
-                const { data: userDataClean, error: userErrorClean } = await supabase
-                    .from('profiles')
-                    .select('user_id, full_name')
-                    .eq('phone', cleanPhone)
-                    .single();
-
-                userData = userDataClean;
-                userError = userErrorClean;
-            }
 
             if (userError || !userData) {
                 alert('User not found. Please try signing up again.');

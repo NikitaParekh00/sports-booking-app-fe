@@ -15,7 +15,7 @@ interface LocationInputProps {
 export default function LocationInput({ onLocationSet }: LocationInputProps) {
   const [manualLocation, setManualLocation] = useState("");
   const [error, setError] = useState("");
-  const [searchResults, setSearchResults] = useState<Array<{lat: number, lng: number, address: string, display_name: string}>>([]);
+  const [searchResults, setSearchResults] = useState<Array<{ lat: number, lng: number, address: string, display_name: string }>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -60,39 +60,41 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
-        
+
         try {
           // Try to get address from coordinates using Nominatim
           const response = await fetch(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`
           );
-          
+
           if (response.ok) {
             const data = await response.json();
             const address = data.display_name || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
-            
+
             onLocationSet({
               lat: latitude,
               lng: longitude,
               address: address
-            }, "Current Location");
+            }, address);
           } else {
             // Fallback to coordinates if reverse geocoding fails
+            const fallbackAddress = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
             onLocationSet({
               lat: latitude,
               lng: longitude,
-              address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-            }, "Current Location");
+              address: fallbackAddress
+            }, fallbackAddress);
           }
         } catch {
           // Fallback to coordinates if geocoding fails
+          const fallbackAddress = `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
           onLocationSet({
             lat: latitude,
             lng: longitude,
-            address: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
-          }, "Current Location");
+            address: fallbackAddress
+          }, fallbackAddress);
         }
-        
+
         setIsGettingLocation(false);
       },
       () => {
@@ -118,7 +120,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
         const response = await fetch(
           `https://api.opencagedata.com/geocode/v1/json?q=${encodeURIComponent(query)}&key=${process.env.NEXT_PUBLIC_OPENCAGE_API_KEY}&limit=5`
         );
-        
+
         if (response.ok) {
           const data = await response.json();
           if (data.results && data.results.length > 0) {
@@ -140,7 +142,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1&countrycodes=in`
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data && data.length > 0) {
@@ -162,11 +164,11 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
       setSearchResults([]);
       setShowResults(false);
     }
-    
+
     setIsSearching(false);
   };
 
-  const handleResultSelect = (result: {lat: number, lng: number, address: string, display_name: string}) => {
+  const handleResultSelect = (result: { lat: number, lng: number, address: string, display_name: string }) => {
     onLocationSet({
       lat: result.lat,
       lng: result.lng,
@@ -199,7 +201,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
     if (!manualLocation.trim()) return;
 
     const locationKey = manualLocation.toLowerCase().trim();
-    
+
     // Check if it's a predefined Mumbai location first
     if (mumbaiLocations[locationKey]) {
       handleLocationSelect(locationKey);
@@ -287,12 +289,12 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
               value={manualLocation}
               onChange={(e) => {
                 setManualLocation(e.target.value);
-                
+
                 // Clear previous timeout
                 if (searchTimeoutRef.current) {
                   clearTimeout(searchTimeoutRef.current);
                 }
-                
+
                 // Set new timeout for search
                 searchTimeoutRef.current = setTimeout(() => {
                   handleSearchLocation(e.target.value);
@@ -306,7 +308,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
               placeholder="Enter any address, landmark, or area (e.g., 'Siddhivinayak Temple' or 'Phoenix Mills, Lower Parel')"
               className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
-            
+
             {/* Search Results Dropdown */}
             {showResults && searchResults.length > 0 && (
               <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
@@ -322,7 +324,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
                 ))}
               </div>
             )}
-            
+
             {/* Loading indicator */}
             {isSearching && (
               <div className="absolute right-3 top-2.5">
@@ -330,7 +332,7 @@ export default function LocationInput({ onLocationSet }: LocationInputProps) {
               </div>
             )}
           </div>
-          
+
           <button
             type="submit"
             disabled={!manualLocation.trim()}

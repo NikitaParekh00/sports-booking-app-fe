@@ -31,18 +31,20 @@ export default function MyGamesPage() {
 
     const fetchMyGames = useCallback(async () => {
         try {
-            // Get current user
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
-            if (authError || !user) {
+            // For development: Get user from localStorage
+            const storedUser = localStorage.getItem('sf:user');
+            if (!storedUser) {
                 setError('Please sign in to view your games');
                 return;
             }
+
+            const userData = JSON.parse(storedUser);
 
             // Fetch matches created by the user
             const { data: matchesData, error: matchesError } = await supabase
                 .from('matches')
                 .select('*')
-                .eq('created_by', user.id)
+                .eq('created_by', userData.user_id)
                 .order('created_at', { ascending: false });
 
             if (matchesError) throw matchesError;

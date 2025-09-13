@@ -43,39 +43,27 @@ export default function SignupPage() {
 
             // Clean mobile number (remove any non-digits)
             const cleanMobileNumber = formData.mobileNumber.replace(/\D/g, '');
-            const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Use dash format to match database
+            const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
 
             // For development: Create user directly in profiles table
             // In production, you would use: supabase.auth.signUp({ phone: formattedMobileNumber })
 
-            // Check if user already exists (try both formats)
-            let { data: existingUser, error: checkError } = await supabase
+            // Check if user already exists
+            const { data: existingUser, error: checkError } = await supabase
                 .from('profiles')
                 .select('user_id')
                 .eq('phone', formattedMobileNumber)
                 .single();
-
-            // If not found, try without dash format
-            if (checkError || !existingUser) {
-                const { data: existingUserNoDash, error: checkErrorNoDash } = await supabase
-                    .from('profiles')
-                    .select('user_id')
-                    .eq('phone', `+91${cleanMobileNumber}`)
-                    .single();
-
-                existingUser = existingUserNoDash;
-                checkError = checkErrorNoDash;
-            }
 
             if (existingUser) {
                 alert('An account with this mobile number already exists. Please login instead.');
                 return;
             }
 
-            // Create a temporary user ID (in production, this would come from auth.signUp)
+            // For development: Create a temporary user ID
             const tempUserId = crypto.randomUUID();
 
-            // Store user data in profiles table
+            // Store user data in profiles table (foreign key constraint should be removed for development)
             const { error: profileError } = await supabase
                 .from('profiles')
                 .insert({
@@ -83,7 +71,8 @@ export default function SignupPage() {
                     full_name: formData.fullName,
                     phone: formattedMobileNumber,
                     email: formData.email || null,
-                    referral_code: formData.referralCode || null
+                    referral_code: formData.referralCode || null,
+                    role: 'player'
                 });
 
             if (profileError) {

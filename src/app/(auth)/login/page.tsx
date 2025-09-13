@@ -24,42 +24,17 @@ export default function LoginPage() {
 
 			// Clean mobile number (remove any non-digits)
 			const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
-			const formattedMobileNumber = `+91${cleanMobileNumber}`;
-			const formattedMobileNumberWithDash = `+91-${cleanMobileNumber}`;
+			const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
 
 			// For development: Skip actual OTP sending and go directly to verification
 			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
 
-			// Check if user exists in profiles table (try multiple formats)
-			let { data: profileData, error: profileError } = await supabase
+			// Check if user exists in profiles table
+			const { data: profileData, error: profileError } = await supabase
 				.from('profiles')
 				.select('user_id, full_name')
 				.eq('phone', formattedMobileNumber)
 				.single();
-
-			// If not found, try with dash format
-			if (profileError || !profileData) {
-				const { data: profileDataDash, error: profileErrorDash } = await supabase
-					.from('profiles')
-					.select('user_id, full_name')
-					.eq('phone', formattedMobileNumberWithDash)
-					.single();
-
-				profileData = profileDataDash;
-				profileError = profileErrorDash;
-			}
-
-			// If still not found, try with just the clean number (no +91 prefix)
-			if (profileError || !profileData) {
-				const { data: profileDataClean, error: profileErrorClean } = await supabase
-					.from('profiles')
-					.select('user_id, full_name')
-					.eq('phone', cleanMobileNumber)
-					.single();
-
-				profileData = profileDataClean;
-				profileError = profileErrorClean;
-			}
 
 			if (profileError || !profileData) {
 				alert('No account found with this mobile number. Redirecting to signup...');

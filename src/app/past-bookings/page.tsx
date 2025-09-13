@@ -38,29 +38,51 @@ export default function PastBookingsPage() {
 
             const userData = JSON.parse(storedUser);
 
-            // Fetch bookings with facility information
+            // Fetch bookings first
             const { data: bookingsData, error: bookingsError } = await supabase
                 .from('bookings')
-                .select(`
-          *,
-          facilities:facility_id (
-            name,
-            address,
-            sport
-          )
-        `)
+                .select('*')
                 .eq('user_id', userData.user_id)
                 .order('booking_date', { ascending: false });
 
             if (bookingsError) throw bookingsError;
 
+            // If no bookings, set empty array
+            if (!bookingsData || bookingsData.length === 0) {
+                setBookings([]);
+                return;
+            }
+
+            // Fetch facility information for each booking
+            const facilityIds = [...new Set(bookingsData.map(booking => booking.facility_id))];
+            const { data: facilitiesData, error: facilitiesError } = await supabase
+                .from('facilities')
+                .select('id, name, address, sport')
+                .in('id', facilityIds);
+
+            if (facilitiesError) {
+                console.error('Error fetching facilities:', facilitiesError);
+                // Continue with bookings even if facilities fail
+            }
+
+            // Create a map of facility data
+            const facilitiesMap = new Map();
+            if (facilitiesData) {
+                facilitiesData.forEach(facility => {
+                    facilitiesMap.set(facility.id, facility);
+                });
+            }
+
             // Transform the data to include facility information
-            const transformedBookings = (bookingsData || []).map(booking => ({
-                ...booking,
-                facility_name: booking.facilities?.name || 'Unknown Facility',
-                facility_address: booking.facilities?.address || 'Unknown Address',
-                sport: booking.facilities?.sport || 'Unknown Sport'
-            }));
+            const transformedBookings = bookingsData.map(booking => {
+                const facility = facilitiesMap.get(booking.facility_id);
+                return {
+                    ...booking,
+                    facility_name: facility?.name || 'Unknown Facility',
+                    facility_address: facility?.address || 'Unknown Address',
+                    sport: facility?.sport || 'Unknown Sport'
+                };
+            });
 
             setBookings(transformedBookings);
         } catch (error) {
