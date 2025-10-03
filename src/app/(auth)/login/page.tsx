@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
+import PhoneInput from '@/components/PhoneInput';
 
 export default function LoginPage() {
 	const router = useRouter();
 	const supabase = createClient();
 	const [loading, setLoading] = useState(false);
 	const [mobileNumber, setMobileNumber] = useState('');
+	const [isPhoneValid, setIsPhoneValid] = useState(false);
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -16,8 +18,7 @@ export default function LoginPage() {
 
 		try {
 			// Validate mobile number format
-			const mobileRegex = /^[6-9]\d{9}$/;
-			if (!mobileRegex.test(mobileNumber.replace(/\D/g, ''))) {
+			if (!isPhoneValid) {
 				alert('Please enter a valid 10-digit mobile number');
 				return;
 			}
@@ -74,20 +75,18 @@ export default function LoginPage() {
 			<form onSubmit={handleLogin} className="px-4 py-6 space-y-6">
 				{/* Mobile Number */}
 				<div>
-					<input
-						type="tel"
+					<PhoneInput
 						value={mobileNumber}
-						onChange={(e) => setMobileNumber(e.target.value)}
-						placeholder="Mobile Number"
-						className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-						required
+						onChange={setMobileNumber}
+						placeholder="9876543210"
+						onValidationChange={setIsPhoneValid}
 					/>
 				</div>
 
 				{/* Login Button */}
 				<button
 					type="submit"
-					disabled={loading}
+					disabled={loading || !isPhoneValid}
 					className="w-full bg-gradient-to-r from-teal-500 to-green-500 text-white font-bold py-4 px-6 rounded-lg text-lg hover:from-teal-600 hover:to-green-600 transition-all duration-200 disabled:opacity-50"
 				>
 					{loading ? 'Sending OTP...' : 'LOGIN'}

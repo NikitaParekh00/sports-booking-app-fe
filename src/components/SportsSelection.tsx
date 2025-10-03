@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { coachingItemsWithUrls } from '@/data/coachingData';
+import PointsDisplay from './PointsDisplay';
 
 interface SportsSelectionProps {
   selectedLocation?: string;
   onLocationChange?: (location: string) => void;
   onRequestLocationChange?: () => void;
   userName?: string;
+  userId?: string;
 }
 
 const sports = [
@@ -155,7 +157,7 @@ const sports = [
   }
 ];
 
-export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange, onRequestLocationChange, userName }: SportsSelectionProps) {
+export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange, onRequestLocationChange, userName, userId }: SportsSelectionProps) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showAllSports, setShowAllSports] = useState(false);
 
@@ -230,8 +232,11 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
               </div>
             )}
           </div>
-          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
-            <span className="text-gray-600 font-semibold text-sm">{(userName || 'P').charAt(0)}</span>
+          <div className="flex items-center gap-3">
+            {userId && <PointsDisplay userId={userId} />}
+            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+              <span className="text-gray-600 font-semibold text-sm">{(userName || 'P').charAt(0)}</span>
+            </div>
           </div>
         </div>
 

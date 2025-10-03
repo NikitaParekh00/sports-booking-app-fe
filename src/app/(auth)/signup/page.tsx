@@ -3,11 +3,13 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
+import PhoneInput from '@/components/PhoneInput';
 
 export default function SignupPage() {
     const router = useRouter();
     const supabase = createClient();
     const [loading, setLoading] = useState(false);
+    const [isPhoneValid, setIsPhoneValid] = useState(false);
     const [formData, setFormData] = useState({
         fullName: '',
         mobileNumber: '',
@@ -23,6 +25,13 @@ export default function SignupPage() {
         }));
     };
 
+    const handlePhoneChange = (phone: string) => {
+        setFormData(prev => ({
+            ...prev,
+            mobileNumber: phone
+        }));
+    };
+
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -34,9 +43,8 @@ export default function SignupPage() {
                 return;
             }
 
-            // Validate mobile number format (basic validation)
-            const mobileRegex = /^[6-9]\d{9}$/;
-            if (!mobileRegex.test(formData.mobileNumber.replace(/\D/g, ''))) {
+            // Validate mobile number format
+            if (!isPhoneValid) {
                 alert('Please enter a valid 10-digit mobile number');
                 return;
             }
@@ -63,7 +71,7 @@ export default function SignupPage() {
             // For development: Create a temporary user ID
             const tempUserId = crypto.randomUUID();
 
-            // Store user data in profiles table (foreign key constraint should be removed for development)
+            // Store user data in profiles table with points
             const { error: profileError } = await supabase
                 .from('profiles')
                 .insert({
@@ -72,7 +80,9 @@ export default function SignupPage() {
                     phone: formattedMobileNumber,
                     email: formData.email || null,
                     referral_code: formData.referralCode || null,
-                    role: 'player'
+                    role: 'player',
+                    points: 10, // Welcome bonus
+                    points_earned: 10
                 });
 
             if (profileError) {
@@ -126,14 +136,11 @@ export default function SignupPage() {
 
                 {/* Mobile Number */}
                 <div>
-                    <input
-                        type="tel"
-                        name="mobileNumber"
+                    <PhoneInput
                         value={formData.mobileNumber}
-                        onChange={handleInputChange}
-                        placeholder="Mobile Number"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                        required
+                        onChange={handlePhoneChange}
+                        placeholder="9876543210"
+                        onValidationChange={setIsPhoneValid}
                     />
                 </div>
 
@@ -165,7 +172,7 @@ export default function SignupPage() {
                 {/* Signup Button */}
                 <button
                     type="submit"
-                    disabled={loading}
+                    disabled={loading || !isPhoneValid}
                     className="w-full bg-red-600 text-white font-bold py-4 px-6 rounded-lg text-lg hover:bg-red-700 transition-all duration-200 disabled:opacity-50"
                 >
                     {loading ? 'Creating Account...' : 'SIGNUP'}

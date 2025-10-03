@@ -6,6 +6,7 @@ import LocationInput from "@/components/LocationInput";
 import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
+import PointsDisplay from "@/components/PointsDisplay";
 
 interface User {
   id: string;
@@ -121,6 +122,7 @@ export default function Dashboard() {
           onLocationChange={handleLocationChange}
           onRequestLocationChange={() => setIsLocationSheetOpen(true)}
           userName={user?.full_name}
+          userId={user?.id}
         />
       )}
 

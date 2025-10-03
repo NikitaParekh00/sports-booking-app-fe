@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { createClient } from "@/lib/supabaseClient";
+import { opponentManager } from "@/lib/opponentManagement";
+import PhoneInput from "@/components/PhoneInput";
 
 const sports = [
     { id: "cricket", name: "Cricket", icon: "🏏" },
@@ -22,7 +24,19 @@ export default function FriendlyScoringPage() {
     const [opponentPhone, setOpponentPhone] = useState("");
     const [opponentName, setOpponentName] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isCheckingOpponent, setIsCheckingOpponent] = useState(false);
+    const [checkTimeout, setCheckTimeout] = useState<NodeJS.Timeout | null>(null);
+    const [opponentStatus, setOpponentStatus] = useState<'unknown' | 'found' | 'not-found' | 'owner-found'>('unknown');
     const supabase = createClient();
+
+    // Cleanup timeout on component unmount
+    useEffect(() => {
+        return () => {
+            if (checkTimeout) {
+                clearTimeout(checkTimeout);
+            }
+        };
+    }, [checkTimeout]);
 
     const handleSportSelect = (sportId: string) => {
         setSelectedSport(sportId);
@@ -33,26 +47,122 @@ export default function FriendlyScoringPage() {
         setMatchType(type);
     };
 
+    const handleOpponentPhoneChange = useCallback((phone: string) => {
+        setOpponentPhone(phone);
+
+        // Clear any existing timeout
+        if (checkTimeout) {
+            clearTimeout(checkTimeout);
+        }
+
+        // Validate phone number format
+        const phoneValidation = opponentManager.validatePhoneNumber(phone);
+        if (!phoneValidation.isValid) {
+            setOpponentName(""); // Clear name if phone is invalid
+            setOpponentStatus('unknown');
+            return;
+        }
+
+        // Debounce the API call - wait 500ms after user stops typing
+        const timeout = setTimeout(async () => {
+            setIsCheckingOpponent(true);
+            try {
+                const cleanPhone = phone.replace(/\D/g, '');
+                const formattedPhone = `+91-${cleanPhone}`;
+
+                // Check if user exists as a PLAYER specifically
+                const { data: playerOpponent } = await supabase
+                    .from('profiles')
+                    .select('full_name, role')
+                    .eq('phone', formattedPhone)
+                    .eq('role', 'player')
+                    .single();
+
+                if (playerOpponent) {
+                    setOpponentName(playerOpponent.full_name);
+                    setOpponentStatus('found');
+                } else {
+                    // Check if user exists with other roles
+                    const { data: otherRoleUser } = await supabase
+                        .from('profiles')
+                        .select('full_name, role')
+                        .eq('phone', formattedPhone)
+                        .neq('role', 'player')
+                        .single();
+
+                    if (otherRoleUser) {
+                        setOpponentName(otherRoleUser.full_name);
+                        setOpponentStatus('owner-found'); // Show that they exist but need player account
+                    } else {
+                        setOpponentName(""); // Clear name if opponent doesn't exist
+                        setOpponentStatus('not-found');
+                    }
+                }
+            } catch (error) {
+                console.error('Error checking opponent:', error);
+                setOpponentName(""); // Clear name on error
+                setOpponentStatus('unknown');
+            } finally {
+                setIsCheckingOpponent(false);
+            }
+        }, 500);
+
+        setCheckTimeout(timeout);
+    }, [checkTimeout, supabase]);
+
     const handleStartMatch = async () => {
         if (!selectedSport || !opponentPhone || (selectedSport === 'badminton' && !matchType)) return;
 
         setIsLoading(true);
         try {
-            // Check if user is authenticated
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-            if (authError || !user) {
-                // User not authenticated - redirect to login
+            // Check if user is authenticated using localStorage (same as other pages)
+            const storedUser = localStorage.getItem('sf:user');
+            if (!storedUser) {
                 alert('Please sign in to create matches. Redirecting to login...');
                 window.location.href = '/login';
                 return;
             }
 
+            const userData = JSON.parse(storedUser);
+
+            // Verify user exists in profiles table (they should already exist)
+            const { data: existingUser, error: userError } = await supabase
+                .from('profiles')
+                .select('user_id, full_name, phone, role')
+                .eq('user_id', userData.user_id)
+                .single();
+
+            if (userError || !existingUser) {
+                console.error('User not found in profiles table:', userError);
+                alert('User not found. Please sign in again.');
+                setIsLoading(false);
+                return;
+            }
+
+            // Business Logic Validation
+            // 1. Check if user is trying to create match with themselves
+            if (opponentManager.isSelfMatch(opponentPhone, userData.phone || '')) {
+                alert('You cannot create a match with yourself. Please enter a different opponent\'s phone number.');
+                setIsLoading(false);
+                return;
+            }
+
+            // 2. Validate phone number format
+            const phoneValidation = opponentManager.validatePhoneNumber(opponentPhone);
+            if (!phoneValidation.isValid) {
+                alert(phoneValidation.error);
+                setIsLoading(false);
+                return;
+            }
+
+            // 3. Find or create opponent
+            const opponentInfo = await opponentManager.findOrCreateOpponent(opponentPhone, opponentName);
+
             // Create match
             const { data: match, error: matchError } = await supabase
                 .from('matches')
                 .insert({
-                    created_by: user.id,
+                    created_by: userData.user_id,
                     sport: selectedSport,
                     match_type: 'friendly',
                     status: 'upcoming',
@@ -68,8 +178,8 @@ export default function FriendlyScoringPage() {
                 .from('match_players')
                 .insert({
                     match_id: match.id,
-                    user_id: user.id,
-                    player_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Player 1',
+                    user_id: userData.user_id,
+                    player_name: userData.full_name || userData.email?.split('@')[0] || 'Player 1',
                     team: 'player_1',
                     is_captain: false, // Remove captain concept for badminton
                 });
@@ -79,11 +189,34 @@ export default function FriendlyScoringPage() {
                 .from('match_players')
                 .insert({
                     match_id: match.id,
-                    player_name: opponentName || 'Opponent',
-                    phone: opponentPhone,
+                    user_id: opponentInfo.user_id, // Will be null if opponent doesn't exist in auth.users
+                    player_name: opponentInfo.player_name,
+                    phone: opponentInfo.phone,
                     team: 'player_2',
                     is_captain: false,
                 });
+
+            // 3. Check for duplicate matches (optional - prevent spam)
+            const { data: existingMatches } = await supabase
+                .from('matches')
+                .select('id')
+                .eq('created_by', userData.user_id)
+                .eq('sport', selectedSport)
+                .eq('status', 'upcoming')
+                .gte('created_at', new Date(Date.now() - 5 * 60 * 1000).toISOString()); // Last 5 minutes
+
+            if (existingMatches && existingMatches.length > 3) {
+                alert('You have created too many matches recently. Please wait a few minutes before creating another match.');
+                setIsLoading(false);
+                return;
+            }
+
+            // Show success message
+            if (opponentInfo.isNewUser) {
+                alert(`Match created successfully! A new account has been created for ${opponentInfo.player_name} (${opponentInfo.phone}). They can now join the match.`);
+            } else {
+                alert(`Match created successfully! ${opponentInfo.player_name} has been invited to the match.`);
+            }
 
             // Redirect to scoring page
             window.location.href = `/scoring/match/${match.id}`;
@@ -199,26 +332,54 @@ export default function FriendlyScoringPage() {
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Opponent&apos;s Phone Number
                             </label>
-                            <input
-                                type="tel"
+                            <PhoneInput
                                 value={opponentPhone}
-                                onChange={(e) => setOpponentPhone(e.target.value)}
-                                placeholder="+91 9876543210"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={handleOpponentPhoneChange}
+                                placeholder="9876543210"
                             />
+                            {isCheckingOpponent && (
+                                <div className="flex items-center gap-2 mt-2">
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                                    <span className="text-xs text-blue-600">Checking opponent...</span>
+                                </div>
+                            )}
                         </div>
 
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Opponent&apos;s Name (Optional)
                             </label>
-                            <input
-                                type="text"
-                                value={opponentName}
-                                onChange={(e) => setOpponentName(e.target.value)}
-                                placeholder="Enter name if known"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            />
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={opponentName}
+                                    onChange={(e) => setOpponentName(e.target.value)}
+                                    placeholder="Enter name if known"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                {opponentName && !isCheckingOpponent && (
+                                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </div>
+                                )}
+                            </div>
+                            {!isCheckingOpponent && opponentStatus === 'found' && (
+                                <p className="text-xs text-green-600 mt-1">
+                                    ✓ User found
+                                </p>
+                            )}
+                            {!isCheckingOpponent && opponentStatus === 'owner-found' && (
+                                <p className="text-xs text-orange-600 mt-1">
+                                    ℹ️ New user - account will be created automatically
+                                </p>
+                            )}
+                            {!isCheckingOpponent && opponentStatus === 'not-found' && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                    ℹ️ New user - account will be created automatically
+                                </p>
+                            )}
                         </div>
 
                         <button
