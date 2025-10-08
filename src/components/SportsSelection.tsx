@@ -9,7 +9,7 @@ interface SportsSelectionProps {
   onLocationChange?: (location: string) => void;
   onRequestLocationChange?: () => void;
   userName?: string;
-  userId?: string;
+  userId?: string | null;
 }
 
 const sports = [

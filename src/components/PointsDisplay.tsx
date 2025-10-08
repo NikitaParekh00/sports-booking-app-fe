@@ -19,17 +19,32 @@ export default function PointsDisplay({ userId, className = "" }: PointsDisplayP
 
     const fetchUserPoints = async () => {
         try {
+            // Check if userId is valid (not 'anonymous' or empty)
+            if (!userId || userId === 'anonymous' || userId === '') {
+                console.warn('Invalid user ID, using default points');
+                setPoints(0);
+                setLoading(false);
+                return;
+            }
+
+            // Check if points columns exist first
             const { data, error } = await supabase
                 .from('profiles')
                 .select('points, points_earned, points_spent')
                 .eq('user_id', userId)
                 .single();
 
-            if (error) throw error;
+            if (error) {
+                // If columns don't exist, set default points
+                console.warn('Points columns not found, using default value');
+                setPoints(0);
+                return;
+            }
 
             setPoints(data?.points || 0);
         } catch (error) {
             console.error('Error fetching points:', error);
+            setPoints(0);
         } finally {
             setLoading(false);
         }

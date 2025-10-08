@@ -38,10 +38,12 @@ export default function Dashboard() {
     async function getUser() {
       // For development: Get user from localStorage (set during OTP verification)
       const storedUser = localStorage.getItem('sf:user');
+      console.log('Stored user from localStorage:', storedUser);
 
       if (storedUser) {
         try {
           const userData = JSON.parse(storedUser);
+          console.log('Parsed user data:', userData);
           setUser({
             id: userData.user_id,
             full_name: userData.full_name,
@@ -49,15 +51,13 @@ export default function Dashboard() {
           });
         } catch (error) {
           console.error('Error parsing stored user:', error);
-          setUser({
-            id: 'anonymous',
-            full_name: 'Guest',
-            email: ''
-          });
+          setUser(null);
         }
       } else {
+        console.log('No stored user found, trying Supabase auth...');
         // Fallback: Try to get from Supabase auth (for production)
         const { data: { user: authUser } } = await supabase.auth.getUser();
+        console.log('Supabase auth user:', authUser);
 
         if (authUser) {
           // Get user profile
@@ -67,18 +67,16 @@ export default function Dashboard() {
             .eq('user_id', authUser.id)
             .single();
 
+          console.log('User profile from database:', profile);
           setUser({
             id: authUser.id,
             full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
             email: authUser.email || ''
           });
         } else {
-          // Set a default user for anonymous users
-          setUser({
-            id: 'anonymous',
-            full_name: 'Guest',
-            email: ''
-          });
+          console.log('No authenticated user found');
+          // No user found
+          setUser(null);
         }
       }
       setLoading(false);
@@ -122,7 +120,7 @@ export default function Dashboard() {
           onLocationChange={handleLocationChange}
           onRequestLocationChange={() => setIsLocationSheetOpen(true)}
           userName={user?.full_name}
-          userId={user?.id}
+          userId={user?.id || null}
         />
       )}
 
