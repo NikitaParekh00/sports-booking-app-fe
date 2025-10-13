@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = ".netlify/build"
+
+[plugins]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+  NEXT_PUBLIC_SUPABASE_URL = "${NEXT_PUBLIC_SUPABASE_URL}"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY = "${NEXT_PUBLIC_SUPABASE_ANON_KEY}"
+  NEXT_PUBLIC_DEV_BYPASS_OWNER = "${NEXT_PUBLIC_DEV_BYPASS_OWNER}"
