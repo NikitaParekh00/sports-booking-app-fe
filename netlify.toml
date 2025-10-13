@@ -1,8 +1,9 @@
 [build]
   command = "npm run build"
-  publish = ".netlify/build"
+  # Optional: let the Next.js plugin manage output. If you must set it in the UI, use ".netlify/build".
+  # publish = ".netlify/build"
 
-[plugins]
+[[plugins]]
   package = "@netlify/plugin-nextjs"
 
 [build.environment]
