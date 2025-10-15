@@ -153,13 +153,6 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
             }}
           />
 
-          {/* H Exclusive Tag */}
-          <div className="absolute bottom-4 left-4 bg-yellow-400 px-3 py-1 rounded flex items-center gap-2">
-            <div className="w-6 h-6 bg-blue-900 rounded flex items-center justify-center">
-              <span className="text-white font-bold text-xs">H</span>
-            </div>
-            <span className="text-blue-900 font-semibold text-sm">H Exclusive</span>
-          </div>
 
           {/* Image Counter */}
           <div className="absolute bottom-4 right-4 bg-black/50 text-white px-2 py-1 rounded text-sm">
