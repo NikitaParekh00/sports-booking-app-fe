@@ -174,7 +174,7 @@ export default function BookingSuccessClient({
     } catch (error) {
       console.error('❌ Unexpected error creating booking:', error);
     }
-  }, [supabase]);
+  }, [supabase, quantity, selectedDate, selectedTime, totalPrice, turfId]);
 
   const convertTo24Hour = (time12: string) => {
     const [time, period] = time12.split(' ');

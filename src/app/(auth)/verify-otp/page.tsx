@@ -12,7 +12,7 @@ function VerifyOtpContent() {
     const [loading, setLoading] = useState(false);
     const [otp, setOtp] = useState('');
     const [phone, setPhone] = useState('');
-    const [type] = useState<'signup' | 'login'>('login');
+    const [type, setType] = useState<'signup' | 'login'>('login');
     const [timeLeft, setTimeLeft] = useState(60);
     const [canResend, setCanResend] = useState(false);
 
