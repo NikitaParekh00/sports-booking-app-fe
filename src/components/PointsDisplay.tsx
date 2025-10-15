@@ -15,7 +15,7 @@ export default function PointsDisplay({ userId, className = "" }: PointsDisplayP
 
     useEffect(() => {
         fetchUserPoints();
-    }, [userId, fetchUserPoints]);
+    }, [userId]);
 
     const fetchUserPoints = useCallback(async () => {
         try {
