@@ -119,7 +119,7 @@ export default function BookingSuccessClient({
     }
 
     fetchFacilityAndCreateBooking();
-  }, [turfId, supabase, createBooking]);
+  }, [turfId, supabase]);
 
   const createBooking = useCallback(async () => {
     try {
