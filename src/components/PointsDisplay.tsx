@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabaseClient';
 
 interface PointsDisplayProps {
@@ -15,9 +15,9 @@ export default function PointsDisplay({ userId, className = "" }: PointsDisplayP
 
     useEffect(() => {
         fetchUserPoints();
-    }, [userId]);
+    }, [userId, fetchUserPoints]);
 
-    const fetchUserPoints = async () => {
+    const fetchUserPoints = useCallback(async () => {
         try {
             // Check if userId is valid (not 'anonymous' or empty)
             if (!userId || userId === 'anonymous' || userId === '') {
@@ -48,7 +48,7 @@ export default function PointsDisplay({ userId, className = "" }: PointsDisplayP
         } finally {
             setLoading(false);
         }
-    };
+    }, [userId, supabase]);
 
     if (loading) {
         return (

@@ -6,7 +6,6 @@ import LocationInput from "@/components/LocationInput";
 import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
-import PointsDisplay from "@/components/PointsDisplay";
 
 interface User {
   id: string;

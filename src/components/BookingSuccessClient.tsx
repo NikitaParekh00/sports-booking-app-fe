@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Facility {
@@ -119,9 +119,9 @@ export default function BookingSuccessClient({
     }
 
     fetchFacilityAndCreateBooking();
-  }, [turfId, supabase]);
+  }, [turfId, supabase, createBooking]);
 
-  const createBooking = async () => {
+  const createBooking = useCallback(async () => {
     try {
       console.log('🚀 Creating booking...');
 
@@ -174,7 +174,7 @@ export default function BookingSuccessClient({
     } catch (error) {
       console.error('❌ Unexpected error creating booking:', error);
     }
-  };
+  }, [supabase]);
 
   const convertTo24Hour = (time12: string) => {
     const [time, period] = time12.split(' ');

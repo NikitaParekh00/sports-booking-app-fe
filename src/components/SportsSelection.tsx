@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from 'react';
+import Image from 'next/image';
 import { coachingItemsWithUrls } from '@/data/coachingData';
 import PointsDisplay from './PointsDisplay';
 
@@ -259,7 +260,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
                 {sport.isImage ? (
-                  <img src={sport.icon} alt={sport.name} className={`w-8 h-8 object-contain ${sport.id === 'pickleball' ? 'transform rotate-4' : ''}`} />
+                  <Image src={sport.icon} alt={sport.name} width={32} height={32} className={`object-contain ${sport.id === 'pickleball' ? 'transform rotate-4' : ''}`} />
                 ) : (
                   <span>{sport.icon}</span>
                 )}
@@ -286,7 +287,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
           {coachingItemsWithUrls.map((item) => (
             <a key={item.id} href="#" className="min-w-[160px] bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="h-20 bg-gray-200">
-                <img src={item.image} className="w-full h-full object-cover" alt={item.title} />
+                <Image src={item.image} width={160} height={80} className="w-full h-full object-cover" alt={item.title} />
               </div>
               <div className="p-2">
                 <div className="text-gray-900 font-medium text-xs">{item.title}</div>

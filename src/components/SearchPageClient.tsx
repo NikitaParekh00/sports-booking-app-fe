@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { createClient } from "@/lib/supabaseClient";
 
 interface Facility {
@@ -253,15 +254,12 @@ function SearchPageContent() {
                   <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
                     <div className="flex gap-4">
                       <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
-                        <img
+                        <Image
                           src="https://images.unsplash.com/photo-1551698618-1dfe5d97d256?w=80&h=80&fit=crop&crop=center"
                           alt={facility.name}
+                          width={80}
+                          height={80}
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            target.nextElementSibling?.classList.remove('hidden');
-                          }}
                         />
                         <div className="w-full h-full bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center hidden">
                           <span className="text-white text-xs font-bold">TURF</span>

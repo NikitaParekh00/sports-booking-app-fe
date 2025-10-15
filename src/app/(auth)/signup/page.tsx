@@ -57,7 +57,7 @@ export default function SignupPage() {
             // In production, you would use: supabase.auth.signUp({ phone: formattedMobileNumber })
 
             // Check if user already exists
-            const { data: existingUser, error: checkError } = await supabase
+            const { data: existingUser } = await supabase
                 .from('profiles')
                 .select('user_id')
                 .eq('phone', formattedMobileNumber)
