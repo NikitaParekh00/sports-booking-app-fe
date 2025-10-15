@@ -1,14 +1,74 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import { fixUserProfile } from '@/lib/fixUserProfile';
 
 export default function AdminPage() {
+  const router = useRouter();
+  const supabase = createClient();
   const [userId, setUserId] = useState('');
   const [role, setRole] = useState<'owner' | 'customer'>('owner');
   const [result, setResult] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Check authentication and admin role
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        // For development: Get user from localStorage
+        const storedUser = localStorage.getItem('sf:user');
+
+        if (!storedUser) {
+          alert('Please sign in to access admin panel.');
+          router.push('/login');
+          return;
+        }
+
+        const userData = JSON.parse(storedUser);
+
+        // Check if user is an admin by looking up their profile in the database
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userData.user_id)
+          .single();
+
+        if (profileError || !profile) {
+          alert('User profile not found. Please sign up again.');
+          router.push('/login');
+          return;
+        }
+
+        if (profile.role !== 'admin') {
+          alert('Access denied. This page is for admins only.');
+          router.push('/dashboard');
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking auth:', error);
+        alert('Error checking authentication. Please try again.');
+        router.push('/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router, supabase]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading admin panel...</p>
+        </div>
+      </div>
+    );
+  }
 
   const handleFixProfile = async () => {
     if (!userId.trim()) {

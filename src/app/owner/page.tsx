@@ -34,6 +34,7 @@ export default function OwnerDashboard() {
   const [endTime, setEndTime] = useState('');
   const [price, setPrice] = useState('');
   const [user, setUser] = useState<{ user_id: string; full_name?: string; email?: string; role?: string } | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -43,6 +44,7 @@ export default function OwnerDashboard() {
       const storedUser = localStorage.getItem('sf:user');
 
       if (!storedUser) {
+        alert('Please sign in to access this page.');
         router.push('/login');
         return;
       }
@@ -62,13 +64,14 @@ export default function OwnerDashboard() {
         return;
       }
 
-      if (profile.role !== 'owner') {
-        alert('Access denied. This page is for turf owners only.');
+      if (profile.role !== 'owner' && profile.role !== 'admin') {
+        alert('Access denied. This page is for turf owners and admins only.');
         router.push('/dashboard');
         return;
       }
 
       setUser(profile);
+      setAuthChecked(true);
 
       // Load all data in parallel
       const [slotsData, courtsData, statsData] = await Promise.all([
@@ -172,12 +175,32 @@ export default function OwnerDashboard() {
     });
   };
 
-  if (loading) {
+  if (!authChecked || loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading dashboard...</p>
+          <p className="mt-4 text-gray-600">
+            {!authChecked ? 'Checking access permissions...' : 'Loading dashboard...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Additional safety check - don't render if user is not authenticated or doesn't have right role
+  if (!user || (user.role !== 'owner' && user.role !== 'admin')) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-xl font-semibold mb-4">Access Denied</div>
+          <p className="text-gray-600">You don't have permission to access this page.</p>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+          >
+            Go to Dashboard
+          </button>
         </div>
       </div>
     );

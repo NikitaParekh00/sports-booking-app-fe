@@ -16,7 +16,7 @@ const sports = [
   {
     id: "pickleball",
     name: "Pickleball",
-    icon: "/icons/pickleball.svg",
+    icon: "/icons/pickleball.png",
     isImage: true,
   },
   {
@@ -259,7 +259,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
                 {sport.isImage ? (
-                  <img src={sport.icon} alt={sport.name} className={`w-8 h-8 object-contain ${sport.id === 'pickleball' ? 'transform rotate-45' : ''}`} />
+                  <img src={sport.icon} alt={sport.name} className={`w-8 h-8 object-contain ${sport.id === 'pickleball' ? 'transform rotate-4' : ''}`} />
                 ) : (
                   <span>{sport.icon}</span>
                 )}
