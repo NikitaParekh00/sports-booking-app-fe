@@ -39,6 +39,7 @@ function SearchPageContent() {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
+  const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
   const supabase = createClient();
 
   const locations = [
@@ -62,6 +63,19 @@ function SearchPageContent() {
     setSelectedLocation(location);
     setShowLocationDropdown(false);
   };
+
+  // Fetch user data from localStorage
+  useEffect(() => {
+    const userData = localStorage.getItem('sf:user');
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Get sport and location from URL parameters
@@ -112,75 +126,53 @@ function SearchPageContent() {
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <div className="bg-gradient-to-br from-slate-900 via-gray-900 to-black px-4 py-6 relative overflow-hidden">
-        {/* Animated Background Effects */}
-        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 via-purple-500/5 to-pink-500/10"></div>
-        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-cyan-400/20 to-purple-600/20 rounded-full blur-3xl transform translate-x-16 -translate-y-16"></div>
-        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-pink-400/15 to-cyan-500/15 rounded-full blur-2xl transform -translate-x-8 translate-y-8"></div>
-
-        {/* User Profile and Notification */}
-        <div className="flex items-center justify-between mb-4 relative z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-purple-600 rounded-full flex items-center justify-center shadow-2xl border-2 border-white/20">
-              <span className="text-white font-bold text-sm">N</span>
-            </div>
-            <div>
-              <h2 className="text-white font-bold text-xl">Nikita</h2>
-            </div>
-          </div>
-          <div className="relative">
-            <div className="p-2 bg-white/10 rounded-full backdrop-blur-sm border border-white/20">
-              <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+      <div className="px-4 pt-6 pb-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-900">Hi, {user?.full_name || "Player"} 👋</h2>
+            <div className="flex items-center gap-1 text-gray-600 mt-1">
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
               </svg>
+              <span className="text-sm">{selectedLocation.split(' ').slice(0, 4).join(' ')}</span>
+              <button
+                onClick={() => setShowLocationDropdown(!showLocationDropdown)}
+                className="ml-1 text-gray-500 hover:text-gray-700"
+              >
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
             </div>
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-pink-500 to-red-500 rounded-full border-2 border-slate-900"></div>
+            {showLocationDropdown && (
+              <div className="mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
+                <div className="py-2">
+                  {locations.map((location) => (
+                    <button
+                      key={location}
+                      onClick={() => handleLocationSelect(location)}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${location === selectedLocation ? 'bg-red-50 text-red-600 font-semibold' : 'text-gray-700'}`}
+                    >
+                      {location}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center">
+            <span className="text-gray-600 font-semibold text-sm">{(user?.full_name || 'P').charAt(0)}</span>
           </div>
         </div>
-
-        {/* Location Section */}
-        <div className="flex items-center gap-2 relative z-10">
-          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-          </svg>
-          <span className="text-white font-medium text-sm">{selectedLocation}</span>
-          <button
-            onClick={() => setShowLocationDropdown(!showLocationDropdown)}
-            className="hover:opacity-80 transition-opacity"
-          >
-            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </button>
-
-          {/* Location Dropdown */}
-          {showLocationDropdown && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 z-20">
-              <div className="py-2">
-                {locations.map((location) => (
-                  <button
-                    key={location}
-                    onClick={() => handleLocationSelect(location)}
-                    className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 transition-colors ${location === selectedLocation ? 'bg-cyan-50 text-cyan-600 font-semibold' : 'text-gray-700'
-                      }`}
-                  >
-                    {location}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
       </div>
 
-      {/* Search and Availability Section */}
-      <div className="px-4 py-4 bg-white rounded-t-3xl -mt-4 relative z-10">
+      {/* Search Section */}
+      <div className="px-4 pb-4">
         <div className="flex gap-3 mb-4">
           {selectedSport && (
             <a
               href="/dashboard"
-              className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
             >
               <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -196,10 +188,10 @@ function SearchPageContent() {
               placeholder={selectedSport ? `Search ${selectedSport} venues...` : "Pick a Sport (Football, Cricket...)"}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-lg border-0 focus:outline-none focus:ring-2 focus:ring-cyan-500 text-gray-900 placeholder-gray-500"
+              className="w-full pl-10 pr-4 py-4 bg-gray-100 rounded-xl border-0 focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-900 placeholder-gray-500"
             />
           </div>
-          <button className="px-4 py-3 bg-cyan-500 text-white rounded-lg font-medium hover:bg-cyan-600 transition-colors flex items-center gap-2">
+          <button className="px-4 py-4 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors flex items-center gap-2 shadow-lg">
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
             </svg>
@@ -209,20 +201,20 @@ function SearchPageContent() {
 
         {/* Filter Categories */}
         <div className="flex gap-2 overflow-x-auto mb-6 scrollbar-hide">
-          <button className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+          <button className="px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-2">
+            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
             Filter
           </button>
-          <button className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-full text-sm font-medium whitespace-nowrap">
+          <button className="px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium whitespace-nowrap">
             All
           </button>
-          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
             Venues
           </button>
-          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
             Groups
           </button>
-          <button className="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
+          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
             Games
           </button>
         </div>
@@ -268,12 +260,6 @@ function SearchPageContent() {
                       <div className="flex-1">
                         <div className="flex justify-between items-start mb-2">
                           <h3 className="font-semibold text-gray-900 text-sm">{facility.name}</h3>
-                          <div className="flex items-center gap-1 bg-blue-900 text-yellow-400 px-2 py-1 rounded text-xs">
-                            <span>-</span>
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
-                          </div>
                         </div>
                         <div className="flex items-center gap-1 mb-2">
                           <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
@@ -297,7 +283,7 @@ function SearchPageContent() {
                                 <span className="text-gray-600 text-xs">⚽</span>
                               </div>
                             </div>
-                            <button className="px-4 py-2 bg-cyan-500 text-white rounded-lg text-sm font-medium hover:bg-cyan-600 transition-colors">
+                            <button className="px-4 py-2 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 transition-colors shadow-lg">
                               Book
                             </button>
                           </div>
