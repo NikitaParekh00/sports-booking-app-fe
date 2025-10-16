@@ -21,9 +21,10 @@ const sports = [
     isImage: true,
   },
   {
-    id: "football",
-    name: "Football",
-    icon: "⚽",
+    id: "padel",
+    name: "Padel",
+    icon: "/icons/padel.png",
+    isImage: true,
   },
   {
     id: "badminton",
@@ -31,8 +32,8 @@ const sports = [
     icon: "🏸",
   },
   {
-    id: "box-cricket",
-    name: "Box Cricket",
+    id: "tennis-cricket",
+    name: "Tennis Cricket",
     icon: "🏏",
   },
   {
@@ -41,120 +42,40 @@ const sports = [
     icon: "🏏",
   },
   {
+    id: "football-turf",
+    name: "Football Turf",
+    icon: "⚽",
+  },
+  {
+    id: "lawn-tennis",
+    name: "Lawn Tennis",
+    icon: "🎾",
+  },
+  {
     id: "table-tennis",
     name: "Table Tennis",
     icon: "🏓",
   },
   {
-    id: "volleyball",
-    name: "Volleyball",
-    icon: "🏐",
-  },
-  {
-    id: "carrom",
-    name: "Carrom",
-    icon: "🎯",
-  },
-  {
-    id: "billiard",
-    name: "Billiard",
-    icon: "🎱",
-  },
-  {
-    id: "others",
-    name: "Others",
-    icon: "➕",
-  },
-  {
-    id: "esports",
-    name: "Esports",
-    icon: "🎮",
-  },
-  {
-    id: "gym",
-    name: "Gym",
-    icon: "🏋️",
-  },
-  {
-    id: "ice-plunge-sauna",
-    name: "Ice Plunge & Sauna",
-    icon: "🧊",
-  },
-  {
-    id: "pilates-group",
-    name: "Pilates (Group of 2)",
-    icon: "🧘",
-  },
-  {
-    id: "pool",
-    name: "Pool",
-    icon: "🎱",
-  },
-  {
-    id: "cycling",
-    name: "Cycling",
-    icon: "🚴",
-  },
-  {
-    id: "chess",
-    name: "Chess",
-    icon: "♟️",
-  },
-  {
-    id: "athletics",
-    name: "Athletics",
-    icon: "🏃",
-  },
-  {
-    id: "padel",
-    name: "Padel",
-    icon: "🎾",
-  },
-  {
-    id: "hockey",
-    name: "Hockey",
-    icon: "🏑",
-  },
-  {
-    id: "yoga",
-    name: "Yoga",
-    icon: "🧘",
-  },
-  {
-    id: "rock-climbing",
-    name: "Rock Climbing",
-    icon: "🧗",
-  },
-  {
-    id: "shooting",
-    name: "Shooting",
-    icon: "/icons/shooting.svg",
-    isImage: true,
-  },
-  {
-    id: "handball",
-    name: "Handball",
-    icon: "🤾",
-  },
-  {
     id: "squash",
     name: "Squash",
-    icon: "🏓",
-  },
-  {
-    id: "basketball",
-    name: "Basketball",
-    icon: "🏀",
-  },
-  {
-    id: "tennis",
-    name: "Tennis",
-    icon: "🎾",
+    icon: "/icons/squash.png",
+    isImage: true,
   },
   {
     id: "swimming",
     name: "Swimming",
     icon: "🏊",
+  },
+  {
+    id: "billiards",
+    name: "Billiards",
+    icon: "🎱",
+  },
+  {
+    id: "basketball",
+    name: "Basketball",
+    icon: "🏀",
   }
 ];
 
@@ -189,7 +110,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
     setShowAllSports(!showAllSports);
   };
 
-  // Show only first 8 sports initially (2 rows of 4)
+  // Show only first 8 sports initially (2 rows of 4), then all 12 with "See More"
   const displayedSports = showAllSports ? sports : sports.slice(0, 8);
   return (
     <div className="min-h-screen bg-white">
@@ -260,7 +181,13 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
                 {sport.isImage ? (
-                  <Image src={sport.icon} alt={sport.name} width={32} height={32} className={`object-contain ${sport.id === 'pickleball' ? 'transform rotate-4' : ''}`} />
+                  <Image
+                    src={sport.icon}
+                    alt={sport.name}
+                    width={sport.id === 'pickleball' || sport.id === 'padel' || sport.id === 'squash' ? 28 : 32}
+                    height={sport.id === 'pickleball' || sport.id === 'padel' || sport.id === 'squash' ? 28 : 32}
+                    className={`object-contain ${sport.id === 'pickleball' ? 'transform rotate-4' : ''}`}
+                  />
                 ) : (
                   <span>{sport.icon}</span>
                 )}
