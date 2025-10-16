@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { coachingItemsWithUrls } from '@/data/coachingData';
 import PointsDisplay from './PointsDisplay';
@@ -82,6 +82,24 @@ const sports = [
 export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange, onRequestLocationChange, userName, userId }: SportsSelectionProps) {
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showAllSports, setShowAllSports] = useState(false);
+  const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
+
+  // Banner images array
+  const bannerImages = [
+    { src: "/banner.png", alt: "Summer Offers" },
+    { src: "/banner2.png", alt: "Special Offers" } // Add your second banner image
+  ];
+
+  // Auto-rotate banner every 4 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentBannerIndex((prevIndex) =>
+        prevIndex === bannerImages.length - 1 ? 0 : prevIndex + 1
+      );
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [bannerImages.length]);
 
   const locations = [
     "Rajendra Nagar",
@@ -162,14 +180,32 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
           </div>
         </div>
 
-        <div className="mt-4 h-32 rounded-2xl overflow-hidden">
-          <Image
-            src="/banner.png"
-            alt="Summer Offers"
-            width={400}
-            height={128}
-            className="w-full h-full object-cover"
-          />
+        <div className="mt-4 h-32 rounded-2xl overflow-hidden relative">
+          <div className="relative w-full h-full">
+            {bannerImages.map((banner, index) => (
+              <Image
+                key={index}
+                src={banner.src}
+                alt={banner.alt}
+                width={400}
+                height={128}
+                className={`w-full h-full object-cover absolute top-0 left-0 transition-opacity duration-1000 ${index === currentBannerIndex ? 'opacity-100' : 'opacity-0'
+                  }`}
+              />
+            ))}
+          </div>
+
+          {/* Banner indicators */}
+          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
+            {bannerImages.map((_, index) => (
+              <button
+                key={index}
+                onClick={() => setCurrentBannerIndex(index)}
+                className={`w-2 h-2 rounded-full transition-colors duration-200 ${index === currentBannerIndex ? 'bg-white' : 'bg-white/50'
+                  }`}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
