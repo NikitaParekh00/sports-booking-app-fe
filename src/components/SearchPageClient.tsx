@@ -37,6 +37,7 @@ function SearchPageContent() {
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [filteredFacilities, setFilteredFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
   const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
@@ -62,6 +63,33 @@ function SearchPageContent() {
   const handleLocationSelect = (location: string) => {
     setSelectedLocation(location);
     setShowLocationDropdown(false);
+  };
+
+  // Filter facilities based on search query
+  const filterFacilities = (query: string) => {
+    if (!query.trim()) {
+      setFilteredFacilities(facilities);
+      return;
+    }
+
+    const filtered = facilities.filter((facility) => {
+      const searchTerm = query.toLowerCase();
+      return (
+        facility.sport.toLowerCase().includes(searchTerm) ||
+        facility.name.toLowerCase().includes(searchTerm) ||
+        facility.city.toLowerCase().includes(searchTerm) ||
+        facility.address.toLowerCase().includes(searchTerm)
+      );
+    });
+
+    setFilteredFacilities(filtered);
+  };
+
+  // Handle search input change
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchQuery(value);
+    filterFacilities(value);
   };
 
   // Fetch user data from localStorage
@@ -112,6 +140,7 @@ function SearchPageContent() {
           }));
 
           setFacilities(facilitiesWithDistance);
+          setFilteredFacilities(facilitiesWithDistance);
         }
       } catch (error) {
         console.error('Error:', error);
@@ -185,39 +214,14 @@ function SearchPageContent() {
             </svg>
             <input
               type="text"
-              placeholder={selectedSport ? `Search ${selectedSport} venues...` : "Pick a Sport (Football, Cricket...)"}
+              placeholder={selectedSport ? `Search ${selectedSport} venues...` : "Search sports (Football, Badminton, Cricket...)"}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={handleSearchChange}
               className="w-full pl-10 pr-4 py-4 bg-gray-100 rounded-xl border-0 focus:outline-none focus:ring-2 focus:ring-red-500 text-gray-900 placeholder-gray-500"
             />
           </div>
-          <button className="px-4 py-4 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors flex items-center gap-2 shadow-lg">
-            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
-            </svg>
-            Availability
-          </button>
         </div>
 
-        {/* Filter Categories */}
-        <div className="flex gap-2 overflow-x-auto mb-6 scrollbar-hide">
-          <button className="px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium whitespace-nowrap flex items-center gap-2">
-            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-            Filter
-          </button>
-          <button className="px-4 py-2 bg-red-100 text-red-700 rounded-full text-sm font-medium whitespace-nowrap">
-            All
-          </button>
-          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
-            Venues
-          </button>
-          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
-            Groups
-          </button>
-          <button className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-full text-sm font-medium whitespace-nowrap">
-            Games
-          </button>
-        </div>
       </div>
 
       {/* ALL VENUES Section */}
@@ -225,7 +229,7 @@ function SearchPageContent() {
         <div className="mb-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-gray-900">
-              {selectedSport ? `${selectedSport.toUpperCase()} VENUES` : "ALL VENUES"}
+              {searchQuery ? `SEARCH RESULTS` : selectedSport ? `${selectedSport.toUpperCase()} VENUES` : "ALL VENUES"}
             </h2>
             <button className="text-cyan-600 text-sm font-medium">See All</button>
           </div>
@@ -236,12 +240,14 @@ function SearchPageContent() {
               <div className="flex justify-center items-center py-8">
                 <div className="text-gray-500">Loading venues...</div>
               </div>
-            ) : facilities.length === 0 ? (
+            ) : filteredFacilities.length === 0 ? (
               <div className="flex justify-center items-center py-8">
-                <div className="text-gray-500">No venues found</div>
+                <div className="text-gray-500">
+                  {searchQuery ? `No venues found for "${searchQuery}"` : "No venues found"}
+                </div>
               </div>
             ) : (
-              facilities.map((facility) => (
+              filteredFacilities.map((facility) => (
                 <a key={facility.id} href={`/turf/${facility.id}`} className="block">
                   <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
                     <div className="flex gap-4">
@@ -297,14 +303,6 @@ function SearchPageContent() {
           </div>
         </div>
 
-        {/* ALL GAMES Section */}
-        <div className="mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900">ALL GAMES</h2>
-            <button className="text-cyan-600 text-sm font-medium">See All</button>
-          </div>
-          {/* Games content would go here */}
-        </div>
       </div>
 
       {/* Bottom Navigation */}
