@@ -57,14 +57,22 @@ export default function SignupPage() {
             // In production, you would use: supabase.auth.signUp({ phone: formattedMobileNumber })
 
             // Check if user already exists
-            const { data: existingUser } = await supabase
+            const { data: existingUsers, error: checkError } = await supabase
                 .from('profiles')
                 .select('user_id')
-                .eq('phone', formattedMobileNumber)
-                .single();
+                .eq('phone', formattedMobileNumber);
+
+            if (checkError) {
+                console.error('Error checking existing user:', checkError);
+                alert('Error checking account. Please try again.');
+                return;
+            }
+
+            const existingUser = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
 
             if (existingUser) {
-                alert('An account with this mobile number already exists. Please login instead.');
+                alert('An account with this mobile number already exists. Redirecting to login...');
+                router.push('/login');
                 return;
             }
 
@@ -105,22 +113,22 @@ export default function SignupPage() {
         <div className="min-h-screen bg-white">
 
             {/* Header */}
-            <div className="bg-gray-100 px-4 py-3">
+            <div className="bg-white px-4 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => router.back()}
-                        className="p-2 hover:bg-gray-200 rounded-full"
+                        className="p-2 hover:bg-gray-50 rounded-full transition-colors duration-200"
                     >
                         <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
-                    <h1 className="text-lg font-bold text-black">Create an account</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">Create an account</h1>
                 </div>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSignup} className="px-4 py-6 space-y-6">
+            <form onSubmit={handleSignup} className="px-6 py-8 space-y-6">
                 {/* Full Name */}
                 <div>
                     <input
@@ -129,7 +137,7 @@ export default function SignupPage() {
                         value={formData.fullName}
                         onChange={handleInputChange}
                         placeholder="Full Name"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        className="w-full px-4 py-4 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
                         required
                     />
                 </div>
@@ -152,7 +160,7 @@ export default function SignupPage() {
                         value={formData.email}
                         onChange={handleInputChange}
                         placeholder="Email (Optional)"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        className="w-full px-4 py-4 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
                     />
                 </div>
 
@@ -164,31 +172,30 @@ export default function SignupPage() {
                         value={formData.referralCode}
                         onChange={handleInputChange}
                         placeholder="Referral Code (Optional)"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                        className="w-full px-4 py-4 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
                     />
                 </div>
-
 
                 {/* Signup Button */}
                 <button
                     type="submit"
                     disabled={loading || !isPhoneValid}
-                    className="w-full bg-red-600 text-white font-bold py-4 px-6 rounded-lg text-lg hover:bg-red-700 transition-all duration-200 disabled:opacity-50"
+                    className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {loading ? 'Creating Account...' : 'SIGNUP'}
                 </button>
 
                 {/* Terms and Privacy */}
-                <p className="text-center text-sm text-gray-600">
+                <p className="text-center text-sm text-gray-600 leading-relaxed">
                     By signing up for Simplifit you agree with the{' '}
-                    <a href="/terms" className="text-blue-600 hover:underline">Terms of Use</a>
+                    <a href="/terms" className="text-red-600 hover:text-red-700 hover:underline font-medium">Terms of Use</a>
                     {' '}and{' '}
-                    <a href="/privacy" className="text-blue-600 hover:underline">Privacy Policy</a>
+                    <a href="/privacy" className="text-red-600 hover:text-red-700 hover:underline font-medium">Privacy Policy</a>
                 </p>
             </form>
 
             {/* Home Indicator */}
-            <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-black rounded-full"></div>
+            <div className="w-24 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
         </div>
     );
 }
