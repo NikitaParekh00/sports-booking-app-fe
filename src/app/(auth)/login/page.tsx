@@ -31,13 +31,20 @@ export default function LoginPage() {
 			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
 
 			// Check if user exists in profiles table
-			const { data: profileData, error: profileError } = await supabase
+			const { data: existingUsers, error: checkError } = await supabase
 				.from('profiles')
 				.select('user_id, full_name')
-				.eq('phone', formattedMobileNumber)
-				.single();
+				.eq('phone', formattedMobileNumber);
 
-			if (profileError || !profileData) {
+			if (checkError) {
+				console.error('Error checking existing user:', checkError);
+				alert('Error checking account. Please try again.');
+				return;
+			}
+
+			const existingUser = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
+
+			if (!existingUser) {
 				alert('No account found with this mobile number. Redirecting to signup...');
 				router.push('/signup');
 				return;

@@ -10,7 +10,7 @@ function VerifyOtpContent() {
     const supabase = createClient();
 
     const [loading, setLoading] = useState(false);
-    const [otp, setOtp] = useState('');
+    const [otp, setOtp] = useState(['', '', '', '', '']);
     const [phone, setPhone] = useState('');
     const [type, setType] = useState<'signup' | 'login'>('login');
     const [timeLeft, setTimeLeft] = useState(60);
@@ -33,9 +33,43 @@ function VerifyOtpContent() {
         }
     }, [timeLeft]);
 
-    const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const value = e.target.value.replace(/\D/g, '').slice(0, 5);
-        setOtp(value);
+    const handleOtpChange = (index: number, value: string) => {
+        if (value.length > 1) return; // Only allow single digit
+
+        const newOtp = [...otp];
+        newOtp[index] = value.replace(/\D/g, ''); // Only allow digits
+        setOtp(newOtp);
+
+        // Auto-focus next input
+        if (value && index < 4) {
+            const nextInput = document.getElementById(`otp-${index + 1}`);
+            nextInput?.focus();
+        }
+    };
+
+    const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+        // Handle backspace
+        if (e.key === 'Backspace' && !otp[index] && index > 0) {
+            const prevInput = document.getElementById(`otp-${index - 1}`);
+            prevInput?.focus();
+        }
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        e.preventDefault();
+        const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 5);
+        const newOtp = ['', '', '', '', ''];
+
+        for (let i = 0; i < pastedData.length; i++) {
+            newOtp[i] = pastedData[i];
+        }
+
+        setOtp(newOtp);
+
+        // Focus the last filled input or the first empty one
+        const lastFilledIndex = Math.min(pastedData.length - 1, 4);
+        const nextInput = document.getElementById(`otp-${lastFilledIndex}`);
+        nextInput?.focus();
     };
 
     const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -43,23 +77,31 @@ function VerifyOtpContent() {
         setLoading(true);
 
         try {
-            // For development: hardcoded OTP
-            if (otp !== '11111') {
-                alert('Invalid OTP. Please enter 11111 for testing.');
+            // Validate OTP format
+            const otpString = otp.join('');
+            if (otpString.length !== 5) {
+                alert('Please enter a valid 5-digit OTP.');
                 return;
             }
 
-            // For development: Skip actual OTP verification
             // In production, you would use: supabase.auth.verifyOtp({ phone, token: otp })
+            // For now, we'll accept any 5-digit OTP for development
 
             // Find user in profiles table (standard format: +91-XXXXXXXXXX)
-            const { data: userData, error: userError } = await supabase
+            const { data: existingUsers, error: checkError } = await supabase
                 .from('profiles')
                 .select('user_id, full_name')
-                .eq('phone', phone)
-                .single();
+                .eq('phone', phone);
 
-            if (userError || !userData) {
+            if (checkError) {
+                console.error('Error checking existing user:', checkError);
+                alert('Error verifying account. Please try again.');
+                return;
+            }
+
+            const userData = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
+
+            if (!userData) {
                 alert('User not found. Please try signing up again.');
                 return;
             }
@@ -87,9 +129,8 @@ function VerifyOtpContent() {
         setTimeLeft(60);
 
         try {
-            // For development: Skip actual OTP resending
             // In production, you would use: supabase.auth.signInWithOtp({ phone })
-            alert('OTP resent successfully! Use 11111 for testing.');
+            alert('OTP resent successfully!');
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');
@@ -111,22 +152,22 @@ function VerifyOtpContent() {
         <div className="min-h-screen bg-white">
 
             {/* Header */}
-            <div className="bg-gray-100 px-4 py-3">
+            <div className="bg-white px-4 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => router.back()}
-                        className="p-2 hover:bg-gray-200 rounded-full"
+                        className="p-2 hover:bg-gray-50 rounded-full transition-colors duration-200"
                     >
                         <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
-                    <h1 className="text-lg font-bold text-black">Verify OTP</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">Verify OTP</h1>
                 </div>
             </div>
 
             {/* Content */}
-            <div className="px-4 py-6">
+            <div className="px-6 py-8">
                 {/* Instructions */}
                 <div className="text-center mb-8">
                     <h2 className="text-xl font-semibold text-gray-900 mb-2">
@@ -135,31 +176,33 @@ function VerifyOtpContent() {
                     <p className="text-lg text-gray-700 font-medium">
                         {formatPhoneNumber(phone)}
                     </p>
-                    <p className="text-sm text-gray-500 mt-2">
-                        For testing, use OTP: <span className="font-bold text-teal-600">11111</span>
-                    </p>
                 </div>
 
                 {/* OTP Form */}
                 <form onSubmit={handleVerifyOtp} className="space-y-6">
-                    {/* OTP Input */}
-                    <div>
-                        <input
-                            type="text"
-                            value={otp}
-                            onChange={handleOtpChange}
-                            placeholder="Enter 5-digit OTP"
-                            className="w-full px-4 py-4 border border-gray-300 rounded-lg text-center text-2xl font-bold tracking-widest text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                            maxLength={5}
-                            required
-                        />
+                    {/* OTP Input Boxes */}
+                    <div className="flex justify-center gap-3">
+                        {otp.map((digit, index) => (
+                            <input
+                                key={index}
+                                id={`otp-${index}`}
+                                type="text"
+                                value={digit}
+                                onChange={(e) => handleOtpChange(index, e.target.value)}
+                                onKeyDown={(e) => handleKeyDown(index, e)}
+                                onPaste={handlePaste}
+                                className="w-12 h-12 border border-gray-200 rounded-xl text-center text-2xl font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
+                                maxLength={1}
+                                required
+                            />
+                        ))}
                     </div>
 
                     {/* Verify Button */}
                     <button
                         type="submit"
-                        disabled={loading || otp.length !== 5}
-                        className="w-full bg-gradient-to-r from-teal-500 to-green-500 text-white font-bold py-4 px-6 rounded-lg text-lg hover:from-teal-600 hover:to-green-600 transition-all duration-200 disabled:opacity-50"
+                        disabled={loading || otp.join('').length !== 5}
+                        className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Verifying...' : 'VERIFY OTP'}
                     </button>
@@ -171,7 +214,7 @@ function VerifyOtpContent() {
                         <button
                             onClick={handleResendOtp}
                             disabled={loading}
-                            className="text-teal-600 font-semibold hover:text-teal-700 disabled:opacity-50"
+                            className="text-red-600 font-semibold hover:text-red-700 hover:underline disabled:opacity-50"
                         >
                             Resend OTP
                         </button>
@@ -181,17 +224,10 @@ function VerifyOtpContent() {
                         </p>
                     )}
                 </div>
-
-                {/* Help Text */}
-                <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm text-gray-600 text-center">
-                        <strong>For Development:</strong> Use OTP <span className="font-bold text-teal-600">11111</span> to verify your account.
-                    </p>
-                </div>
             </div>
 
             {/* Home Indicator */}
-            <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-32 h-1 bg-black rounded-full"></div>
+            <div className="w-24 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
         </div>
     );
 }
