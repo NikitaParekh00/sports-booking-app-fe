@@ -188,11 +188,11 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       </div>
 
       {/* Facility Information */}
-      <div className="px-4 py-4">
-        <div className="flex justify-between items-start mb-2">
+      <div className="px-4 py-6">
+        <div className="flex justify-between items-start mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">{facility.name}</h1>
-            <h2 className="text-lg text-gray-700">{facility.sport.charAt(0).toUpperCase() + facility.sport.slice(1)} Academy</h2>
+            <h1 className="text-2xl font-semibold text-gray-900 mb-1">{facility.name}</h1>
+            <h2 className="text-lg text-gray-600">{facility.sport.charAt(0).toUpperCase() + facility.sport.slice(1)} Academy</h2>
           </div>
           <div className="text-right">
             <div className="flex items-center gap-1 mb-1">
@@ -208,29 +208,29 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <span className="text-2xl">🏸</span>
-            <span className="text-sm text-gray-600">Badminton</span>
+            <span className="text-sm text-gray-600 font-medium">{facility.sport.charAt(0).toUpperCase() + facility.sport.slice(1)}</span>
           </div>
-          <button className="text-cyan-600 text-sm font-medium">Equipment Rental</button>
+          <button className="text-red-600 text-sm font-medium hover:text-red-700 transition-colors">Equipment Rental</button>
         </div>
       </div>
 
       {/* Booking Section */}
-      <div className="px-4 pb-4">
-        <h3 className="text-lg font-bold text-gray-900 mb-3">BOOK A SLOT</h3>
-        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="flex justify-between items-center mb-3">
+      <div className="px-4 pb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">BOOK A SLOT</h3>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-lg">
+          <div className="flex justify-between items-center mb-4">
             <div>
               <h4 className="font-semibold text-gray-900">{facility.sport.charAt(0).toUpperCase() + facility.sport.slice(1)} (Wooden)</h4>
               <p className="text-sm text-gray-600">Professional grade courts</p>
             </div>
             <div className="text-right">
-              <div className="text-lg font-bold text-gray-900">₹ {facility.price_per_hour}</div>
+              <div className="text-lg font-semibold text-gray-900">₹ {facility.price_per_hour}</div>
               <div className="text-xs text-gray-500">onwards</div>
             </div>
           </div>
           <a
             href={`/booking/${facility.id}`}
-            className="block w-full bg-cyan-500 text-white py-3 rounded-lg font-semibold hover:bg-cyan-600 transition-colors text-center"
+            className="block w-full bg-red-600 text-white py-4 rounded-xl font-semibold hover:bg-red-700 transition-colors text-center shadow-lg"
           >
             BOOK
           </a>
@@ -241,14 +241,14 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
       <div className="px-4 pb-24">
         {/* Description */}
         <div className="mb-6">
-          <h3 className="text-lg font-bold text-blue-900 mb-2">DESCRIPTION</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">DESCRIPTION</h3>
           <p className="text-gray-700 text-sm leading-relaxed">
             {showFullDescription ? facility.description : facility.description?.substring(0, 100) + "..."}
           </p>
           {facility.description && facility.description.length > 100 && (
             <button
               onClick={() => setShowFullDescription(!showFullDescription)}
-              className="text-cyan-600 text-sm mt-1"
+              className="text-red-600 text-sm mt-2 font-medium hover:text-red-700 transition-colors"
             >
               {showFullDescription ? "Show Less" : "See All"}
             </button>
@@ -257,7 +257,7 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
 
         {/* Amenities */}
         <div className="mb-6">
-          <h3 className="text-lg font-bold text-blue-900 mb-3">AMENITIES</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">AMENITIES</h3>
           <div className="space-y-3">
             {facility.amenities?.map((amenity, index) => (
               <div key={index} className="flex items-center gap-3">
@@ -296,12 +296,12 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
 
         {/* Address */}
         <div className="mb-6">
-          <h3 className="text-lg font-bold text-blue-900 mb-3">ADDRESS</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">ADDRESS</h3>
           <div className="flex gap-4">
             <div className="flex-1">
               <p className="text-gray-700 text-sm leading-relaxed">{facility.address}</p>
             </div>
-            <div className="w-24 h-16 bg-gray-200 rounded flex items-center justify-center">
+            <div className="w-24 h-16 bg-gray-200 rounded-lg flex items-center justify-center">
               <div className="w-4 h-4 bg-red-500 rounded-full"></div>
             </div>
           </div>
@@ -309,7 +309,7 @@ export default function TurfDetailClient({ turfId }: TurfDetailClientProps) {
 
         {/* Nearest Metro */}
         <div className="mb-6">
-          <h3 className="text-lg font-bold text-blue-900 mb-2">NEAREST METRO</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">NEAREST METRO</h3>
           <p className="text-gray-700 text-sm">
             {facility.metro_station} ({facility.metro_distance} KM)
           </p>

@@ -36,6 +36,7 @@ export default function BookingSummaryClient({
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [showSlotDetails, setShowSlotDetails] = useState(true);
+  const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
   const supabase = createClient();
 
   // Parse the selected time to get start and end times
@@ -56,6 +57,19 @@ export default function BookingSummaryClient({
   const timeSlot = parseTimeSlot(selectedTime || "8:00 PM");
   const price = selectedPrice ? parseInt(selectedPrice) : 800;
   const totalPrice = price * quantity;
+
+  // Fetch user data from localStorage
+  useEffect(() => {
+    const userData = localStorage.getItem('sf:user');
+    if (userData) {
+      try {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+      } catch (error) {
+        console.error('Error parsing user data:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     async function fetchFacility() {
@@ -137,47 +151,47 @@ export default function BookingSummaryClient({
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}
-      <div className="px-4 py-4 border-b border-gray-200">
+      <div className="px-4 py-6 border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <a href={`/booking/${turfId}`} className="p-2 hover:bg-gray-100 rounded-full">
+          <a href={`/booking/${turfId}`} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
           </a>
-          <h1 className="text-lg font-semibold text-gray-900">Booking Summary</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Booking Summary</h1>
         </div>
       </div>
 
       {/* Terms & Conditions */}
-      <div className="mx-4 mt-4 p-4 bg-cyan-50 rounded-lg">
+      <div className="mx-4 mt-6 p-4 bg-red-50 rounded-xl border border-red-100">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Terms & Conditions</h3>
-        <div className="space-y-2">
-          <div className="flex items-start gap-2">
-            <svg className="w-4 h-4 text-cyan-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <svg className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
             </svg>
-            <p className="text-xs text-gray-700">Non- Marking shoes are COMPULSORY while entering the badminton facilities.</p>
+            <p className="text-xs text-gray-700 leading-relaxed">Non- Marking shoes are COMPULSORY while entering the badminton facilities.</p>
           </div>
-          <div className="flex items-start gap-2">
-            <svg className="w-4 h-4 text-cyan-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <div className="flex items-start gap-3">
+            <svg className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
             </svg>
-            <p className="text-xs text-gray-700">Maximum 6 players are allowed per court per slot.</p>
+            <p className="text-xs text-gray-700 leading-relaxed">Maximum 6 players are allowed per court per slot.</p>
           </div>
-          <div className="flex items-start gap-2">
-            <svg className="w-4 h-4 text-cyan-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+          <div className="flex items-start gap-3">
+            <svg className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
             </svg>
-            <p className="text-xs text-gray-700">Court 2 and Court 5 have basketball rings on one side which can cause slight inconvenience.</p>
+            <p className="text-xs text-gray-700 leading-relaxed">Court 2 and Court 5 have basketball rings on one side which can cause slight inconvenience.</p>
           </div>
         </div>
       </div>
 
       {/* Selected Slot Details */}
-      <div className="mx-4 mt-4">
+      <div className="mx-4 mt-6">
         <button
           onClick={() => setShowSlotDetails(!showSlotDetails)}
-          className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-lg"
+          className="w-full flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
         >
           <span className="font-semibold text-gray-900">1 NEW SLOT(S)</span>
           <svg className={`w-5 h-5 text-gray-500 transition-transform ${showSlotDetails ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -186,15 +200,15 @@ export default function BookingSummaryClient({
         </button>
 
         {showSlotDetails && (
-          <div className="mt-2 p-4 bg-white border border-gray-200 rounded-lg">
+          <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-cyan-600 font-semibold">Court 1</h4>
-                <p className="text-sm text-gray-600">{formatDate(selectedDate)}</p>
+                <h4 className="text-red-600 font-semibold">Court 1</h4>
+                <p className="text-sm text-gray-600 mt-1">{formatDate(selectedDate)}</p>
                 <p className="text-sm text-gray-600">{timeSlot.start} - {timeSlot.end}</p>
               </div>
               <div className="text-right">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-3 mb-3">
                   <button
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
                     className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
@@ -213,7 +227,7 @@ export default function BookingSummaryClient({
                     </svg>
                   </button>
                 </div>
-                <p className="text-lg font-bold text-gray-900">₹ {price}</p>
+                <p className="text-lg font-semibold text-gray-900">₹ {price}</p>
               </div>
             </div>
           </div>
@@ -221,18 +235,18 @@ export default function BookingSummaryClient({
       </div>
 
       {/* Booking User */}
-      <div className="mx-4 mt-4 p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="mx-4 mt-6 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="font-semibold text-gray-900">Booking User</h3>
-            <p className="text-sm text-gray-600 mt-1">Nikita Parekh</p>
+            <p className="text-sm text-gray-600 mt-1">{user?.full_name || "Player"}</p>
           </div>
-          <button className="text-cyan-600 text-sm font-medium">Change</button>
+          <button className="text-red-600 text-sm font-medium hover:text-red-700 transition-colors">Change</button>
         </div>
       </div>
 
       {/* Apply Coupon */}
-      <div className="mx-4 mt-4 p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="mx-4 mt-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
         <div className="flex items-center justify-between">
           <span className="text-gray-900">Apply coupon</span>
           <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,7 +256,7 @@ export default function BookingSummaryClient({
       </div>
 
       {/* Payment Summary */}
-      <div className="mx-4 mt-4 p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="mx-4 mt-4 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-gray-900">Payable Now</span>
@@ -250,14 +264,14 @@ export default function BookingSummaryClient({
               <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
             </svg>
           </div>
-          <span className="text-lg font-bold text-gray-900">₹ {totalPrice}</span>
+          <span className="text-lg font-semibold text-gray-900">₹ {totalPrice}</span>
         </div>
       </div>
 
       {/* Policy Links */}
-      <div className="mx-4 mt-4 mb-32 flex gap-6">
-        <a href="#" className="text-cyan-600 text-sm">Cancellation Policy</a>
-        <a href="#" className="text-cyan-600 text-sm">Reschedule Policy</a>
+      <div className="mx-4 mt-6 mb-56 flex gap-6">
+        <a href="#" className="text-red-600 text-sm font-medium hover:text-red-700 transition-colors">Cancellation Policy</a>
+        <a href="#" className="text-red-600 text-sm font-medium hover:text-red-700 transition-colors">Reschedule Policy</a>
       </div>
 
       {/* Bottom Navigation */}
@@ -285,15 +299,15 @@ export default function BookingSummaryClient({
       </div>
 
       {/* Bottom Action Bar */}
-      <div className="fixed bottom-16 left-0 right-0 bg-cyan-500 px-4 py-4 z-30">
+      <div className="fixed bottom-16 left-0 right-0 bg-red-600 px-4 py-4 z-30 shadow-lg">
         <div className="flex items-center justify-between">
           <div className="text-white">
-            <p className="text-lg font-bold">₹ {totalPrice}</p>
+            <p className="text-lg font-semibold">₹ {totalPrice}</p>
             <p className="text-sm opacity-90">{quantity} Slot(s) selected</p>
           </div>
           <a
             href={`/booking-success/${turfId}?date=${selectedDate}&time=${selectedTime}&price=${selectedPrice}&quantity=${quantity}`}
-            className="bg-cyan-400 text-white px-8 py-3 rounded-lg font-semibold hover:bg-cyan-300 transition-colors inline-block"
+            className="bg-red-500 text-white px-8 py-3 rounded-xl font-semibold hover:bg-red-400 transition-colors inline-block shadow-lg"
           >
             PROCEED
           </a>
