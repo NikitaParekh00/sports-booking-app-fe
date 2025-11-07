@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
 
 interface Player {
@@ -45,10 +46,55 @@ const BID_INCREASE = 1000;
 const TEAMS_COUNT = 8;
 const PLAYERS_PER_TEAM = 10;
 
+// Database types for auction
+interface DbTeam {
+    id: string;
+    team_number: number;
+    name: string;
+    budget: number;
+    category_a_count: number;
+    category_b_count: number;
+    category_c_count: number;
+}
+
+interface DbPlayer {
+    team_id: string;
+    player_name: string;
+    payment_status: string;
+    gender: string;
+    player_category: string;
+    runs: number;
+    strike_rate: number;
+    wickets: number;
+    average: number;
+    catch_count: number;
+    ro: number;
+    mvp: number;
+}
+
+// Configure the allowed user for auction access
+// Use the EXACT format as stored in database: +91-XXXXXXXXXX
+const ALLOWED_AUCTION_USER: {
+    user_id?: string | null;
+    phone?: string | null;
+    email?: string | null;
+} = {
+    // Set one of these to restrict access:
+    // user_id: 'your-user-id-here',
+    // phone: '+91-7506256356' (use exact format from database),
+    // email: 'your-email@example.com',
+    // Or leave all as undefined/null to allow all logged-in users
+    phone: '+91-7506256356', // Use exact format: +91-XXXXXXXXXX
+};
+
 export default function AuctionClient() {
     const router = useRouter();
+    const supabase = createClient();
+    const [authLoading, setAuthLoading] = useState(true);
+    const [canEdit, setCanEdit] = useState(false); // Can this user edit the auction?
+    const [sessionId, setSessionId] = useState<string | null>(null);
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
-    const [players, setPlayers] = useState<Player[]>(initialPlayers);
+    const [players] = useState<Player[]>(initialPlayers);
     const [teams, setTeams] = useState<Team[]>(() => {
         return Array.from({ length: TEAMS_COUNT }, (_, i) => ({
             id: i + 1,
@@ -62,6 +108,335 @@ export default function AuctionClient() {
     const [currentBid, setCurrentBid] = useState(MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
+    const [loadingState, setLoadingState] = useState(true);
+
+    // Check authentication and edit permissions
+    useEffect(() => {
+        const checkAccess = async () => {
+            try {
+                // Get user from localStorage
+                const storedUser = localStorage.getItem('sf:user');
+
+                if (!storedUser) {
+                    // No user logged in - redirect to login
+                    alert('Please log in to access the auction page.');
+                    router.push('/login');
+                    return;
+                }
+
+                const userData = JSON.parse(storedUser);
+
+                // Get user profile to check phone/email if needed
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('user_id', userData.user_id)
+                    .single();
+
+                // Check if user can edit (matches allowed user)
+                let canUserEdit = false;
+
+                if (!ALLOWED_AUCTION_USER.phone && !ALLOWED_AUCTION_USER.user_id && !ALLOWED_AUCTION_USER.email) {
+                    // No restriction - all users can edit
+                    canUserEdit = true;
+                } else {
+                    if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
+                        canUserEdit = true;
+                    } else if (ALLOWED_AUCTION_USER.phone && profile?.phone === ALLOWED_AUCTION_USER.phone) {
+                        // Simple exact match - phone must be in format: +91-XXXXXXXXXX
+                        canUserEdit = true;
+                    } else if (ALLOWED_AUCTION_USER.email && (userData.email === ALLOWED_AUCTION_USER.email || profile?.email === ALLOWED_AUCTION_USER.email)) {
+                        canUserEdit = true;
+                    }
+                }
+
+                setCanEdit(canUserEdit);
+            } catch (error) {
+                console.error('Error checking access:', error);
+                setCanEdit(false);
+            } finally {
+                setAuthLoading(false);
+            }
+        };
+
+        checkAccess();
+    }, [router, supabase]);
+
+    // Load auction state from database
+    useEffect(() => {
+        const loadAuctionState = async () => {
+            try {
+                setLoadingState(true);
+
+                // Get or create active auction session
+                let finalSession = null;
+
+                // Try to get existing session
+                const { data: session, error: sessionError } = await supabase
+                    .from('auction_sessions')
+                    .select('*')
+                    .eq('is_complete', false)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (session) {
+                    finalSession = session;
+                } else if (sessionError && sessionError.code !== 'PGRST116') {
+                    // Error other than "no rows" - might be table doesn't exist
+                    console.error('Error fetching session:', sessionError);
+                    throw new Error(`Database error: ${sessionError.message}. Please run the auction_schema.sql script first.`);
+                } else {
+                    // No active session, create one
+                    const { data: newSession, error: createError } = await supabase
+                        .from('auction_sessions')
+                        .insert({
+                            session_name: 'Main Auction',
+                            current_player_index: 0,
+                            is_complete: false
+                        })
+                        .select()
+                        .single();
+
+                    if (createError) {
+                        console.error('Error creating session:', createError);
+                        throw new Error(`Failed to create session: ${createError.message}. Please ensure auction tables exist.`);
+                    }
+
+                    if (!newSession) {
+                        throw new Error('Session created but returned null');
+                    }
+
+                    finalSession = newSession;
+
+                    // Create initial teams
+                    const teamsData = Array.from({ length: TEAMS_COUNT }, (_, i) => ({
+                        session_id: finalSession!.id,
+                        team_number: i + 1,
+                        name: `Team ${i + 1}`,
+                        budget: TOTAL_AMOUNT,
+                        category_a_count: 0,
+                        category_b_count: 0,
+                        category_c_count: 0
+                    }));
+
+                    const { error: teamsError } = await supabase.from('auction_teams').insert(teamsData);
+                    if (teamsError) {
+                        console.error('Error creating teams:', teamsError);
+                        throw new Error(`Failed to create teams: ${teamsError.message}`);
+                    }
+                }
+
+                if (!finalSession) {
+                    throw new Error('Failed to get or create session');
+                }
+
+                setSessionId(finalSession.id);
+                setCurrentPlayerIndex(finalSession.current_player_index);
+                setAuctionComplete(finalSession.is_complete);
+
+                // Load teams
+                const { data: teamsData, error: teamsError } = await supabase
+                    .from('auction_teams')
+                    .select('*')
+                    .eq('session_id', finalSession.id)
+                    .order('team_number', { ascending: true });
+
+                if (teamsError) throw teamsError;
+
+                // Load players for each team
+                const { data: playersData, error: playersError } = await supabase
+                    .from('auction_players')
+                    .select('*')
+                    .eq('session_id', finalSession.id);
+
+                if (playersError) throw playersError;
+
+                // Map database teams to component teams
+                const mappedTeams: Team[] = (teamsData || []).map((team: DbTeam) => {
+                    const teamPlayers = (playersData || [])
+                        .filter((p: DbPlayer) => p.team_id === team.id)
+                        .map((p: DbPlayer) => ({
+                            name: p.player_name,
+                            payment: p.payment_status as 'Y' | 'N',
+                            gender: p.gender as 'M' | 'F',
+                            category: p.player_category,
+                            runs: p.runs,
+                            strikeRate: p.strike_rate,
+                            wickets: p.wickets,
+                            average: p.average,
+                            catch: p.catch_count,
+                            ro: p.ro,
+                            mvp: p.mvp
+                        }));
+
+                    return {
+                        id: team.team_number,
+                        name: team.name,
+                        budget: team.budget,
+                        players: teamPlayers,
+                        categoryCount: {
+                            A: team.category_a_count,
+                            B: team.category_b_count,
+                            C: team.category_c_count
+                        }
+                    };
+                });
+
+                setTeams(mappedTeams);
+            } catch (error) {
+                console.error('Error loading auction state:', error);
+            } finally {
+                setLoadingState(false);
+            }
+        };
+
+        if (!authLoading) {
+            loadAuctionState();
+        }
+    }, [authLoading, supabase]);
+
+    // Real-time subscription for auction updates
+    useEffect(() => {
+        if (!sessionId) return;
+
+        // Subscribe to session changes
+        const sessionChannel = supabase
+            .channel('auction-session-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'auction_sessions',
+                filter: `id=eq.${sessionId}`
+            }, (payload) => {
+                if (payload.new) {
+                    const session = payload.new as { current_player_index: number; is_complete: boolean };
+                    setCurrentPlayerIndex(session.current_player_index);
+                    setAuctionComplete(session.is_complete);
+                }
+            })
+            .subscribe();
+
+        // Subscribe to team changes
+        const teamsChannel = supabase
+            .channel('auction-teams-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'auction_teams',
+                filter: `session_id=eq.${sessionId}`
+            }, async () => {
+                // Reload teams when they change
+                const { data: teamsData } = await supabase
+                    .from('auction_teams')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('team_number', { ascending: true });
+
+                const { data: playersData } = await supabase
+                    .from('auction_players')
+                    .select('*')
+                    .eq('session_id', sessionId);
+
+                if (teamsData && playersData) {
+                    const mappedTeams: Team[] = teamsData.map((team: DbTeam) => {
+                        const teamPlayers = playersData
+                            .filter((p: DbPlayer) => p.team_id === team.id)
+                            .map((p: DbPlayer) => ({
+                                name: p.player_name,
+                                payment: p.payment_status as 'Y' | 'N',
+                                gender: p.gender as 'M' | 'F',
+                                category: p.player_category,
+                                runs: p.runs,
+                                strikeRate: p.strike_rate,
+                                wickets: p.wickets,
+                                average: p.average,
+                                catch: p.catch_count,
+                                ro: p.ro,
+                                mvp: p.mvp
+                            }));
+
+                        return {
+                            id: team.team_number,
+                            name: team.name,
+                            budget: team.budget,
+                            players: teamPlayers,
+                            categoryCount: {
+                                A: team.category_a_count,
+                                B: team.category_b_count,
+                                C: team.category_c_count
+                            }
+                        };
+                    });
+
+                    setTeams(mappedTeams);
+                }
+            })
+            .subscribe();
+
+        // Subscribe to player changes
+        const playersChannel = supabase
+            .channel('auction-players-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'auction_players',
+                filter: `session_id=eq.${sessionId}`
+            }, async () => {
+                // Reload teams when players change
+                const { data: teamsData } = await supabase
+                    .from('auction_teams')
+                    .select('*')
+                    .eq('session_id', sessionId)
+                    .order('team_number', { ascending: true });
+
+                const { data: playersData } = await supabase
+                    .from('auction_players')
+                    .select('*')
+                    .eq('session_id', sessionId);
+
+                if (teamsData && playersData) {
+                    const mappedTeams: Team[] = teamsData.map((team: DbTeam) => {
+                        const teamPlayers = playersData
+                            .filter((p: DbPlayer) => p.team_id === team.id)
+                            .map((p: DbPlayer) => ({
+                                name: p.player_name,
+                                payment: p.payment_status as 'Y' | 'N',
+                                gender: p.gender as 'M' | 'F',
+                                category: p.player_category,
+                                runs: p.runs,
+                                strikeRate: p.strike_rate,
+                                wickets: p.wickets,
+                                average: p.average,
+                                catch: p.catch_count,
+                                ro: p.ro,
+                                mvp: p.mvp
+                            }));
+
+                        return {
+                            id: team.team_number,
+                            name: team.name,
+                            budget: team.budget,
+                            players: teamPlayers,
+                            categoryCount: {
+                                A: team.category_a_count,
+                                B: team.category_b_count,
+                                C: team.category_c_count
+                            }
+                        };
+                    });
+
+                    setTeams(mappedTeams);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            sessionChannel.unsubscribe();
+            teamsChannel.unsubscribe();
+            playersChannel.unsubscribe();
+        };
+    }, [sessionId, supabase]);
 
     const currentPlayer = players[currentPlayerIndex];
     const remainingPlayers = players.length - currentPlayerIndex;
@@ -76,7 +451,17 @@ export default function AuctionClient() {
         }
     };
 
-    const handleBuyPlayer = () => {
+    const handleBuyPlayer = async () => {
+        if (!canEdit) {
+            alert('You do not have permission to edit the auction.');
+            return;
+        }
+
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
+        }
+
         if (!selectedTeamId) {
             alert('Please select a team');
             return;
@@ -103,43 +488,113 @@ export default function AuctionClient() {
             return;
         }
 
-        // Update team
-        const updatedTeams = teams.map(t => {
-            if (t.id === selectedTeamId) {
-                return {
-                    ...t,
-                    budget: t.budget - currentBid,
-                    players: [...t.players, currentPlayer],
-                    categoryCount: {
-                        ...t.categoryCount,
-                        [currentPlayer.category]: t.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] + 1,
-                    },
-                };
-            }
-            return t;
-        });
+        try {
+            // Get team UUID from database
+            const { data: dbTeam } = await supabase
+                .from('auction_teams')
+                .select('id')
+                .eq('session_id', sessionId)
+                .eq('team_number', selectedTeamId)
+                .single();
 
-        setTeams(updatedTeams);
+            if (!dbTeam) throw new Error('Team not found');
 
-        // Move to next player
-        if (currentPlayerIndex < players.length - 1) {
-            setCurrentPlayerIndex(prev => prev + 1);
+            // Insert player into database
+            await supabase.from('auction_players').insert({
+                session_id: sessionId,
+                team_id: dbTeam.id,
+                player_name: currentPlayer.name,
+                player_category: currentPlayer.category,
+                bid_amount: currentBid,
+                payment_status: currentPlayer.payment,
+                gender: currentPlayer.gender,
+                runs: currentPlayer.runs,
+                strike_rate: currentPlayer.strikeRate,
+                wickets: currentPlayer.wickets,
+                average: currentPlayer.average,
+                catch_count: currentPlayer.catch,
+                ro: currentPlayer.ro,
+                mvp: currentPlayer.mvp
+            });
+
+            // Update team budget and category counts
+            const newBudget = team.budget - currentBid;
+            const categoryKey = `category_${currentPlayer.category.toLowerCase()}_count` as 'category_a_count' | 'category_b_count' | 'category_c_count';
+            const newCategoryCount = team.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] + 1;
+
+            await supabase
+                .from('auction_teams')
+                .update({
+                    budget: newBudget,
+                    [categoryKey]: newCategoryCount
+                })
+                .eq('id', dbTeam.id);
+
+            // Move to next player
+            const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+            const isComplete = nextIndex >= players.length - 1;
+
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    current_player_index: nextIndex,
+                    is_complete: isComplete
+                })
+                .eq('id', sessionId);
+
+            // Reset UI state
             setCurrentBid(MINIMUM_BID);
             setSelectedTeamId(null);
-        } else {
-            setAuctionComplete(true);
+        } catch (error) {
+            console.error('Error buying player:', error);
+            alert('Failed to save auction state. Please try again.');
         }
     };
 
-    const handleSkip = () => {
-        if (currentPlayerIndex < players.length - 1) {
-            setCurrentPlayerIndex(prev => prev + 1);
+    const handleSkip = async () => {
+        if (!canEdit) {
+            alert('You do not have permission to edit the auction.');
+            return;
+        }
+
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
+        }
+
+        try {
+            // Move to next player
+            const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+            const isComplete = nextIndex >= players.length - 1;
+
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    current_player_index: nextIndex,
+                    is_complete: isComplete
+                })
+                .eq('id', sessionId);
+
+            // Reset UI state
             setCurrentBid(MINIMUM_BID);
             setSelectedTeamId(null);
-        } else {
-            setAuctionComplete(true);
+        } catch (error) {
+            console.error('Error skipping player:', error);
+            alert('Failed to save auction state. Please try again.');
         }
     };
+
+    // Show loading state
+    if (authLoading || loadingState) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+                    <div className="text-gray-600">{authLoading ? 'Checking access...' : 'Loading auction...'}</div>
+                </div>
+            </div>
+        );
+    }
 
     if (auctionComplete) {
         return (
@@ -335,10 +790,15 @@ export default function AuctionClient() {
                         {/* Bid Amount */}
                         <div className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
                             <div className="text-lg font-semibold text-gray-900 mb-4">Bid Amount</div>
+                            {!canEdit && (
+                                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
+                                    View-only mode - You can watch the auction live
+                                </div>
+                            )}
                             <div className="flex items-center justify-center gap-6 mb-4">
                                 <button
                                     onClick={handleBidDecrease}
-                                    disabled={currentBid <= MINIMUM_BID}
+                                    disabled={!canEdit || currentBid <= MINIMUM_BID}
                                     className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
                                 >
                                     −
@@ -346,7 +806,8 @@ export default function AuctionClient() {
                                 <div className="text-5xl font-bold text-gray-900">₹{currentBid.toLocaleString()}</div>
                                 <button
                                     onClick={handleBidIncrease}
-                                    className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center hover:bg-gray-50 text-2xl font-semibold"
+                                    disabled={!canEdit}
+                                    className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
                                 >
                                     +
                                 </button>
@@ -367,14 +828,17 @@ export default function AuctionClient() {
                                     const canAddCategory = team.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] < categoryLimit;
                                     const isDisabled = !canAfford || !hasSpace || !canAddCategory;
 
+                                    const isViewOnly = !canEdit;
+                                    const finalDisabled = isDisabled || isViewOnly;
+
                                     return (
                                         <button
                                             key={team.id}
-                                            onClick={() => !isDisabled && setSelectedTeamId(team.id)}
-                                            disabled={isDisabled}
+                                            onClick={() => !finalDisabled && setSelectedTeamId(team.id)}
+                                            disabled={finalDisabled}
                                             className={`p-4 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
                                                 ? 'border-red-600 bg-red-50 shadow-md'
-                                                : isDisabled
+                                                : finalDisabled
                                                     ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
                                                     : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
                                                 }`}
@@ -405,13 +869,14 @@ export default function AuctionClient() {
                         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:static md:border-0 md:bg-transparent md:p-0 flex gap-4 md:gap-6 z-10 md:z-auto md:left-auto md:right-auto">
                             <button
                                 onClick={handleSkip}
-                                className="flex-1 py-3 md:py-4 px-4 md:px-6 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors text-base md:text-lg"
+                                disabled={!canEdit}
+                                className="flex-1 py-3 md:py-4 px-4 md:px-6 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
                             >
                                 Skip Player
                             </button>
                             <button
                                 onClick={handleBuyPlayer}
-                                disabled={!selectedTeamId}
+                                disabled={!canEdit || !selectedTeamId}
                                 className="flex-1 py-3 md:py-4 px-4 md:px-6 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
                             >
                                 Buy Player

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import LocationInput from "@/components/LocationInput";
 import BottomSheet from "@/components/BottomSheet";
@@ -20,11 +21,13 @@ interface Location {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [location, setLocation] = useState<Location | null>(null);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
   const [isLocationSheetOpen, setIsLocationSheetOpen] = useState<boolean>(false);
+  const [showAuctionBanner, setShowAuctionBanner] = useState(true);
 
   const handleLocationChange = (location: string) => {
     console.log('Dashboard received location change:', location);
@@ -112,6 +115,36 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen">
+      {/* Auction Banner */}
+      {!selectedSport && showAuctionBanner && (
+        <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-3 relative">
+          <div className="max-w-md mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="text-2xl">🏏</div>
+              <div>
+                <div className="font-semibold text-sm">Live Auction</div>
+                <div className="text-xs opacity-90">Player bidding in progress</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => router.push('/auction')}
+                className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
+              >
+                View
+              </button>
+              <button
+                onClick={() => setShowAuctionBanner(false)}
+                className="text-white opacity-70 hover:opacity-100 p-1"
+                aria-label="Close banner"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sports Selection - always visible. Location sheet pops over if not set */}
       {!selectedSport && (
         <SportsSelection
