@@ -13,6 +13,7 @@ interface Facility {
   latitude?: number;
   longitude?: number;
   sport: string;
+  facility_type: 'sport_venue' | 'coaching_venue';
   price_per_hour: number;
   description?: string;
   images?: string[];
@@ -21,6 +22,12 @@ interface Facility {
   status: string;
   distance?: number;
   courts?: Court[];
+  // Coaching-specific fields
+  coach_name?: string;
+  experience_years?: number;
+  certification?: string;
+  class_size?: number;
+  age_groups?: string[];
 }
 
 interface Court {
@@ -40,6 +47,7 @@ function SearchPageContent() {
   const [filteredFacilities, setFilteredFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSport, setSelectedSport] = useState<string | null>(null);
+  const [searchType, setSearchType] = useState<string | null>(null);
   const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
   const supabase = createClient();
 
@@ -106,10 +114,12 @@ function SearchPageContent() {
   }, []);
 
   useEffect(() => {
-    // Get sport and location from URL parameters
+    // Get sport, location, and type from URL parameters
     const sport = searchParams.get('sport');
     const location = searchParams.get('location');
+    const type = searchParams.get('type');
     setSelectedSport(sport);
+    setSearchType(type);
     if (location) {
       setSelectedLocation(location);
     }
@@ -118,12 +128,20 @@ function SearchPageContent() {
       try {
         setLoading(true);
 
-        // Build query with sport filter if provided
+        // Build query with sport and facility type filters
         let query = supabase.from('facilities').select('*');
 
         if (sport) {
           query = query.eq('sport', sport);
         }
+
+        // Filter by facility type if specified
+        if (type === 'coaching') {
+          query = query.eq('facility_type', 'coaching_venue');
+        } else if (type === 'venue') {
+          query = query.eq('facility_type', 'sport_venue');
+        }
+        // If no type specified, show both sport_venue and coaching_venue facilities
 
         const { data, error } = await query.limit(10);
 
@@ -229,7 +247,9 @@ function SearchPageContent() {
         <div className="mb-6">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-gray-900">
-              {searchQuery ? `SEARCH RESULTS` : selectedSport ? `${selectedSport.toUpperCase()} VENUES` : "ALL VENUES"}
+              {searchQuery ? `SEARCH RESULTS` :
+                searchType === 'coaching' ? `${selectedSport?.toUpperCase()} COACHING VENUES` :
+                  selectedSport ? `${selectedSport.toUpperCase()} VENUES` : "ALL VENUES"}
             </h2>
             <button className="text-cyan-600 text-sm font-medium">See All</button>
           </div>

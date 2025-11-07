@@ -253,17 +253,35 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
           <a href="#" className="text-gray-600 text-sm font-medium">See All Coaching →</a>
         </div>
         <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
-          {coachingItemsWithUrls.map((item) => (
-            <a key={item.id} href="#" className="min-w-[160px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-              <div className="h-20 bg-gray-200">
-                <Image src={item.image} width={160} height={80} className="w-full h-full object-cover" alt={item.title} />
-              </div>
-              <div className="p-2">
-                <div className="text-gray-900 font-medium text-xs">{item.title}</div>
-                <div className="text-cyan-700 text-xs font-medium mt-1">Enroll Now</div>
-              </div>
-            </a>
-          ))}
+          {coachingItemsWithUrls.map((item) => {
+            // Map coaching items to sports for search
+            const sportMapping: { [key: string]: string } = {
+              'football-academy': 'football-turf',
+              'yoga-classes': 'yoga',
+              'tennis-coaching': 'lawn-tennis',
+              'swimming-lessons': 'swimming',
+              'badminton-training': 'badminton',
+              'cricket-coaching': 'cricket-nets'
+            };
+
+            const sportId = sportMapping[item.id] || item.id;
+
+            return (
+              <a
+                key={item.id}
+                href={`/search?sport=${sportId}&location=${encodeURIComponent(selectedLocation)}&type=coaching`}
+                className="min-w-[160px] bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow"
+              >
+                <div className="h-20 bg-gray-200">
+                  <Image src={item.image} width={160} height={80} className="w-full h-full object-cover" alt={item.title} />
+                </div>
+                <div className="p-2">
+                  <div className="text-gray-900 font-medium text-xs">{item.title}</div>
+                  <div className="text-red-600 text-xs font-medium mt-1">Find Venues</div>
+                </div>
+              </a>
+            );
+          })}
         </div>
       </div>
 
