@@ -149,11 +149,13 @@ export default function AuctionClient() {
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
+    const [isTopPlayersSheetOpen, setIsTopPlayersSheetOpen] = useState(false);
     const [loadingState, setLoadingState] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
     const [skippedPlayers, setSkippedPlayers] = useState<Player[]>([]);
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
+    const [topPlayersGenderFilter, setTopPlayersGenderFilter] = useState<'all' | 'M' | 'F'>('all');
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -1104,6 +1106,16 @@ export default function AuctionClient() {
                     <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex-shrink-0">Auction</h1>
                     <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
                         <button
+                            onClick={() => setIsTopPlayersSheetOpen(true)}
+                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
+                            title="Top 5 Bidded Players"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                            </svg>
+                            <span className="hidden sm:inline">Top 5</span>
+                        </button>
+                        <button
                             onClick={() => setIsSkippedPlayersSheetOpen(true)}
                             className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
                             title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
@@ -1140,82 +1152,85 @@ export default function AuctionClient() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left Sidebar - Teams Overview (Desktop) */}
                     <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-6 sticky top-24 h-[calc(100vh-8rem)] overflow-y-auto">
-                            <h2 className="text-xl font-bold text-gray-900 mb-4">Team Dynamics</h2>
+                        <div className="bg-white rounded-xl border-2 border-gray-200 p-6 sticky top-24 h-[calc(100vh-8rem)] overflow-y-auto space-y-6">
+                            {/* Team Dynamics Section */}
+                            <div>
+                                <h2 className="text-xl font-bold text-gray-900 mb-4">Team Dynamics</h2>
 
-                            {/* Teams List */}
-                            <div className="space-y-3">
-                                {teams.map(team => {
-                                    const totalSpent = TOTAL_AMOUNT - team.budget;
+                                {/* Teams List */}
+                                <div className="space-y-3">
+                                    {teams.map(team => {
+                                        const totalSpent = TOTAL_AMOUNT - team.budget;
 
-                                    return (
-                                        <div key={team.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    <Image
-                                                        src={getTeamLogo(team.id)}
-                                                        alt={`${team.name} logo`}
-                                                        width={32}
-                                                        height={32}
-                                                        className="object-contain flex-shrink-0"
-                                                    />
-                                                    <div className="min-w-0 flex-1">
-                                                        <h3 className="font-semibold text-gray-900 text-sm break-normal leading-tight">{team.name}</h3>
-                                                        <div className="text-xs text-gray-500 mt-0.5">
-                                                            {team.players.length}/{PLAYERS_PER_TEAM} players
+                                        return (
+                                            <div key={team.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Image
+                                                            src={getTeamLogo(team.id)}
+                                                            alt={`${team.name} logo`}
+                                                            width={32}
+                                                            height={32}
+                                                            className="object-contain flex-shrink-0"
+                                                        />
+                                                        <div className="min-w-0 flex-1">
+                                                            <h3 className="font-semibold text-gray-900 text-sm break-normal leading-tight">{team.name}</h3>
+                                                            <div className="text-xs text-gray-500 mt-0.5">
+                                                                {team.players.length}/{PLAYERS_PER_TEAM} players
+                                                            </div>
                                                         </div>
                                                     </div>
+                                                    <div className="text-right">
+                                                        <div className="text-xs font-medium text-gray-600">Remaining</div>
+                                                        <div className="text-sm font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <div className="text-xs font-medium text-gray-600">Remaining</div>
-                                                    <div className="text-sm font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
-                                                </div>
-                                            </div>
 
-                                            {/* Budget Progress */}
-                                            <div className="mb-2">
-                                                <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                                    <div
-                                                        className="bg-red-600 h-1.5 rounded-full transition-all"
-                                                        style={{ width: `${Math.min((totalSpent / TOTAL_AMOUNT) * 100, 100)}%` }}
-                                                    ></div>
-                                                </div>
-                                            </div>
-
-                                            {/* Owner Name */}
-                                            {team.ownerName && (
+                                                {/* Budget Progress */}
                                                 <div className="mb-2">
-                                                    <div className="flex-1 rounded p-1.5 text-center bg-white border border-gray-200">
-                                                        <div className="text-xs text-gray-600">Owner</div>
-                                                        <div className="text-xs font-semibold text-gray-900">{team.ownerName}</div>
+                                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
+                                                        <div
+                                                            className="bg-red-600 h-1.5 rounded-full transition-all"
+                                                            style={{ width: `${Math.min((totalSpent / TOTAL_AMOUNT) * 100, 100)}%` }}
+                                                        ></div>
                                                     </div>
                                                 </div>
-                                            )}
 
-                                            {/* Players List */}
-                                            {team.players.length > 0 ? (
-                                                <div className="border-t border-gray-200 pt-2 mt-2">
-                                                    <div className="text-xs font-semibold text-gray-600 mb-1.5">Players:</div>
-                                                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                                                        {team.players.map((player, idx) => (
-                                                            <div key={idx} className="flex justify-between items-center text-xs py-0.5">
-                                                                <span className="text-gray-700">
-                                                                    {player.name}
-                                                                    <span className="text-gray-500 ml-1">({player.category})</span>
-                                                                </span>
-                                                                <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
-                                                            </div>
-                                                        ))}
+                                                {/* Owner Name */}
+                                                {team.ownerName && (
+                                                    <div className="mb-2">
+                                                        <div className="flex-1 rounded p-1.5 text-center bg-white border border-gray-200">
+                                                            <div className="text-xs text-gray-600">Owner</div>
+                                                            <div className="text-xs font-semibold text-gray-900">{team.ownerName}</div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ) : (
-                                                <div className="text-xs text-gray-400 text-center py-1 border-t border-gray-200 mt-2 pt-2">
-                                                    No players yet
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                })}
+                                                )}
+
+                                                {/* Players List */}
+                                                {team.players.length > 0 ? (
+                                                    <div className="border-t border-gray-200 pt-2 mt-2">
+                                                        <div className="text-xs font-semibold text-gray-600 mb-1.5">Players:</div>
+                                                        <div className="space-y-1 max-h-32 overflow-y-auto">
+                                                            {team.players.map((player, idx) => (
+                                                                <div key={idx} className="flex justify-between items-center text-xs py-0.5">
+                                                                    <span className="text-gray-700">
+                                                                        {player.name}
+                                                                        <span className="text-gray-500 ml-1">({player.category})</span>
+                                                                    </span>
+                                                                    <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-xs text-gray-400 text-center py-1 border-t border-gray-200 mt-2 pt-2">
+                                                        No players yet
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1483,6 +1498,118 @@ export default function AuctionClient() {
                             );
                         })}
                     </div>
+                </div>
+            </BottomSheet>
+
+            {/* Top 5 Bidded Players Bottom Sheet */}
+            <BottomSheet
+                isOpen={isTopPlayersSheetOpen}
+                onClose={() => setIsTopPlayersSheetOpen(false)}
+                title="Top 5 Bidded Players"
+            >
+                <div className="pb-6">
+                    {(() => {
+                        // Collect all players from all teams with their bid amounts
+                        const allBoughtPlayers = teams.flatMap(team =>
+                            team.players
+                                .filter(player => player.bidAmount && player.bidAmount > 0)
+                                .map(player => ({
+                                    ...player,
+                                    teamName: team.name,
+                                    teamId: team.id
+                                }))
+                        );
+
+                        // Filter by gender if needed
+                        const filteredPlayers = topPlayersGenderFilter === 'all'
+                            ? allBoughtPlayers
+                            : allBoughtPlayers.filter(player => player.gender === topPlayersGenderFilter);
+
+                        // Sort by bid amount (highest first) and take top 5
+                        const top5Players = filteredPlayers
+                            .sort((a, b) => (b.bidAmount || 0) - (a.bidAmount || 0))
+                            .slice(0, 5);
+
+                        if (allBoughtPlayers.length === 0) {
+                            return (
+                                <div className="text-center py-8 text-gray-500">
+                                    No players have been bought yet
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <>
+                                {/* Gender Filter Buttons */}
+                                <div className="flex gap-2 mb-4">
+                                    <button
+                                        onClick={() => setTopPlayersGenderFilter('all')}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'all'
+                                                ? 'bg-red-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        All
+                                    </button>
+                                    <button
+                                        onClick={() => setTopPlayersGenderFilter('M')}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'M'
+                                                ? 'bg-red-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Male
+                                    </button>
+                                    <button
+                                        onClick={() => setTopPlayersGenderFilter('F')}
+                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'F'
+                                                ? 'bg-red-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Female
+                                    </button>
+                                </div>
+
+                                {top5Players.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {top5Players.map((player, idx) => (
+                                            <div
+                                                key={`${player.name}-${idx}`}
+                                                className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg p-4"
+                                            >
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded-full bg-red-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">
+                                                            {idx + 1}
+                                                        </div>
+                                                        <span className="font-semibold text-gray-900 text-base">{player.name}</span>
+                                                    </div>
+                                                    <span className="text-base font-bold text-red-600">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-sm text-gray-600 ml-11">
+                                                    <Image
+                                                        src={getTeamLogo(player.teamId)}
+                                                        alt={`${player.teamName} logo`}
+                                                        width={20}
+                                                        height={20}
+                                                        className="object-contain"
+                                                    />
+                                                    <span>{player.teamName}</span>
+                                                    <span>•</span>
+                                                    <span>{player.category}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8 text-gray-500">
+                                        No {topPlayersGenderFilter === 'all' ? '' : topPlayersGenderFilter === 'M' ? 'male ' : 'female '}players found
+                                    </div>
+                                )}
+                            </>
+                        );
+                    })()}
                 </div>
             </BottomSheet>
 
