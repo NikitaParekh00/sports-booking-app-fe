@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
+import jsPDF from 'jspdf';
 
 interface Player {
     name: string;
@@ -909,6 +910,287 @@ export default function AuctionClient() {
         }
     };
 
+    // Generate PDF for a team
+    const generateTeamPDF = async (team: Team) => {
+        try {
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 15;
+            let yPosition = margin;
+
+            // Header section with left and right alignment
+            const headerStartY = yPosition;
+            let maxHeaderHeight = 0;
+            const logoWidth = 50; // Same width for both logos
+            const logoY = headerStartY; // Same Y position for both logos
+
+            // Load both logos first to ensure proper alignment
+            let appLogoHeight = 0;
+            let teamLogoHeight = 0;
+            let appLogoDataUrl = '';
+            let teamLogoDataUrl = '';
+
+            // Load app logo
+            try {
+                const response = await fetch('/logo.jpeg');
+                const blob = await response.blob();
+                const reader = new FileReader();
+
+                await new Promise<void>((resolve, reject) => {
+                    reader.onload = () => {
+                        appLogoDataUrl = reader.result as string;
+                        const logoImg = document.createElement('img');
+                        logoImg.onload = () => {
+                            appLogoHeight = (logoImg.height / logoImg.width) * logoWidth;
+                            resolve();
+                        };
+                        logoImg.onerror = reject;
+                        logoImg.src = appLogoDataUrl;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (logoError) {
+                console.error('Error loading logo:', logoError);
+            }
+
+            // Load team logo
+            try {
+                const teamLogoPath = getTeamLogo(team.id);
+                const response = await fetch(teamLogoPath);
+                const blob = await response.blob();
+                const reader = new FileReader();
+
+                await new Promise<void>((resolve) => {
+                    reader.onload = () => {
+                        teamLogoDataUrl = reader.result as string;
+                        const logoImg = document.createElement('img');
+                        logoImg.onload = () => {
+                            teamLogoHeight = (logoImg.height / logoImg.width) * logoWidth;
+                            resolve();
+                        };
+                        logoImg.onerror = () => resolve(); // Continue if team logo fails
+                        logoImg.src = teamLogoDataUrl;
+                    };
+                    reader.onerror = () => resolve(); // Continue if team logo fails
+                    reader.readAsDataURL(blob);
+                });
+            } catch (teamLogoError) {
+                console.error('Error loading team logo:', teamLogoError);
+            }
+
+            // Add app logo (left side) - same Y position as team logo
+            if (appLogoDataUrl) {
+                pdf.addImage(appLogoDataUrl, 'JPEG', margin, logoY, logoWidth, appLogoHeight);
+                maxHeaderHeight = Math.max(maxHeaderHeight, appLogoHeight);
+            }
+
+            // Add team logo (right side) - same Y position as app logo
+            if (teamLogoDataUrl) {
+                const teamLogoX = pageWidth - margin - logoWidth; // Right aligned
+                pdf.addImage(teamLogoDataUrl, 'JPEG', teamLogoX, logoY, logoWidth, teamLogoHeight);
+                maxHeaderHeight = Math.max(maxHeaderHeight, teamLogoHeight);
+            }
+
+            // "Team Report" text below app logo (left aligned)
+            pdf.setFontSize(22);
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Team Report', margin, logoY + (appLogoHeight || 15) + 8);
+            maxHeaderHeight = Math.max(maxHeaderHeight, (appLogoHeight || 15) + 15);
+
+            // Team Name below team logo (right aligned, same X as logo)
+            pdf.setFontSize(18);
+            pdf.setTextColor(220, 38, 38); // Red color
+            pdf.setFont('helvetica', 'bold');
+            const teamLogoRightX = pageWidth - margin; // Right edge of team logo
+            const teamNameY = logoY + (teamLogoHeight || 15) + 8;
+            pdf.text(team.name, teamLogoRightX, teamNameY, { align: 'right' });
+            maxHeaderHeight = Math.max(maxHeaderHeight, (teamLogoHeight || 15) + 15);
+
+            // Owner Name below team name (right aligned, same X as logo and name)
+            if (team.ownerName) {
+                pdf.setFontSize(12);
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'normal');
+                const ownerY = teamNameY + 8;
+                pdf.text(`Owner: ${team.ownerName}`, teamLogoRightX, ownerY, { align: 'right' });
+                maxHeaderHeight = Math.max(maxHeaderHeight, ownerY - headerStartY + 8);
+            }
+
+            // Move to next section
+            yPosition = headerStartY + maxHeaderHeight + 10;
+
+            // Budget Information Table
+            const totalSpent = TOTAL_AMOUNT - team.budget;
+            const tableStartX = margin;
+            const tableWidth = pageWidth - (2 * margin);
+            const rowHeight = 8;
+
+            // Helper function to format numbers (avoid Indian numbering system issues)
+            const formatNumber = (num: number) => {
+                return num.toLocaleString('en-US');
+            };
+
+            // Table Header
+            pdf.setFillColor(220, 38, 38); // Red background
+            pdf.rect(tableStartX, yPosition, tableWidth, rowHeight, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(11);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('Budget Information', tableStartX + tableWidth / 2, yPosition + 5.5, { align: 'center' });
+            yPosition += rowHeight;
+
+            // Budget Rows
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(10);
+
+            const budgetData = [
+                ['Total Budget', formatNumber(TOTAL_AMOUNT)],
+                ['Amount Spent', formatNumber(totalSpent)],
+                ['Remaining Budget', formatNumber(team.budget)]
+            ];
+
+            budgetData.forEach((row, index) => {
+                // Draw background for even rows only
+                if (index % 2 === 0) {
+                    pdf.setFillColor(245, 245, 245); // Light gray background
+                    pdf.rect(tableStartX, yPosition, tableWidth, rowHeight, 'F');
+                } else {
+                    pdf.setFillColor(255, 255, 255); // White background
+                    pdf.rect(tableStartX, yPosition, tableWidth, rowHeight, 'F');
+                }
+
+                // Reset text color after drawing background
+                pdf.setTextColor(0, 0, 0);
+                pdf.text(row[0], tableStartX + 5, yPosition + 5.5);
+                pdf.text(row[1], tableStartX + tableWidth - 5, yPosition + 5.5, { align: 'right' });
+                yPosition += rowHeight;
+            });
+
+            yPosition += 10;
+
+            // Players Section Header
+            pdf.setFontSize(16);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setTextColor(0, 0, 0);
+            pdf.text('Players Acquired', margin, yPosition);
+            yPosition += 8;
+
+            // Players Table
+            if (team.players.length === 0) {
+                pdf.setFontSize(12);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setTextColor(128, 128, 128);
+                pdf.text('No players acquired', margin + 5, yPosition);
+            } else {
+                const playerTableStartX = margin;
+                const playerTableWidth = pageWidth - (2 * margin);
+                const playerRowHeight = 8;
+                // Adjusted column widths: S.No (10mm), Name (flexible), Amount (35mm fixed)
+                const sNoWidth = 10;
+                const amountWidth = 35;
+                const nameWidth = playerTableWidth - sNoWidth - amountWidth - 2; // Extra 2mm for spacing
+
+                // Table Header
+                pdf.setFillColor(220, 38, 38);
+                pdf.rect(playerTableStartX, yPosition, playerTableWidth, playerRowHeight, 'F');
+                pdf.setTextColor(255, 255, 255);
+                pdf.setFontSize(10);
+                pdf.setFont('helvetica', 'bold');
+                pdf.text('S.No', playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Player Name (Category)', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Amount', playerTableStartX + sNoWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
+                yPosition += playerRowHeight;
+
+                // Player Rows
+                pdf.setTextColor(0, 0, 0);
+                pdf.setFont('helvetica', 'normal');
+                pdf.setFontSize(9);
+
+                team.players.forEach((player, index) => {
+                    // Check if we need a new page
+                    if (yPosition > pageHeight - 30) {
+                        pdf.addPage();
+                        yPosition = margin;
+                    }
+
+                    // Alternate row colors
+                    if (index % 2 === 0) {
+                        pdf.setFillColor(250, 250, 250);
+                    } else {
+                        pdf.setFillColor(255, 255, 255);
+                    }
+                    pdf.rect(playerTableStartX, yPosition, playerTableWidth, playerRowHeight, 'F');
+
+                    // S.No
+                    pdf.text(String(index + 1), playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
+
+                    // Player Name and Category - truncate if too long
+                    const playerText = `${player.name} (${player.category})`;
+                    const maxNameWidth = nameWidth - 4; // Leave padding
+                    let displayName = playerText;
+                    const textWidth = pdf.getTextWidth(playerText);
+                    if (textWidth > maxNameWidth) {
+                        // Truncate name if too long
+                        let truncated = playerText;
+                        while (pdf.getTextWidth(truncated + '...') > maxNameWidth && truncated.length > 0) {
+                            truncated = truncated.slice(0, -1);
+                        }
+                        displayName = truncated + '...';
+                    }
+                    pdf.text(displayName, playerTableStartX + sNoWidth + 2, yPosition + 5.5);
+
+                    // Bid Amount - right aligned within its column, ensure it fits
+                    const bidAmount = player.bidAmount || 0;
+                    const bidText = formatNumber(bidAmount);
+                    // Calculate max width for amount (leave 2mm padding on right)
+                    const maxAmountWidth = amountWidth - 4;
+                    const displayAmount = bidText;
+                    if (pdf.getTextWidth(bidText) > maxAmountWidth) {
+                        // If amount is too long, use smaller font
+                        pdf.setFontSize(8);
+                    }
+                    const amountX = playerTableStartX + sNoWidth + nameWidth + amountWidth - 2;
+                    pdf.text(displayAmount, amountX, yPosition + 5.5, { align: 'right' });
+                    // Reset font size
+                    pdf.setFontSize(9);
+
+                    yPosition += playerRowHeight;
+                });
+
+                // Total row
+                if (yPosition > pageHeight - 20) {
+                    pdf.addPage();
+                    yPosition = margin;
+                }
+
+                pdf.setFillColor(240, 240, 240);
+                pdf.rect(playerTableStartX, yPosition, playerTableWidth, playerRowHeight, 'F');
+                pdf.setFont('helvetica', 'bold');
+                pdf.setFontSize(10);
+                pdf.text('Total', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+                const totalBidAmount = team.players.reduce((sum, p) => sum + (p.bidAmount || 0), 0);
+                const totalAmountText = formatNumber(totalBidAmount);
+                // Ensure total amount fits
+                const maxTotalWidth = amountWidth - 4;
+                if (pdf.getTextWidth(totalAmountText) > maxTotalWidth) {
+                    pdf.setFontSize(9);
+                }
+                const totalAmountX = playerTableStartX + sNoWidth + nameWidth + amountWidth - 2;
+                pdf.text(totalAmountText, totalAmountX, yPosition + 5.5, { align: 'right' });
+            }
+
+            // Save PDF
+            pdf.save(`${team.name.replace(/\s+/g, '_')}_Team_Report.pdf`);
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('Failed to generate PDF. Please try again.');
+        }
+    };
+
     // Show loading state
     if (authLoading || loadingState || !currentPlayer || players.length === 0) {
         return (
@@ -959,13 +1241,23 @@ export default function AuctionClient() {
                                         </div>
                                     </div>
                                 )}
-                                <div className="space-y-1">
+                                <div className="space-y-1 mb-4">
                                     {team.players.map((player, idx) => (
                                         <div key={idx} className="text-sm text-gray-700 py-1 border-b border-gray-100 last:border-0">
                                             {player.name} ({player.category})
                                         </div>
                                     ))}
                                 </div>
+                                {/* Download PDF Button */}
+                                <button
+                                    onClick={() => generateTeamPDF(team)}
+                                    className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Download PDF
+                                </button>
                             </div>
                         ))}
                     </div>
@@ -1545,8 +1837,8 @@ export default function AuctionClient() {
                                     <button
                                         onClick={() => setTopPlayersGenderFilter('all')}
                                         className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'all'
-                                                ? 'bg-red-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                             }`}
                                     >
                                         All
@@ -1554,8 +1846,8 @@ export default function AuctionClient() {
                                     <button
                                         onClick={() => setTopPlayersGenderFilter('M')}
                                         className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'M'
-                                                ? 'bg-red-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                             }`}
                                     >
                                         Male
@@ -1563,8 +1855,8 @@ export default function AuctionClient() {
                                     <button
                                         onClick={() => setTopPlayersGenderFilter('F')}
                                         className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'F'
-                                                ? 'bg-red-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                                             }`}
                                     >
                                         Female
