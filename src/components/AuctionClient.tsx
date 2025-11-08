@@ -146,6 +146,8 @@ export default function AuctionClient() {
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
     const [loadingState, setLoadingState] = useState(true);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -644,6 +646,14 @@ export default function AuctionClient() {
             // Manually reload teams to ensure UI updates immediately
             await reloadTeams();
 
+            // Show success modal
+            setSuccessMessage({
+                playerName: currentPlayer.name,
+                teamName: team.name,
+                amount: currentBid
+            });
+            setShowSuccessModal(true);
+
             // Move to next player
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
             const isComplete = nextIndex >= players.length - 1;
@@ -757,6 +767,94 @@ export default function AuctionClient() {
 
     return (
         <div className="min-h-screen bg-gray-50">
+            {/* Success Modal */}
+            {showSuccessModal && successMessage && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 md:p-12 transform transition-all relative overflow-hidden">
+                        {/* Confetti Blast Animation */}
+                        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                            {Array.from({ length: 100 }).map((_, i) => {
+                                const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16', '#a855f7'];
+                                const color = colors[Math.floor(Math.random() * colors.length)];
+                                // Blast from center-top
+                                const angle = (Math.PI * 2 * i) / 100 + Math.random() * 0.5; // Spread in all directions
+                                const distance = 300 + Math.random() * 200; // How far they travel
+                                const x = Math.cos(angle) * distance;
+                                const y = Math.sin(angle) * distance + 100; // Downward bias
+                                const rotation = Math.random() * 360;
+                                const size = Math.random() * 8 + 4; // 4-12px
+                                const width = size;
+                                const height = size * 0.3; // Paper strip shape
+                                const duration = Math.random() * 1.5 + 1.5; // 1.5-3 seconds
+                                const delay = Math.random() * 0.2; // 0-0.2 seconds
+
+                                return (
+                                    <div
+                                        key={i}
+                                        className="absolute animate-confetti-blast"
+                                        style={{
+                                            left: '50%',
+                                            top: '20%',
+                                            width: `${width}px`,
+                                            height: `${height}px`,
+                                            backgroundColor: color,
+                                            '--confetti-x': `${x}px`,
+                                            '--confetti-y': `${y}px`,
+                                            '--confetti-rotate': `${rotation}deg`,
+                                            '--confetti-duration': `${duration}s`,
+                                            '--confetti-delay': `${delay}s`,
+                                        } as React.CSSProperties}
+                                    />
+                                );
+                            })}
+                        </div>
+
+                        {/* Content - Left Aligned */}
+                        <div className="relative z-10 text-left">
+                            {/* Congratulations with Logo aligned */}
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Congratulations!!</h2>
+                                <Image
+                                    src="/logo.jpeg"
+                                    alt="Logo"
+                                    width={120}
+                                    height={60}
+                                    className="object-contain"
+                                />
+                            </div>
+
+                            {/* Player Name */}
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
+                                {successMessage.playerName}
+                            </p>
+
+                            {/* Sold to Team */}
+                            <p className="text-lg md:text-xl text-gray-600 mb-4">
+                                Sold to <span className="font-bold text-red-600">{successMessage.teamName}</span>
+                            </p>
+
+                            {/* Amount */}
+                            <p className="text-2xl md:text-3xl font-bold text-red-600 mb-8">
+                                for ₹{successMessage.amount.toLocaleString()}
+                            </p>
+                        </div>
+
+                        {/* Button */}
+                        <div className="relative z-10 mt-6">
+                            <button
+                                onClick={() => {
+                                    setShowSuccessModal(false);
+                                    setSuccessMessage(null);
+                                }}
+                                className="w-full bg-red-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-red-700 transition-colors"
+                            >
+                                Continue
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Header */}
             <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 sticky top-0 z-10 shadow-sm">
                 <div className="max-w-7xl mx-auto flex items-center justify-between">
