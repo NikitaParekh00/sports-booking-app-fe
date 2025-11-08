@@ -148,9 +148,12 @@ export default function AuctionClient() {
     const [currentBid, setCurrentBid] = useState(MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
+    const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
     const [loadingState, setLoadingState] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
+    const [skippedPlayers, setSkippedPlayers] = useState<Player[]>([]);
+    const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -376,6 +379,22 @@ export default function AuctionClient() {
                 });
 
                 setTeams(mappedTeams);
+
+                // Track bought player names
+                const boughtNames = new Set(
+                    (playersData || []).map((p: DbPlayer) => p.player_name)
+                );
+                setBoughtPlayerNames(boughtNames);
+
+                // Calculate skipped players (players in pool that were never bought)
+                if (finalSession.is_complete && mappedPlayers.length > 0) {
+                    const skipped = mappedPlayers.filter(
+                        player => !boughtNames.has(player.name)
+                    );
+                    setSkippedPlayers(skipped);
+                } else {
+                    setSkippedPlayers([]);
+                }
             } catch (error) {
                 console.error('Error loading auction state:', error);
             } finally {
@@ -436,6 +455,12 @@ export default function AuctionClient() {
             });
 
             setTeams(mappedTeams);
+
+            // Update bought player names
+            const boughtNames = new Set(
+                playersData.map((p: DbPlayer) => p.player_name)
+            );
+            setBoughtPlayerNames(boughtNames);
         }
     }, [sessionId, supabase]);
 
@@ -536,6 +561,14 @@ export default function AuctionClient() {
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
 
+    // Get current skipped players (players that have been processed but not bought)
+    const getCurrentSkippedPlayers = useCallback(() => {
+        // Players that have been processed (index < currentPlayerIndex) but not bought
+        return players
+            .slice(0, currentPlayerIndex)
+            .filter(player => !boughtPlayerNames.has(player.name));
+    }, [players, currentPlayerIndex, boughtPlayerNames]);
+
     // Get card styling based on player category
     const getPlayerCardStyle = (category: string) => {
         const categoryLower = category.toLowerCase();
@@ -546,15 +579,15 @@ export default function AuctionClient() {
                 border: 'border-4 border-amber-500',
                 shadow: 'shadow-2xl shadow-amber-400/60'
             };
-        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
-            // Silver shiny/metallic styling for Marquee (but not Super Marquee)
+        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
+            // Silver shiny/metallic styling for Marquee (but not Super Marquee or Non Marquee)
             return {
                 bg: 'bg-gradient-to-br from-slate-100 via-gray-200 to-slate-200',
                 border: 'border-4 border-gray-500',
                 shadow: 'shadow-2xl shadow-gray-500/50'
             };
         } else {
-            // Default styling for others
+            // Default styling for others (Non Marquee, etc.)
             return {
                 bg: 'bg-white',
                 border: 'border-2 border-gray-200',
@@ -566,7 +599,7 @@ export default function AuctionClient() {
     // Get category tag styling
     const getCategoryTagStyle = (category: string) => {
         const categoryLower = category.toLowerCase();
-        if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
+        if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
             // Silver shiny/metallic styling for Marquee category tag
             return 'bg-gradient-to-r from-slate-200 via-gray-300 to-slate-200 text-gray-900 border-2 border-gray-500 shadow-lg font-semibold';
         } else if (categoryLower.includes('super marquee')) {
@@ -584,10 +617,10 @@ export default function AuctionClient() {
         const categoryLower = category.toLowerCase();
         if (categoryLower.includes('super marquee')) {
             return 10000; // Super Marquee: ₹10,000
-        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
+        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
             return 5000; // Marquee: ₹5,000
         } else {
-            return 2000; // Others: ₹2,000
+            return 2000; // Others (Non Marquee, etc.): ₹2,000
         }
     };
 
@@ -778,6 +811,52 @@ export default function AuctionClient() {
         }
     };
 
+    const handleJumpToSkippedPlayer = async (playerName: string) => {
+        if (!canEdit) {
+            alert('You do not have permission to edit the auction.');
+            return;
+        }
+
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
+        }
+
+        // Find the player's index
+        const playerIndex = players.findIndex(p => p.name === playerName);
+        if (playerIndex === -1) {
+            alert('Player not found in the auction pool.');
+            return;
+        }
+
+        try {
+            // Update database session
+            const isComplete = playerIndex >= players.length - 1;
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    current_player_index: playerIndex,
+                    is_complete: isComplete
+                })
+                .eq('id', sessionId);
+
+            // Update local state
+            setCurrentPlayerIndex(playerIndex);
+
+            // Reset bid to minimum for this player's category
+            const targetPlayer = players[playerIndex];
+            const newMinimum = targetPlayer ? getMinimumBid(targetPlayer.category) : MINIMUM_BID;
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
+
+            // Close the skipped players sheet
+            setIsSkippedPlayersSheetOpen(false);
+        } catch (error) {
+            console.error('Error jumping to player:', error);
+            alert('Failed to jump to player. Please try again.');
+        }
+    };
+
     const handleEndAuction = async () => {
         if (!canEdit) {
             alert('You do not have permission to edit the auction.');
@@ -811,6 +890,20 @@ export default function AuctionClient() {
                     is_complete: true
                 })
                 .eq('id', sessionId);
+
+            // Calculate skipped players
+            const { data: boughtPlayersData } = await supabase
+                .from('auction_players')
+                .select('player_name')
+                .eq('session_id', sessionId);
+
+            const boughtPlayerNames = new Set(
+                (boughtPlayersData || []).map((p: { player_name: string }) => p.player_name)
+            );
+            const skipped = players.filter(
+                player => !boughtPlayerNames.has(player.name)
+            );
+            setSkippedPlayers(skipped);
 
             setAuctionComplete(true);
             alert('Auction ended successfully!');
@@ -880,6 +973,26 @@ export default function AuctionClient() {
                             </div>
                         ))}
                     </div>
+
+                    {/* Skipped Players Section */}
+                    {skippedPlayers.length > 0 && (
+                        <div className="mt-8 bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
+                            <h2 className="text-2xl font-semibold text-gray-900 mb-4">Skipped Players ({skippedPlayers.length})</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
+                                {skippedPlayers.map((player, idx) => (
+                                    <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                        <div className="text-sm font-semibold text-gray-900">{player.name}</div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                            {player.category} • {player.gender === 'M' ? 'Male' : 'Female'}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Runs: {player.runs} • Wickets: {player.wickets} • MVP: {player.mvp}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex justify-center mt-8">
                         <button
@@ -995,6 +1108,21 @@ export default function AuctionClient() {
                     </button>
                     <h1 className="text-xl md:text-2xl font-bold text-gray-900">Auction</h1>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={() => setIsSkippedPlayersSheetOpen(true)}
+                            className="text-red-600 hover:text-red-700 font-medium text-sm flex items-center gap-1"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            </svg>
+                            Skipped Players ({getCurrentSkippedPlayers().length})
+                        </button>
+                        <button
+                            onClick={() => setIsTeamsSheetOpen(true)}
+                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-sm"
+                        >
+                            View Teams
+                        </button>
                         {canEdit && !auctionComplete && (
                             <button
                                 onClick={handleEndAuction}
@@ -1007,15 +1135,6 @@ export default function AuctionClient() {
                                 End Auction
                             </button>
                         )}
-                        <button
-                            onClick={() => setIsTeamsSheetOpen(true)}
-                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-sm"
-                        >
-                            View Teams
-                        </button>
-                        <div className="hidden md:block text-sm text-gray-600">
-                            Player {currentPlayerIndex + 1} of {players.length}
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1367,6 +1486,62 @@ export default function AuctionClient() {
                             );
                         })}
                     </div>
+                </div>
+            </BottomSheet>
+
+            {/* Skipped Players Bottom Sheet */}
+            <BottomSheet
+                isOpen={isSkippedPlayersSheetOpen}
+                onClose={() => setIsSkippedPlayersSheetOpen(false)}
+                title="Skipped Players"
+            >
+                <div className="pb-6">
+                    {getCurrentSkippedPlayers().length > 0 ? (
+                        <div className="space-y-3">
+                            {getCurrentSkippedPlayers().map((player, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => canEdit && handleJumpToSkippedPlayer(player.name)}
+                                    className={`bg-gray-50 border border-gray-200 rounded-lg p-4 ${canEdit
+                                        ? 'cursor-pointer hover:bg-gray-100 hover:border-red-300 transition-colors'
+                                        : 'cursor-default'
+                                        }`}
+                                >
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div>
+                                            <div className="text-base font-semibold text-gray-900">{player.name}</div>
+                                            <div className="text-xs text-gray-600 mt-1">
+                                                {player.category} • {player.gender === 'M' ? 'Male' : 'Female'}
+                                            </div>
+                                            {canEdit && (
+                                                <div className="text-xs text-red-600 mt-1 font-medium">
+                                                    Tap to auction again
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2 mt-3">
+                                        <div className="text-center">
+                                            <div className="text-xs text-gray-500">Runs</div>
+                                            <div className="text-sm font-semibold text-gray-900">{player.runs}</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-xs text-gray-500">Wickets</div>
+                                            <div className="text-sm font-semibold text-gray-900">{player.wickets}</div>
+                                        </div>
+                                        <div className="text-center">
+                                            <div className="text-xs text-gray-500">MVP</div>
+                                            <div className="text-sm font-semibold text-gray-900">{player.mvp}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 text-gray-500">
+                            No skipped players yet
+                        </div>
+                    )}
                 </div>
             </BottomSheet>
         </div>
