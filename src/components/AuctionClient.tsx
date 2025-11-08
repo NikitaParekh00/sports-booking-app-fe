@@ -757,13 +757,11 @@ export default function AuctionClient() {
 
             // Move to next player
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
-            const isComplete = nextIndex >= players.length - 1;
 
             await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: nextIndex,
-                    is_complete: isComplete
+                    current_player_index: nextIndex
                 })
                 .eq('id', sessionId);
 
@@ -791,13 +789,11 @@ export default function AuctionClient() {
         try {
             // Move to next player
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
-            const isComplete = nextIndex >= players.length - 1;
 
             await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: nextIndex,
-                    is_complete: isComplete
+                    current_player_index: nextIndex
                 })
                 .eq('id', sessionId);
 
@@ -831,12 +827,10 @@ export default function AuctionClient() {
 
         try {
             // Update database session
-            const isComplete = playerIndex >= players.length - 1;
             await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: playerIndex,
-                    is_complete: isComplete
+                    current_player_index: playerIndex
                 })
                 .eq('id', sessionId);
 
@@ -1099,29 +1093,32 @@ export default function AuctionClient() {
 
             {/* Header */}
             <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 sticky top-0 z-10 shadow-sm">
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
+                <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
                     <button
                         onClick={() => router.back()}
-                        className="text-gray-600 hover:text-gray-900 flex items-center gap-2"
+                        className="text-gray-600 hover:text-gray-900 flex items-center gap-1 md:gap-2 flex-shrink-0"
                     >
-                        ← Back
+                        <span className="text-lg md:text-base">←</span>
+                        <span className="hidden sm:inline">Back</span>
                     </button>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900">Auction</h1>
-                    <div className="flex items-center gap-3">
+                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex-shrink-0">Auction</h1>
+                    <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
                         <button
                             onClick={() => setIsSkippedPlayersSheetOpen(true)}
-                            className="text-red-600 hover:text-red-700 font-medium text-sm flex items-center gap-1"
+                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
+                            title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
                         >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                             </svg>
-                            Skipped Players ({getCurrentSkippedPlayers().length})
+                            <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
+                            <span className="sm:hidden">({getCurrentSkippedPlayers().length})</span>
                         </button>
                         <button
                             onClick={() => setIsTeamsSheetOpen(true)}
-                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-sm"
+                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-xs md:text-sm"
                         >
-                            View Teams
+                            Teams
                         </button>
                         {canEdit && !auctionComplete && (
                             <button
