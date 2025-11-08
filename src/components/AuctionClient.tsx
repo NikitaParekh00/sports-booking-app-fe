@@ -18,6 +18,7 @@ interface Player {
     catch: number;
     ro: number;
     mvp: number;
+    bidAmount?: number; // Optional for players in team (bought players have bid amount)
 }
 
 interface Team {
@@ -81,6 +82,7 @@ interface DbPlayer {
     payment_status: string;
     gender: string;
     player_category: string;
+    bid_amount: number;
     runs: number;
     strike_rate: number;
     wickets: number;
@@ -351,7 +353,8 @@ export default function AuctionClient() {
                             average: p.average,
                             catch: p.catch_count,
                             ro: p.ro,
-                            mvp: p.mvp
+                            mvp: p.mvp,
+                            bidAmount: p.bid_amount
                         }));
 
                     return {
@@ -410,7 +413,8 @@ export default function AuctionClient() {
                         average: p.average,
                         catch: p.catch_count,
                         ro: p.ro,
-                        mvp: p.mvp
+                        mvp: p.mvp,
+                        bidAmount: p.bid_amount
                     }));
 
                 return {
@@ -848,7 +852,7 @@ export default function AuctionClient() {
                                                                     {player.name}
                                                                     <span className="text-gray-500 ml-1">({player.category})</span>
                                                                 </span>
-                                                                <span className="text-gray-500 text-xs">MVP: {player.mvp}</span>
+                                                                <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1121,7 +1125,7 @@ export default function AuctionClient() {
                                                             {player.name}
                                                             <span className="text-gray-500 ml-1">({player.category})</span>
                                                         </span>
-                                                        <span className="text-gray-500 text-xs">MVP: {player.mvp}</span>
+                                                        <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                     </div>
                                                 ))}
                                             </div>
