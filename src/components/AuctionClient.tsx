@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
 
@@ -45,6 +46,23 @@ const MINIMUM_BID = 5000;
 const BID_INCREASE = 1000;
 const TEAMS_COUNT = 8;
 const PLAYERS_PER_TEAM = 10;
+
+// Team logos mapping
+const TEAM_LOGOS: { [key: number]: string } = {
+    1: '/team-logos/team1.jpeg',
+    2: '/team-logos/team2.jpeg',
+    3: '/team-logos/team3.jpeg',
+    4: '/team-logos/team4.jpeg',
+    5: '/team-logos/team5.jpeg',
+    6: '/team-logos/team6.jpeg',
+    7: '/team-logos/team7.jpeg',
+    8: '/team-logos/team8.jpeg',
+};
+
+// Helper function to get team logo
+const getTeamLogo = (teamId: number): string => {
+    return TEAM_LOGOS[teamId] || '/logo.jpeg'; // Fallback to main logo if team logo not found
+};
 
 // Database types for auction
 interface DbTeam {
@@ -547,13 +565,6 @@ export default function AuctionClient() {
             return;
         }
 
-        // Check category limit
-        const categoryLimit = currentPlayer.category === 'A' ? 7 : currentPlayer.category === 'B' ? 2 : 1;
-        if (team.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] >= categoryLimit) {
-            alert(`Team ${team.name} already has maximum ${currentPlayer.category} category players!`);
-            return;
-        }
-
         try {
             // Get team UUID from database
             const { data: dbTeam } = await supabase
@@ -746,10 +757,19 @@ export default function AuctionClient() {
                                     return (
                                         <div key={team.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                                             <div className="flex justify-between items-start mb-2">
-                                                <div>
-                                                    <h3 className="font-semibold text-gray-900 text-sm">{team.name}</h3>
-                                                    <div className="text-xs text-gray-500 mt-0.5">
-                                                        {team.players.length}/{PLAYERS_PER_TEAM} players
+                                                <div className="flex items-center gap-2">
+                                                    <Image
+                                                        src={getTeamLogo(team.id)}
+                                                        alt={`${team.name} logo`}
+                                                        width={32}
+                                                        height={32}
+                                                        className="object-contain flex-shrink-0"
+                                                    />
+                                                    <div className="min-w-0 flex-1">
+                                                        <h3 className="font-semibold text-gray-900 text-sm break-normal leading-tight">{team.name}</h3>
+                                                        <div className="text-xs text-gray-500 mt-0.5">
+                                                            {team.players.length}/{PLAYERS_PER_TEAM} players
+                                                        </div>
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
@@ -769,7 +789,7 @@ export default function AuctionClient() {
                                             </div>
 
                                             {/* Category Distribution */}
-                                            <div className="flex gap-1.5">
+                                            <div className="flex gap-1.5 mb-2">
                                                 <div className={`flex-1 rounded p-1.5 text-center ${team.categoryCount.A >= 7 ? 'bg-red-100' : 'bg-white'}`}>
                                                     <div className="text-xs text-gray-600">A</div>
                                                     <div className="text-xs font-semibold text-gray-900">{team.categoryCount.A}/7</div>
@@ -783,6 +803,28 @@ export default function AuctionClient() {
                                                     <div className="text-xs font-semibold text-gray-900">{team.categoryCount.C}/1</div>
                                                 </div>
                                             </div>
+
+                                            {/* Players List */}
+                                            {team.players.length > 0 ? (
+                                                <div className="border-t border-gray-200 pt-2 mt-2">
+                                                    <div className="text-xs font-semibold text-gray-600 mb-1.5">Players:</div>
+                                                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                                                        {team.players.map((player, idx) => (
+                                                            <div key={idx} className="flex justify-between items-center text-xs py-0.5">
+                                                                <span className="text-gray-700">
+                                                                    {player.name}
+                                                                    <span className="text-gray-500 ml-1">({player.category})</span>
+                                                                </span>
+                                                                <span className="text-gray-500 text-xs">MVP: {player.mvp}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-xs text-gray-400 text-center py-1 border-t border-gray-200 mt-2 pt-2">
+                                                    No players yet
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -809,16 +851,20 @@ export default function AuctionClient() {
                         {/* Current Player Card */}
                         <div className="bg-white border-2 border-gray-200 rounded-xl p-6 md:p-8 shadow-sm">
                             <div className="flex justify-between items-start mb-6">
-                                <div>
+                                <div className="flex-1">
                                     <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">{currentPlayer.name}</h2>
                                     <div className="flex flex-wrap gap-2 text-sm text-gray-600">
                                         <span className="bg-gray-100 px-3 py-1.5 rounded-lg">{currentPlayer.gender === 'M' ? 'Male' : 'Female'}</span>
                                         <span className="bg-gray-100 px-3 py-1.5 rounded-lg">Category {currentPlayer.category}</span>
-                                        <span className={`px-3 py-1.5 rounded-lg ${currentPlayer.payment === 'Y' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                            {currentPlayer.payment === 'Y' ? 'Paid' : 'Unpaid'}
-                                        </span>
                                     </div>
                                 </div>
+                                <Image
+                                    src="/logo.jpeg"
+                                    alt="Logo"
+                                    width={180}
+                                    height={80}
+                                    className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
+                                />
                             </div>
 
                             {/* Stats Grid */}
@@ -892,9 +938,7 @@ export default function AuctionClient() {
                                 {teams.map(team => {
                                     const canAfford = team.budget >= currentBid;
                                     const hasSpace = team.players.length < PLAYERS_PER_TEAM;
-                                    const categoryLimit = currentPlayer.category === 'A' ? 7 : currentPlayer.category === 'B' ? 2 : 1;
-                                    const canAddCategory = team.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] < categoryLimit;
-                                    const isDisabled = !canAfford || !hasSpace || !canAddCategory;
+                                    const isDisabled = !canAfford || !hasSpace;
 
                                     const isViewOnly = !canEdit;
                                     const finalDisabled = isDisabled || isViewOnly;
@@ -911,7 +955,16 @@ export default function AuctionClient() {
                                                     : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
                                                 }`}
                                         >
-                                            <div className="font-semibold text-gray-900 mb-2">{team.name}</div>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <Image
+                                                    src={getTeamLogo(team.id)}
+                                                    alt={`${team.name} logo`}
+                                                    width={40}
+                                                    height={40}
+                                                    className="object-contain flex-shrink-0"
+                                                />
+                                                <div className="font-semibold text-gray-900 text-sm md:text-base break-normal min-w-0 flex-1 leading-tight">{team.name}</div>
+                                            </div>
                                             <div className="text-sm text-gray-600 mb-1">
                                                 Budget: ₹{team.budget.toLocaleString()}
                                             </div>
@@ -923,9 +976,6 @@ export default function AuctionClient() {
                                             )}
                                             {!hasSpace && (
                                                 <div className="text-xs text-red-600 mt-1">Team full</div>
-                                            )}
-                                            {!canAddCategory && (
-                                                <div className="text-xs text-red-600 mt-1">Category limit reached</div>
                                             )}
                                         </button>
                                     );
@@ -970,10 +1020,19 @@ export default function AuctionClient() {
                             return (
                                 <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-4">
                                     <div className="flex justify-between items-start mb-3">
-                                        <div>
-                                            <h3 className="text-lg font-semibold text-gray-900">{team.name}</h3>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                                {team.players.length} / {PLAYERS_PER_TEAM} players
+                                        <div className="flex items-center gap-3">
+                                            <Image
+                                                src={getTeamLogo(team.id)}
+                                                alt={`${team.name} logo`}
+                                                width={40}
+                                                height={40}
+                                                className="object-contain flex-shrink-0"
+                                            />
+                                            <div className="min-w-0 flex-1">
+                                                <h3 className="text-base md:text-lg font-semibold text-gray-900 break-normal leading-tight">{team.name}</h3>
+                                                <div className="text-xs text-gray-500 mt-1">
+                                                    {team.players.length} / {PLAYERS_PER_TEAM} players
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="text-right">
