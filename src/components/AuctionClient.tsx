@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
@@ -357,7 +357,7 @@ export default function AuctionClient() {
                     return {
                         id: team.team_number,
                         name: team.name,
-                        budget: team.budget,
+                        budget: Number(team.budget), // Ensure budget is a number
                         players: teamPlayers,
                         categoryCount: {
                             A: team.category_a_count,
@@ -380,6 +380,56 @@ export default function AuctionClient() {
         }
     }, [authLoading, supabase]);
 
+    // Helper function to reload teams (accessible throughout component)
+    const reloadTeams = useCallback(async () => {
+        if (!sessionId) return;
+
+        const { data: teamsData } = await supabase
+            .from('auction_teams')
+            .select('*')
+            .eq('session_id', sessionId)
+            .order('team_number', { ascending: true });
+
+        const { data: playersData } = await supabase
+            .from('auction_players')
+            .select('*')
+            .eq('session_id', sessionId);
+
+        if (teamsData && playersData) {
+            const mappedTeams: Team[] = teamsData.map((team: DbTeam) => {
+                const teamPlayers = playersData
+                    .filter((p: DbPlayer) => p.team_id === team.id)
+                    .map((p: DbPlayer) => ({
+                        name: p.player_name,
+                        payment: p.payment_status as 'Y' | 'N',
+                        gender: p.gender as 'M' | 'F',
+                        category: p.player_category,
+                        runs: p.runs,
+                        strikeRate: p.strike_rate,
+                        wickets: p.wickets,
+                        average: p.average,
+                        catch: p.catch_count,
+                        ro: p.ro,
+                        mvp: p.mvp
+                    }));
+
+                return {
+                    id: team.team_number,
+                    name: team.name,
+                    budget: Number(team.budget), // Ensure budget is a number
+                    players: teamPlayers,
+                    categoryCount: {
+                        A: team.category_a_count,
+                        B: team.category_b_count,
+                        C: team.category_c_count
+                    }
+                };
+            });
+
+            setTeams(mappedTeams);
+        }
+    }, [sessionId, supabase]);
+
     // Real-time subscription for auction updates
     useEffect(() => {
         if (!sessionId) return;
@@ -400,54 +450,6 @@ export default function AuctionClient() {
                 }
             })
             .subscribe();
-
-        // Helper function to reload teams
-        const reloadTeams = async () => {
-            const { data: teamsData } = await supabase
-                .from('auction_teams')
-                .select('*')
-                .eq('session_id', sessionId)
-                .order('team_number', { ascending: true });
-
-            const { data: playersData } = await supabase
-                .from('auction_players')
-                .select('*')
-                .eq('session_id', sessionId);
-
-            if (teamsData && playersData) {
-                const mappedTeams: Team[] = teamsData.map((team: DbTeam) => {
-                    const teamPlayers = playersData
-                        .filter((p: DbPlayer) => p.team_id === team.id)
-                        .map((p: DbPlayer) => ({
-                            name: p.player_name,
-                            payment: p.payment_status as 'Y' | 'N',
-                            gender: p.gender as 'M' | 'F',
-                            category: p.player_category,
-                            runs: p.runs,
-                            strikeRate: p.strike_rate,
-                            wickets: p.wickets,
-                            average: p.average,
-                            catch: p.catch_count,
-                            ro: p.ro,
-                            mvp: p.mvp
-                        }));
-
-                    return {
-                        id: team.team_number,
-                        name: team.name,
-                        budget: team.budget,
-                        players: teamPlayers,
-                        categoryCount: {
-                            A: team.category_a_count,
-                            B: team.category_b_count,
-                            C: team.category_c_count
-                        }
-                    };
-                });
-
-                setTeams(mappedTeams);
-            }
-        };
 
         // Subscribe to team changes
         const teamsChannel = supabase
@@ -520,7 +522,7 @@ export default function AuctionClient() {
             playersChannel.unsubscribe();
             playerPoolChannel.unsubscribe();
         };
-    }, [sessionId, supabase]);
+    }, [sessionId, supabase, reloadTeams]);
 
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
@@ -594,18 +596,23 @@ export default function AuctionClient() {
                 mvp: currentPlayer.mvp
             });
 
-            // Update team budget and category counts
-            const newBudget = team.budget - currentBid;
-            const categoryKey = `category_${currentPlayer.category.toLowerCase()}_count` as 'category_a_count' | 'category_b_count' | 'category_c_count';
-            const newCategoryCount = team.categoryCount[currentPlayer.category as 'A' | 'B' | 'C'] + 1;
+            // Update team budget
+            const newBudget = Number(team.budget) - Number(currentBid);
 
-            await supabase
+            const { error: updateError } = await supabase
                 .from('auction_teams')
                 .update({
-                    budget: newBudget,
-                    [categoryKey]: newCategoryCount
+                    budget: newBudget
                 })
                 .eq('id', dbTeam.id);
+
+            if (updateError) {
+                console.error('Error updating team budget:', updateError);
+                throw updateError;
+            }
+
+            // Manually reload teams to ensure UI updates immediately
+            await reloadTeams();
 
             // Move to next player
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
