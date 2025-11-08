@@ -580,11 +580,11 @@ export default function AuctionClient() {
                 shadow: 'shadow-2xl shadow-amber-400/60'
             };
         } else if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
-            // Silver shiny/metallic styling for Marquee (but not Super Marquee or Non Marquee)
+            // Blue styling for Marquee (but not Super Marquee or Non Marquee)
             return {
-                bg: 'bg-gradient-to-br from-slate-100 via-gray-200 to-slate-200',
-                border: 'border-4 border-gray-500',
-                shadow: 'shadow-2xl shadow-gray-500/50'
+                bg: 'bg-gradient-to-br from-blue-100 via-blue-200 to-blue-300',
+                border: 'border-4 border-blue-500',
+                shadow: 'shadow-2xl shadow-blue-500/50'
             };
         } else {
             // Default styling for others (Non Marquee, etc.)
@@ -600,8 +600,8 @@ export default function AuctionClient() {
     const getCategoryTagStyle = (category: string) => {
         const categoryLower = category.toLowerCase();
         if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
-            // Silver shiny/metallic styling for Marquee category tag
-            return 'bg-gradient-to-r from-slate-200 via-gray-300 to-slate-200 text-gray-900 border-2 border-gray-500 shadow-lg font-semibold';
+            // Blue styling for Marquee category tag
+            return 'bg-gradient-to-r from-blue-200 via-blue-300 to-blue-200 text-blue-900 border-2 border-blue-500 shadow-lg font-semibold';
         } else if (categoryLower.includes('super marquee')) {
             // Rich gold styling for Super Marquee category tag
             return 'bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-300 text-amber-900 border-2 border-amber-500 shadow-lg font-semibold';
