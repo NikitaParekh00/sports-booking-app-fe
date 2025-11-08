@@ -31,6 +31,7 @@ interface Team {
         B: number;
         C: number;
     };
+    ownerName?: string;
 }
 
 const initialPlayers: Player[] = [
@@ -74,6 +75,7 @@ interface DbTeam {
     category_a_count: number;
     category_b_count: number;
     category_c_count: number;
+    owner_name?: string;
 }
 
 interface DbPlayer {
@@ -139,6 +141,7 @@ export default function AuctionClient() {
             budget: TOTAL_AMOUNT,
             players: [],
             categoryCount: { A: 0, B: 0, C: 0 },
+            ownerName: undefined,
         }));
     });
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
@@ -210,11 +213,10 @@ export default function AuctionClient() {
                 // Get or create active auction session
                 let finalSession = null;
 
-                // Try to get existing session
+                // Try to get most recent session (including completed ones)
                 const { data: session, error: sessionError } = await supabase
                     .from('auction_sessions')
                     .select('*')
-                    .eq('is_complete', false)
                     .order('created_at', { ascending: false })
                     .limit(1)
                     .maybeSingle();
@@ -226,7 +228,7 @@ export default function AuctionClient() {
                     console.error('Error fetching session:', sessionError);
                     throw new Error(`Database error: ${sessionError.message}. Please run the auction_schema.sql script first.`);
                 } else {
-                    // No active session, create one
+                    // No session exists, create one
                     const { data: newSession, error: createError } = await supabase
                         .from('auction_sessions')
                         .insert({
@@ -368,7 +370,8 @@ export default function AuctionClient() {
                             A: team.category_a_count,
                             B: team.category_b_count,
                             C: team.category_c_count
-                        }
+                        },
+                        ownerName: team.owner_name || undefined
                     };
                 });
 
@@ -775,6 +778,48 @@ export default function AuctionClient() {
         }
     };
 
+    const handleEndAuction = async () => {
+        if (!canEdit) {
+            alert('You do not have permission to edit the auction.');
+            return;
+        }
+
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
+        }
+
+        // Confirm with user
+        const confirmed = confirm(
+            'Are you sure you want to end the auction?\n\n' +
+            'This will:\n' +
+            '- Mark the auction as complete\n' +
+            '- Prevent further bidding\n' +
+            '- Show final team results\n\n' +
+            'You can still view the results, but no more players can be bought.'
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            // Mark auction as complete
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    is_complete: true
+                })
+                .eq('id', sessionId);
+
+            setAuctionComplete(true);
+            alert('Auction ended successfully!');
+        } catch (error) {
+            console.error('Error ending auction:', error);
+            alert('Failed to end auction. Please try again.');
+        }
+    };
+
     // Show loading state
     if (authLoading || loadingState || !currentPlayer || players.length === 0) {
         return (
@@ -793,21 +838,38 @@ export default function AuctionClient() {
         return (
             <div className="min-h-screen bg-gray-50 px-4 py-8">
                 <div className="max-w-7xl mx-auto">
-                    <h1 className="text-4xl font-bold text-center mb-8 text-gray-900">Auction Complete! 🎉</h1>
+                    <div className="flex justify-between items-center mb-8 flex-wrap gap-4">
+                        <h1 className="text-3xl md:text-4xl font-bold text-gray-900">Auction Complete! 🎉</h1>
+                        <Image
+                            src="/logo.jpeg"
+                            alt="Logo"
+                            width={120}
+                            height={60}
+                            className="object-contain w-32 h-12 md:w-[120px] md:h-[60px]"
+                        />
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {teams.map(team => (
                             <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
                                 <div className="flex justify-between items-center mb-3">
                                     <h2 className="text-xl font-semibold text-gray-900">{team.name}</h2>
-                                    <span className="text-sm font-medium text-gray-600">₹{team.budget.toLocaleString()}</span>
+                                    <Image
+                                        src={getTeamLogo(team.id)}
+                                        alt={`${team.name} logo`}
+                                        width={48}
+                                        height={48}
+                                        className="object-contain"
+                                    />
                                 </div>
-                                <div className="text-sm text-gray-600 mb-2">
-                                    Players: {team.players.length}/{PLAYERS_PER_TEAM} |
-                                    A: {team.categoryCount.A}/7 |
-                                    B: {team.categoryCount.B}/2 |
-                                    C: {team.categoryCount.C}/1
-                                </div>
+                                {team.ownerName && (
+                                    <div className="mb-2">
+                                        <div className="flex-1 rounded p-1.5 text-center bg-white border border-gray-200">
+                                            <div className="text-xs text-gray-600">Owner</div>
+                                            <div className="text-xs font-semibold text-gray-900">{team.ownerName}</div>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="space-y-1">
                                     {team.players.map((player, idx) => (
                                         <div key={idx} className="text-sm text-gray-700 py-1 border-b border-gray-100 last:border-0">
@@ -932,14 +994,28 @@ export default function AuctionClient() {
                         ← Back
                     </button>
                     <h1 className="text-xl md:text-2xl font-bold text-gray-900">Auction</h1>
-                    <button
-                        onClick={() => setIsTeamsSheetOpen(true)}
-                        className="md:hidden text-red-600 hover:text-red-700 font-medium text-sm"
-                    >
-                        View Teams
-                    </button>
-                    <div className="hidden md:block text-sm text-gray-600">
-                        Player {currentPlayerIndex + 1} of {players.length}
+                    <div className="flex items-center gap-3">
+                        {canEdit && !auctionComplete && (
+                            <button
+                                onClick={handleEndAuction}
+                                className="hidden md:flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                                title="End Auction"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                End Auction
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setIsTeamsSheetOpen(true)}
+                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-sm"
+                        >
+                            View Teams
+                        </button>
+                        <div className="hidden md:block text-sm text-gray-600">
+                            Player {currentPlayerIndex + 1} of {players.length}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -990,21 +1066,15 @@ export default function AuctionClient() {
                                                 </div>
                                             </div>
 
-                                            {/* Category Distribution */}
-                                            <div className="flex gap-1.5 mb-2">
-                                                <div className={`flex-1 rounded p-1.5 text-center ${team.categoryCount.A >= 7 ? 'bg-red-100' : 'bg-white'}`}>
-                                                    <div className="text-xs text-gray-600">A</div>
-                                                    <div className="text-xs font-semibold text-gray-900">{team.categoryCount.A}/7</div>
+                                            {/* Owner Name */}
+                                            {team.ownerName && (
+                                                <div className="mb-2">
+                                                    <div className="flex-1 rounded p-1.5 text-center bg-white border border-gray-200">
+                                                        <div className="text-xs text-gray-600">Owner</div>
+                                                        <div className="text-xs font-semibold text-gray-900">{team.ownerName}</div>
+                                                    </div>
                                                 </div>
-                                                <div className={`flex-1 rounded p-1.5 text-center ${team.categoryCount.B >= 2 ? 'bg-red-100' : 'bg-white'}`}>
-                                                    <div className="text-xs text-gray-600">B</div>
-                                                    <div className="text-xs font-semibold text-gray-900">{team.categoryCount.B}/2</div>
-                                                </div>
-                                                <div className={`flex-1 rounded p-1.5 text-center ${team.categoryCount.C >= 1 ? 'bg-red-100' : 'bg-white'}`}>
-                                                    <div className="text-xs text-gray-600">C</div>
-                                                    <div className="text-xs font-semibold text-gray-900">{team.categoryCount.C}/1</div>
-                                                </div>
-                                            </div>
+                                            )}
 
                                             {/* Players List */}
                                             {team.players.length > 0 ? (
@@ -1257,27 +1327,15 @@ export default function AuctionClient() {
                                         </div>
                                     </div>
 
-                                    {/* Category Distribution */}
-                                    <div className="flex gap-2 mb-3">
-                                        <div className={`flex-1 rounded-lg p-2 text-center ${team.categoryCount.A >= 7 ? 'bg-red-100' : 'bg-gray-100'}`}>
-                                            <div className="text-xs text-gray-600">A</div>
-                                            <div className="text-sm font-semibold text-gray-900">
-                                                {team.categoryCount.A}/7
+                                    {/* Owner Name */}
+                                    {team.ownerName && (
+                                        <div className="mb-3">
+                                            <div className="flex-1 rounded-lg p-2 text-center bg-gray-100 border border-gray-200">
+                                                <div className="text-xs text-gray-600">Owner</div>
+                                                <div className="text-sm font-semibold text-gray-900">{team.ownerName}</div>
                                             </div>
                                         </div>
-                                        <div className={`flex-1 rounded-lg p-2 text-center ${team.categoryCount.B >= 2 ? 'bg-red-100' : 'bg-gray-100'}`}>
-                                            <div className="text-xs text-gray-600">B</div>
-                                            <div className="text-sm font-semibold text-gray-900">
-                                                {team.categoryCount.B}/2
-                                            </div>
-                                        </div>
-                                        <div className={`flex-1 rounded-lg p-2 text-center ${team.categoryCount.C >= 1 ? 'bg-red-100' : 'bg-gray-100'}`}>
-                                            <div className="text-xs text-gray-600">C</div>
-                                            <div className="text-sm font-semibold text-gray-900">
-                                                {team.categoryCount.C}/1
-                                            </div>
-                                        </div>
-                                    </div>
+                                    )}
 
                                     {/* Players List */}
                                     {team.players.length > 0 ? (
