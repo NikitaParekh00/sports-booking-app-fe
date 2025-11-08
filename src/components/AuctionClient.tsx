@@ -533,12 +533,77 @@ export default function AuctionClient() {
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
 
+    // Get card styling based on player category
+    const getPlayerCardStyle = (category: string) => {
+        const categoryLower = category.toLowerCase();
+        if (categoryLower.includes('super marquee')) {
+            // Rich gold styling for Super Marquee
+            return {
+                bg: 'bg-gradient-to-br from-yellow-100 via-amber-100 to-yellow-200',
+                border: 'border-4 border-amber-500',
+                shadow: 'shadow-2xl shadow-amber-400/60'
+            };
+        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
+            // Silver shiny/metallic styling for Marquee (but not Super Marquee)
+            return {
+                bg: 'bg-gradient-to-br from-slate-100 via-gray-200 to-slate-200',
+                border: 'border-4 border-gray-500',
+                shadow: 'shadow-2xl shadow-gray-500/50'
+            };
+        } else {
+            // Default styling for others
+            return {
+                bg: 'bg-white',
+                border: 'border-2 border-gray-200',
+                shadow: 'shadow-sm'
+            };
+        }
+    };
+
+    // Get category tag styling
+    const getCategoryTagStyle = (category: string) => {
+        const categoryLower = category.toLowerCase();
+        if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
+            // Silver shiny/metallic styling for Marquee category tag
+            return 'bg-gradient-to-r from-slate-200 via-gray-300 to-slate-200 text-gray-900 border-2 border-gray-500 shadow-lg font-semibold';
+        } else if (categoryLower.includes('super marquee')) {
+            // Rich gold styling for Super Marquee category tag
+            return 'bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-300 text-amber-900 border-2 border-amber-500 shadow-lg font-semibold';
+        } else {
+            return 'bg-gray-100 text-gray-600';
+        }
+    };
+
+    const cardStyle = currentPlayer ? getPlayerCardStyle(currentPlayer.category) : { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
+
+    // Get minimum bid based on player category
+    const getMinimumBid = (category: string) => {
+        const categoryLower = category.toLowerCase();
+        if (categoryLower.includes('super marquee')) {
+            return 10000; // Super Marquee: ₹10,000
+        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super')) {
+            return 5000; // Marquee: ₹5,000
+        } else {
+            return 2000; // Others: ₹2,000
+        }
+    };
+
+    const currentMinimumBid = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
+
+    // Update bid when player changes
+    useEffect(() => {
+        if (currentPlayer) {
+            const newMinimum = getMinimumBid(currentPlayer.category);
+            setCurrentBid(newMinimum);
+        }
+    }, [currentPlayerIndex, currentPlayer]);
+
     const handleBidIncrease = () => {
         setCurrentBid(prev => prev + BID_INCREASE);
     };
 
     const handleBidDecrease = () => {
-        if (currentBid > MINIMUM_BID) {
+        if (currentBid > currentMinimumBid) {
             setCurrentBid(prev => prev - BID_INCREASE);
         }
     };
@@ -667,7 +732,8 @@ export default function AuctionClient() {
                 .eq('id', sessionId);
 
             // Reset UI state
-            setCurrentBid(MINIMUM_BID);
+            const newMinimum = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
+            setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
             console.error('Error buying player:', error);
@@ -700,7 +766,8 @@ export default function AuctionClient() {
                 .eq('id', sessionId);
 
             // Reset UI state
-            setCurrentBid(MINIMUM_BID);
+            const newMinimum = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
+            setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
             console.error('Error skipping player:', error);
@@ -984,13 +1051,13 @@ export default function AuctionClient() {
                         </div>
 
                         {/* Current Player Card */}
-                        <div className="bg-white border-2 border-gray-200 rounded-xl p-6 md:p-8 shadow-sm">
+                        <div className={`${cardStyle.bg} ${cardStyle.border} rounded-xl p-6 md:p-8 ${cardStyle.shadow}`}>
                             <div className="flex justify-between items-start mb-6">
                                 <div className="flex-1">
                                     <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">{currentPlayer.name}</h2>
-                                    <div className="flex flex-wrap gap-2 text-sm text-gray-600">
-                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg">{currentPlayer.gender === 'M' ? 'Male' : 'Female'}</span>
-                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg">{currentPlayer.category}</span>
+                                    <div className="flex flex-wrap gap-2 text-sm">
+                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg text-gray-600">{currentPlayer.gender === 'M' ? 'Male' : 'Female'}</span>
+                                        <span className={`px-3 py-1.5 rounded-lg font-medium ${getCategoryTagStyle(currentPlayer.category)}`}>{currentPlayer.category}</span>
                                     </div>
                                 </div>
                                 <Image
@@ -1047,7 +1114,7 @@ export default function AuctionClient() {
                             <div className="flex items-center justify-center gap-6 mb-4">
                                 <button
                                     onClick={handleBidDecrease}
-                                    disabled={!canEdit || currentBid <= MINIMUM_BID}
+                                    disabled={!canEdit || currentBid <= currentMinimumBid}
                                     className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
                                 >
                                     −
@@ -1062,7 +1129,7 @@ export default function AuctionClient() {
                                 </button>
                             </div>
                             <div className="text-sm text-gray-500 text-center">
-                                Min: ₹{MINIMUM_BID.toLocaleString()} | Increase: ₹{BID_INCREASE.toLocaleString()}
+                                Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{BID_INCREASE.toLocaleString()}
                             </div>
                         </div>
 
