@@ -212,13 +212,18 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       <div className="px-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Play a Sport</h3>
-          <a href="#" className="text-gray-600 text-sm font-medium">See All Sports →</a>
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="text-gray-600 text-sm font-medium"
+          >
+            See All Sports →
+          </button>
         </div>
         <div className="grid grid-cols-4 gap-3 mt-3">
           {displayedSports.map((sport) => (
-            <a
+            <button
               key={sport.id}
-              href={`/search?sport=${sport.id}&location=${encodeURIComponent(selectedLocation)}`}
+              onClick={() => alert('Coming Soon')}
               className="flex flex-col items-center p-3 bg-white border border-gray-200 rounded-xl hover:shadow-sm"
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
@@ -235,7 +240,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
                 )}
               </div>
               <span className="text-xs text-gray-800 text-center leading-tight truncate w-full">{sport.name}</span>
-            </a>
+            </button>
           ))}
         </div>
         {sports.length > 8 && (
@@ -250,26 +255,19 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       <div className="px-4 mt-8">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Coaching & Training</h3>
-          <a href="#" className="text-gray-600 text-sm font-medium">See All Coaching →</a>
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="text-gray-600 text-sm font-medium"
+          >
+            See All Coaching →
+          </button>
         </div>
         <div className="mt-3 flex gap-3 overflow-x-auto scrollbar-hide pb-1">
           {coachingItemsWithUrls.map((item) => {
-            // Map coaching items to sports for search
-            const sportMapping: { [key: string]: string } = {
-              'football-academy': 'football-turf',
-              'yoga-classes': 'yoga',
-              'tennis-coaching': 'lawn-tennis',
-              'swimming-lessons': 'swimming',
-              'badminton-training': 'badminton',
-              'cricket-coaching': 'cricket-nets'
-            };
-
-            const sportId = sportMapping[item.id] || item.id;
-
             return (
-              <a
+              <button
                 key={item.id}
-                href={`/search?sport=${sportId}&location=${encodeURIComponent(selectedLocation)}&type=coaching`}
+                onClick={() => alert('Coming Soon')}
                 className="min-w-[160px] bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-sm transition-shadow"
               >
                 <div className="h-20 bg-gray-200">
@@ -279,7 +277,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
                   <div className="text-gray-900 font-medium text-xs">{item.title}</div>
                   <div className="text-red-600 text-xs font-medium mt-1">Find Venues</div>
                 </div>
-              </a>
+              </button>
             );
           })}
         </div>
@@ -288,23 +286,34 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       <div className="px-4 mt-8 pb-20">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Start Scoring</h3>
-          <a href="/scoring" className="text-gray-600 text-sm font-medium">See All →</a>
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="text-gray-600 text-sm font-medium"
+          >
+            See All →
+          </button>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <a href="/scoring/friendly" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
+          >
             <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏏</div>
             <div className="p-2">
               <div className="text-gray-900 font-medium text-xs">Friendly Game</div>
               <div className="text-gray-500 text-xs">Score casual matches</div>
             </div>
-          </a>
-          <a href="/scoring/tournaments" className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          </button>
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
+          >
             <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏆</div>
             <div className="p-2">
               <div className="text-gray-900 font-medium text-xs">Tournaments</div>
               <div className="text-gray-500 text-xs">Organize and score</div>
             </div>
-          </a>
+          </button>
         </div>
       </div>
 
@@ -317,12 +326,15 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             <span className="text-xs text-red-600 font-medium">Home</span>
             <div className="w-6 h-0.5 bg-red-600 mt-1"></div>
           </a>
-          <a href="/search" className="flex flex-col items-center">
+          <button
+            onClick={() => alert('Coming Soon')}
+            className="flex flex-col items-center"
+          >
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
             <span className="text-xs text-gray-400">Search</span>
-          </a>
+          </button>
           <a href="/profile" className="flex flex-col items-center">
             <svg className="w-6 h-6 text-gray-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />

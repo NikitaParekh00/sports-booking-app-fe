@@ -132,7 +132,7 @@ export default function ProfilePage() {
                 {/* Menu Items */}
                 <div className="space-y-3">
                     {/* My Games */}
-                    <a href="/my-games" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -142,10 +142,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Past Booking */}
-                    <a href="/past-bookings" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -155,10 +155,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Friends */}
-                    <a href="/friends" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -168,10 +168,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* My Transactions */}
-                    <a href="/transactions" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -181,10 +181,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Refer & Earn */}
-                    <a href="/refer-earn" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -194,10 +194,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Saved Payment Methods */}
-                    <a href="/payment-methods" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
@@ -207,10 +207,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Corporate Profile */}
-                    <a href="/corporate-profile" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0V6a2 2 0 012 2v6a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2V6" />
@@ -220,10 +220,10 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Contact Us */}
-                    <a href="/contact" className="flex items-center p-4 bg-white border border-gray-200 rounded-lg">
+                    {/* <button onClick={() => alert('Coming Soon')} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg text-left">
                         <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center mr-4">
                             <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
@@ -233,7 +233,7 @@ export default function ProfilePage() {
                         <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                    </a>
+                    </button> */}
 
                     {/* Logout */}
                     <button onClick={handleLogout} className="w-full flex items-center p-4 bg-white border border-gray-200 rounded-lg">
@@ -251,10 +251,10 @@ export default function ProfilePage() {
 
                 {/* Footer Links */}
                 <div className="mt-8 text-center">
-                    <div className="space-y-2">
+                    {/* <div className="space-y-2">
                         <a href="/terms" className="text-blue-600 text-sm underline block">Our Terms of Use</a>
                         <a href="/privacy" className="text-blue-600 text-sm underline block">Privacy Policy</a>
-                    </div>
+                    </div> */}
                     <div className="text-gray-500 text-xs mt-4">Version 1.0.0</div>
                 </div>
             </div>

@@ -186,12 +186,12 @@ export default function SignupPage() {
                 </button>
 
                 {/* Terms and Privacy */}
-                <p className="text-center text-sm text-gray-600 leading-relaxed">
+                {/* <p className="text-center text-sm text-gray-600 leading-relaxed">
                     By signing up for Simplifit you agree with the{' '}
                     <a href="/terms" className="text-red-600 hover:text-red-700 hover:underline font-medium">Terms of Use</a>
                     {' '}and{' '}
                     <a href="/privacy" className="text-red-600 hover:text-red-700 hover:underline font-medium">Privacy Policy</a>
-                </p>
+                </p> */}
             </form>
 
             {/* Home Indicator */}

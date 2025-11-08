@@ -12,26 +12,12 @@ function VerifyOtpContent() {
     const [loading, setLoading] = useState(false);
     const [otp, setOtp] = useState(['', '', '', '', '']);
     const [phone, setPhone] = useState('');
-    const [type, setType] = useState<'signup' | 'login'>('login');
-    const [timeLeft, setTimeLeft] = useState(60);
-    const [canResend, setCanResend] = useState(false);
 
     useEffect(() => {
         const phoneParam = searchParams.get('phone');
-        const typeParam = searchParams.get('type') as 'signup' | 'login';
-
         if (phoneParam) setPhone(phoneParam);
-        if (typeParam) setType(typeParam);
     }, [searchParams]);
 
-    useEffect(() => {
-        if (timeLeft > 0) {
-            const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-            return () => clearTimeout(timer);
-        } else {
-            setCanResend(true);
-        }
-    }, [timeLeft]);
 
     const handleOtpChange = (index: number, value: string) => {
         if (value.length > 1) return; // Only allow single digit
@@ -80,12 +66,20 @@ function VerifyOtpContent() {
             // Validate OTP format
             const otpString = otp.join('');
             if (otpString.length !== 5) {
-                alert('Please enter a valid 5-digit OTP.');
+                alert('Please enter a valid 5-digit code.');
                 return;
             }
 
-            // In production, you would use: supabase.auth.verifyOtp({ phone, token: otp })
-            // For now, we'll accept any 5-digit OTP for development
+            // Hardcoded OTP validation
+            // For phone 7506256356, use code 890123 (first 5 digits: 89012)
+            // For all other phones, use code 654321 (first 5 digits: 65432)
+            const phoneNumber = phone.replace(/\D/g, ''); // Remove all non-digits
+            const expectedCode = phoneNumber.includes('7506256356') ? '89012' : '65432';
+
+            if (otpString !== expectedCode) {
+                alert('Invalid code. Please try again.');
+                return;
+            }
 
             // Find user in profiles table (standard format: +91-XXXXXXXXXX)
             const { data: existingUsers, error: checkError } = await supabase
@@ -123,21 +117,6 @@ function VerifyOtpContent() {
         }
     };
 
-    const handleResendOtp = async () => {
-        setLoading(true);
-        setCanResend(false);
-        setTimeLeft(60);
-
-        try {
-            // In production, you would use: supabase.auth.signInWithOtp({ phone })
-            alert('OTP resent successfully!');
-        } catch (error) {
-            console.error('Unexpected error:', error);
-            alert('An unexpected error occurred. Please try again.');
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const formatPhoneNumber = (phone: string) => {
         // Format +91XXXXXXXXXX to +91 XXXXX XXXXX
@@ -162,7 +141,7 @@ function VerifyOtpContent() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                     </button>
-                    <h1 className="text-xl font-semibold text-gray-900">Verify OTP</h1>
+                    <h1 className="text-xl font-semibold text-gray-900">Verify Code</h1>
                 </div>
             </div>
 
@@ -171,7 +150,7 @@ function VerifyOtpContent() {
                 {/* Instructions */}
                 <div className="text-center mb-8">
                     <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                        Enter the OTP sent to
+                        Enter unique code
                     </h2>
                     <p className="text-lg text-gray-700 font-medium">
                         {formatPhoneNumber(phone)}
@@ -204,26 +183,9 @@ function VerifyOtpContent() {
                         disabled={loading || otp.join('').length !== 5}
                         className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Verifying...' : 'VERIFY OTP'}
+                        {loading ? 'Verifying...' : 'VERIFY CODE'}
                     </button>
                 </form>
-
-                {/* Resend OTP */}
-                <div className="text-center mt-6">
-                    {canResend ? (
-                        <button
-                            onClick={handleResendOtp}
-                            disabled={loading}
-                            className="text-red-600 font-semibold hover:text-red-700 hover:underline disabled:opacity-50"
-                        >
-                            Resend OTP
-                        </button>
-                    ) : (
-                        <p className="text-gray-500">
-                            Resend OTP in {timeLeft}s
-                        </p>
-                    )}
-                </div>
             </div>
 
             {/* Home Indicator */}
