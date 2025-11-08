@@ -568,6 +568,32 @@ export default function AuctionClient() {
         }
 
         try {
+            // Check if player has already been bought by any team
+            const { data: existingPlayer, error: checkError } = await supabase
+                .from('auction_players')
+                .select('id, team_id')
+                .eq('session_id', sessionId)
+                .eq('player_name', currentPlayer.name)
+                .maybeSingle();
+
+            if (checkError) {
+                console.error('Error checking for existing player:', checkError);
+                throw checkError;
+            }
+
+            if (existingPlayer) {
+                // Find which team has this player
+                const { data: existingTeam } = await supabase
+                    .from('auction_teams')
+                    .select('name, team_number')
+                    .eq('id', existingPlayer.team_id)
+                    .single();
+
+                const teamName = existingTeam?.name || `Team ${existingTeam?.team_number || 'Unknown'}`;
+                alert(`${currentPlayer.name} has already been bought by ${teamName}!`);
+                return;
+            }
+
             // Get team UUID from database
             const { data: dbTeam } = await supabase
                 .from('auction_teams')
@@ -862,7 +888,7 @@ export default function AuctionClient() {
                                     <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">{currentPlayer.name}</h2>
                                     <div className="flex flex-wrap gap-2 text-sm text-gray-600">
                                         <span className="bg-gray-100 px-3 py-1.5 rounded-lg">{currentPlayer.gender === 'M' ? 'Male' : 'Female'}</span>
-                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg">Category {currentPlayer.category}</span>
+                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg">{currentPlayer.category}</span>
                                     </div>
                                 </div>
                                 <Image
