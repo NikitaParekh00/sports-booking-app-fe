@@ -150,6 +150,7 @@ export default function AuctionClient() {
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
+    const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
     const [isTopPlayersSheetOpen, setIsTopPlayersSheetOpen] = useState(false);
     const [loadingState, setLoadingState] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -398,6 +399,26 @@ export default function AuctionClient() {
                 } else {
                     setSkippedPlayers([]);
                 }
+
+                // Filter to show only skipped players (players processed but not bought)
+                const skippedOnly = mappedPlayers
+                    .slice(0, finalSession.current_player_index)
+                    .filter(player => !boughtNames.has(player.name));
+
+                // Set players to only skipped players if there are any
+                if (skippedOnly.length > 0) {
+                    setPlayers(skippedOnly);
+                    // Reset current player index to 0 since we're showing only skipped players
+                    setCurrentPlayerIndex(0);
+                    // Update session to reflect we're starting from index 0 for skipped players
+                    await supabase
+                        .from('auction_sessions')
+                        .update({ current_player_index: 0 })
+                        .eq('id', finalSession.id);
+                } else {
+                    // If no skipped players, show all players as normal
+                    setPlayers(mappedPlayers);
+                }
             } catch (error) {
                 console.error('Error loading auction state:', error);
             } finally {
@@ -571,6 +592,17 @@ export default function AuctionClient() {
             .slice(0, currentPlayerIndex)
             .filter(player => !boughtPlayerNames.has(player.name));
     }, [players, currentPlayerIndex, boughtPlayerNames]);
+
+    // Freeze skipped players list when sheet opens
+    useEffect(() => {
+        if (isSkippedPlayersSheetOpen) {
+            // Freeze the skipped players list when sheet opens
+            setFrozenSkippedPlayers(getCurrentSkippedPlayers());
+        } else {
+            // Clear frozen list when sheet closes
+            setFrozenSkippedPlayers([]);
+        }
+    }, [isSkippedPlayersSheetOpen, getCurrentSkippedPlayers]);
 
     // Get card styling based on player category
     const getPlayerCardStyle = (category: string) => {
@@ -1908,13 +1940,16 @@ export default function AuctionClient() {
             {/* Skipped Players Bottom Sheet */}
             <BottomSheet
                 isOpen={isSkippedPlayersSheetOpen}
-                onClose={() => setIsSkippedPlayersSheetOpen(false)}
+                onClose={() => {
+                    setIsSkippedPlayersSheetOpen(false);
+                    setFrozenSkippedPlayers([]);
+                }}
                 title="Skipped Players"
             >
                 <div className="pb-6">
-                    {getCurrentSkippedPlayers().length > 0 ? (
+                    {(frozenSkippedPlayers.length > 0 ? frozenSkippedPlayers : getCurrentSkippedPlayers()).length > 0 ? (
                         <div className="space-y-3">
-                            {getCurrentSkippedPlayers().map((player, idx) => (
+                            {(frozenSkippedPlayers.length > 0 ? frozenSkippedPlayers : getCurrentSkippedPlayers()).map((player, idx) => (
                                 <div
                                     key={idx}
                                     onClick={() => canEdit && handleJumpToSkippedPlayer(player.name)}
