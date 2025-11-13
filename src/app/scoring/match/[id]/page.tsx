@@ -248,14 +248,7 @@ export default function MatchScoringPage() {
                 {/* Sport-specific scoring */}
                 {match.status === 'live' ? (
                     <div>
-                        {match.sport === 'badminton' ? (
-                            <BadmintonScoring matchId={match.id} players={players} />
-                        ) : (
-                            <div className="bg-gray-50 rounded-lg p-6 text-center">
-                                <h3 className="text-lg font-semibold text-gray-900 mb-2">Live Scoring</h3>
-                                <p className="text-gray-600">Scoring interface for {match.sport} coming soon...</p>
-                            </div>
-                        )}
+                        <BadmintonScoring matchId={match.id} players={players} />
                     </div>
                 ) : (
                     <div className="bg-gray-50 rounded-lg p-6 text-center">

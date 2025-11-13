@@ -286,16 +286,16 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       <div className="px-4 mt-8 pb-20">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Start Scoring</h3>
-          <button
-            onClick={() => alert('Coming Soon')}
+          <a
+            href="/scoring/friendly"
             className="text-gray-600 text-sm font-medium"
           >
             See All →
-          </button>
+          </a>
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          <button
-            onClick={() => alert('Coming Soon')}
+          <a
+            href="/scoring/friendly"
             className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
           >
             <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏏</div>
@@ -303,9 +303,9 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
               <div className="text-gray-900 font-medium text-xs">Friendly Game</div>
               <div className="text-gray-500 text-xs">Score casual matches</div>
             </div>
-          </button>
-          <button
-            onClick={() => alert('Coming Soon')}
+          </a>
+          <a
+            href="/scoring/friendly"
             className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
           >
             <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏆</div>
@@ -313,7 +313,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
               <div className="text-gray-900 font-medium text-xs">Tournaments</div>
               <div className="text-gray-500 text-xs">Organize and score</div>
             </div>
-          </button>
+          </a>
         </div>
       </div>
 
