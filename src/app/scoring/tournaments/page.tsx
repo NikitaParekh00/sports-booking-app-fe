@@ -120,9 +120,12 @@ export default function TournamentsPage() {
                                     <div>Prize Pool: ₹{tournament.prize_pool}</div>
                                     <div>Status: <span className={`font-medium ${tournament.status === 'live' ? 'text-green-600' : tournament.status === 'completed' ? 'text-gray-600' : 'text-blue-600'}`}>{tournament.status}</span></div>
                                 </div>
-                                <button className="w-full mt-4 bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200">
+                                <a
+                                    href={`/scoring/tournaments/${tournament.id}`}
+                                    className="block w-full mt-4 bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 text-center"
+                                >
                                     View Details
-                                </button>
+                                </a>
                             </div>
                         ))}
                     </div>
@@ -169,12 +172,27 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
         setIsLoading(true);
 
         try {
-            // Check if user is authenticated
-            const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-            if (authError || !user) {
+            // Check if user is authenticated using localStorage (same as other pages)
+            const storedUser = localStorage.getItem('sf:user');
+            if (!storedUser) {
                 alert('Please sign in to create tournaments. Redirecting to login...');
                 window.location.href = '/login';
+                return;
+            }
+
+            const userData = JSON.parse(storedUser);
+
+            // Verify user exists in profiles table (they should already exist)
+            const { data: existingUser, error: userError } = await supabase
+                .from('profiles')
+                .select('user_id, full_name, phone, role')
+                .eq('user_id', userData.user_id)
+                .single();
+
+            if (userError || !existingUser) {
+                console.error('User not found in profiles table:', userError);
+                alert('User not found. Please sign in again.');
+                setIsLoading(false);
                 return;
             }
 
@@ -182,7 +200,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                 .from('tournaments')
                 .insert({
                     ...formData,
-                    created_by: user.id,
+                    created_by: userData.user_id,
                     sport,
                     status: 'upcoming',
                 });

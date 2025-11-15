@@ -212,18 +212,18 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
       <div className="px-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Play a Sport</h3>
-          <button
-            onClick={() => alert('Coming Soon')}
+          <a
+            href="/search"
             className="text-gray-600 text-sm font-medium"
           >
             See All Sports →
-          </button>
+          </a>
         </div>
         <div className="grid grid-cols-4 gap-3 mt-3">
           {displayedSports.map((sport) => (
-            <button
+            <a
               key={sport.id}
-              onClick={() => alert('Coming Soon')}
+              href={`/search?sport=${encodeURIComponent(sport.id)}`}
               className="flex flex-col items-center p-3 bg-white border border-gray-200 rounded-xl hover:shadow-sm"
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
@@ -240,7 +240,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
                 )}
               </div>
               <span className="text-xs text-gray-800 text-center leading-tight truncate w-full">{sport.name}</span>
-            </button>
+            </a>
           ))}
         </div>
         {sports.length > 8 && (
@@ -305,7 +305,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
             </div>
           </a>
           <a
-            href="/scoring/friendly"
+            href="/scoring/tournaments"
             className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
           >
             <div className="h-16 bg-gray-100 flex items-center justify-center text-3xl">🏆</div>
