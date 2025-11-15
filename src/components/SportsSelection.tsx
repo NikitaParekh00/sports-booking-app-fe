@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { coachingItemsWithUrls } from '@/data/coachingData';
 import PointsDisplay from './PointsDisplay';
 
@@ -304,7 +305,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
               <div className="text-gray-500 text-xs">Score casual matches</div>
             </div>
           </a>
-          <a
+          <Link
             href="/scoring/tournaments"
             className="bg-white border border-gray-200 rounded-xl overflow-hidden text-left"
           >
@@ -313,7 +314,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
               <div className="text-gray-900 font-medium text-xs">Tournaments</div>
               <div className="text-gray-500 text-xs">Organize and score</div>
             </div>
-          </a>
+          </Link>
         </div>
       </div>
 

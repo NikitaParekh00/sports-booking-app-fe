@@ -41,6 +41,19 @@ interface Participant {
     created_at: string;
 }
 
+interface MatchPlayer {
+    id: string;
+    player_name: string;
+    team: string;
+}
+
+interface TournamentMatch {
+    id: string;
+    match_date: string | null;
+    status: string;
+    match_players?: MatchPlayer[];
+}
+
 export default function TournamentDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -48,7 +61,8 @@ export default function TournamentDetailPage() {
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings'>('overview');
+    type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings';
+    const [activeTab, setActiveTab] = useState<TabType>('overview');
     const [showAddParticipant, setShowAddParticipant] = useState(false);
     const supabase = createClient();
 
@@ -220,7 +234,7 @@ export default function TournamentDetailPage() {
                         ].map((tab) => (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id as any)}
+                                onClick={() => setActiveTab(tab.id as TabType)}
                                 className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
                                     activeTab === tab.id
                                         ? 'border-red-600 text-red-600'
@@ -381,8 +395,6 @@ function ParticipantsTab({
             if (newParticipantPhone) {
                 const phoneValidation = opponentManager.validatePhoneNumber(newParticipantPhone);
                 if (phoneValidation.isValid) {
-                    const cleanPhone = newParticipantPhone.replace(/\D/g, '');
-                    const formattedPhone = `+91-${cleanPhone}`;
                     const opponentInfo = await opponentManager.findOrCreateOpponent(newParticipantPhone, newParticipantName);
                     userId = opponentInfo.user_id;
                 }
@@ -622,7 +634,7 @@ function ParticipantsTab({
 }
 
 // Groups Tab Component
-function GroupsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
+function GroupsTab({ participants }: { tournament: Tournament; participants: Participant[] }) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -647,7 +659,7 @@ function GroupsTab({ tournament, participants }: { tournament: Tournament; parti
 }
 
 // Brackets Tab Component
-function BracketsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
+function BracketsTab({ participants }: { tournament: Tournament; participants: Participant[] }) {
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -673,8 +685,7 @@ function BracketsTab({ tournament, participants }: { tournament: Tournament; par
 
 // Matches Tab Component
 function MatchesTab({ tournament }: { tournament: Tournament }) {
-    const [matches, setMatches] = useState<any[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const supabase = createClient();
 
     useEffect(() => {
@@ -714,9 +725,9 @@ function MatchesTab({ tournament }: { tournament: Tournament }) {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <div className="font-medium text-gray-900">
-                                        {match.match_players?.find((p: any) => p.team === 'player_1')?.player_name || 'TBD'} 
+                                        {match.match_players?.find((p: MatchPlayer) => p.team === 'player_1')?.player_name || 'TBD'} 
                                         {' vs '}
-                                        {match.match_players?.find((p: any) => p.team === 'player_2')?.player_name || 'TBD'}
+                                        {match.match_players?.find((p: MatchPlayer) => p.team === 'player_2')?.player_name || 'TBD'}
                                     </div>
                                     <div className="text-sm text-gray-600 mt-1">
                                         {match.match_date ? new Date(match.match_date).toLocaleString() : 'Not scheduled'}
