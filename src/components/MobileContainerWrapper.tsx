@@ -9,9 +9,10 @@ export default function MobileContainerWrapper({
 }) {
     const pathname = usePathname();
     const isAuctionPage = pathname?.startsWith('/auction');
+    const isOwnerPage = pathname?.startsWith('/owner');
 
-    if (isAuctionPage) {
-        // For auction page, render without mobile container
+    if (isAuctionPage || isOwnerPage) {
+        // For auction and owner pages, render without mobile container
         return <>{children}</>;
     }
 
