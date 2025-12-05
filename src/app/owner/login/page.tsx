@@ -106,7 +106,7 @@ export default function OwnerLoginPage() {
 					{/* Info Message */}
 					<div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
 						<p className="text-sm text-blue-800">
-							<strong>Note:</strong> Only turf owners and admins can access this dashboard. 
+							<strong>Note:</strong> Only turf owners and admins can access this dashboard.
 							If you don&apos;t have an owner account, please contact support.
 						</p>
 					</div>

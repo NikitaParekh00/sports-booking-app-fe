@@ -113,24 +113,24 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
 
       // Organize slots by date and time, storing slot_id for booking
       const availability: { [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] } = {};
-      
+
       dates.forEach((date, dateIndex) => {
         const dateKey = date.toDateString();
         const dateString = dateStrings[dateIndex];
-        
+
         // Initialize availability array for this date
         availability[dateKey] = [];
-        
+
         // For each hour slot (6 AM to 8 PM)
-    for (let hour = 6; hour <= 20; hour++) {
+        for (let hour = 6; hour <= 20; hour++) {
           // Find matching slot
           const matchingSlot = slotsData?.find(slot => {
             const slotDate = slot.date;
             const slotStartTime = slot.start_time;
-            
+
             // Check if date matches
             if (slotDate !== dateString) return false;
-            
+
             // Check if time matches (hour should match start_time)
             const slotHour = parseInt(slotStartTime.split(':')[0]);
             return slotHour === hour;
@@ -143,7 +143,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
               slot_id: matchingSlot.id,
               court_id: matchingSlot.court_id
             });
-        } else {
+          } else {
             availability[dateKey].push({
               available: false,
               price: 0
@@ -204,12 +204,12 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     async function loadData() {
       setLoading(true);
       await fetchFacility();
-    const slots = generateTimeSlots();
-    setTimeSlots(slots);
+      const slots = generateTimeSlots();
+      setTimeSlots(slots);
 
       // Fetch actual time slots from database
       const availability = await fetchTimeSlots(turfId);
-    setDateAvailability(availability);
+      setDateAvailability(availability);
       setLoading(false);
     }
 
@@ -233,7 +233,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   const handleTimeSlotSelect = (time: string, date: Date, slotIndex: number) => {
     setSelectedTimeSlot(time);
     setSelectedDate(date); // Auto-select the date when a slot is clicked
-    
+
     // Store slot_id and court_id for the selected slot
     const dateKey = date.toDateString();
     const slotInfo = dateAvailability[dateKey]?.[slotIndex];
@@ -386,14 +386,14 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
             const slotIndex = timeSlots.findIndex(slot => slot.time === selectedTimeSlot);
             const slotInfo = dateAvailability[dateKey]?.[slotIndex];
             const price = slotInfo?.price || 800;
-            
+
             return (
               <a
                 href={`/booking-summary/${turfId}?date=${selectedDate.toISOString()}&time=${selectedTimeSlot}&price=${price}&slot_id=${selectedSlotId}&court_id=${selectedCourtId}`}
-            className={`w-full py-3 rounded-lg font-semibold transition-colors bg-cyan-500 text-white hover:bg-cyan-600 block text-center`}
-          >
-            Next
-          </a>
+                className={`w-full py-3 rounded-lg font-semibold transition-colors bg-cyan-500 text-white hover:bg-cyan-600 block text-center`}
+              >
+                Next
+              </a>
             );
           })()
         ) : (
