@@ -24,19 +24,24 @@ interface BookingSummaryClientProps {
   selectedDate?: string;
   selectedTime?: string;
   selectedPrice?: string;
+  slotId?: string;
+  courtId?: string;
 }
 
 export default function BookingSummaryClient({
   turfId,
   selectedDate,
   selectedTime,
-  selectedPrice
+  selectedPrice,
+  slotId,
+  courtId
 }: BookingSummaryClientProps) {
   const [facility, setFacility] = useState<Facility | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [showSlotDetails, setShowSlotDetails] = useState(true);
   const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
+  const [courtName, setCourtName] = useState<string>("Court 1");
   const supabase = createClient();
 
   // Parse the selected time to get start and end times
@@ -99,6 +104,19 @@ export default function BookingSummaryClient({
         } else {
           setFacility(data);
         }
+
+        // Fetch court name if courtId is provided
+        if (courtId) {
+          const { data: courtData, error: courtError } = await supabase
+            .from('courts')
+            .select('name')
+            .eq('id', courtId)
+            .single();
+
+          if (!courtError && courtData) {
+            setCourtName(courtData.name);
+          }
+        }
       } catch (error) {
         console.error('Error fetching facility:', error);
         setFacility({
@@ -118,7 +136,7 @@ export default function BookingSummaryClient({
     }
 
     fetchFacility();
-  }, [turfId, supabase]);
+  }, [turfId, courtId, supabase]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "Sep 6, 2025";
@@ -203,7 +221,7 @@ export default function BookingSummaryClient({
           <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-red-600 font-semibold">Court 1</h4>
+                <h4 className="text-red-600 font-semibold">{courtName}</h4>
                 <p className="text-sm text-gray-600 mt-1">{formatDate(selectedDate)}</p>
                 <p className="text-sm text-gray-600">{timeSlot.start} - {timeSlot.end}</p>
               </div>
@@ -306,7 +324,7 @@ export default function BookingSummaryClient({
             <p className="text-sm opacity-90">{quantity} Slot(s) selected</p>
           </div>
           <a
-            href={`/booking-success/${turfId}?date=${selectedDate}&time=${selectedTime}&price=${selectedPrice}&quantity=${quantity}`}
+            href={`/booking-success/${turfId}?date=${selectedDate}&time=${selectedTime}&price=${selectedPrice}&quantity=${quantity}&slot_id=${slotId || ''}&court_id=${courtId || ''}`}
             className="bg-red-500 text-white px-8 py-3 rounded-xl font-semibold hover:bg-red-400 transition-colors inline-block shadow-lg"
           >
             PROCEED

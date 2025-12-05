@@ -8,12 +8,14 @@ interface BookingSummaryPageProps {
     date?: string;
     time?: string;
     price?: string;
+    slot_id?: string;
+    court_id?: string;
   }>;
 }
 
 export default async function BookingSummaryPage({ params, searchParams }: BookingSummaryPageProps) {
   const { id } = await params;
-  const { date, time, price } = await searchParams;
+  const { date, time, price, slot_id, court_id } = await searchParams;
 
   return (
     <BookingSummaryClient
@@ -21,6 +23,8 @@ export default async function BookingSummaryPage({ params, searchParams }: Booki
       selectedDate={date}
       selectedTime={time}
       selectedPrice={price}
+      slotId={slot_id}
+      courtId={court_id}
     />
   );
 }

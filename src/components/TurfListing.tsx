@@ -53,183 +53,6 @@ const sportIcons: { [key: string]: string } = {
   swimming: "🏊"
 };
 
-// Demo facilities data for when database is empty (kept for reference but not used)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _unusedDemoFacilities = (sport: string): Facility[] => {
-  const demoData: { [key: string]: Facility[] } = {
-    cricket: [
-      {
-        id: "demo-cricket-1",
-        name: "Mumbai Cricket Academy",
-        city: "Mumbai",
-        address: "Bandra West, Mumbai",
-        latitude: 19.0544,
-        longitude: 72.8406,
-        sport: "cricket",
-        price_per_hour: 800,
-        description: "Professional cricket training facility with multiple grounds",
-        images: ["https://example.com/cricket1.jpg"],
-        phone: "+91-9876543210",
-        email: "info@mumbaicricket.com",
-        status: "approved",
-        courts: [
-          { id: "court-1", name: "Main Ground", facility_id: "demo-cricket-1", capacity: 22, amenities: ["lights", "parking"] },
-          { id: "court-2", name: "Practice Net", facility_id: "demo-cricket-1", capacity: 4, amenities: ["lights"] }
-        ]
-      },
-      {
-        id: "demo-cricket-2",
-        name: "Delhi Sports Complex",
-        city: "Delhi",
-        address: "Connaught Place, Delhi",
-        sport: "cricket",
-        price_per_hour: 1200,
-        status: "approved",
-        courts: [
-          { id: "court-3", name: "Cricket Ground A", facility_id: "demo-cricket-2" },
-          { id: "court-4", name: "Cricket Ground B", facility_id: "demo-cricket-2" }
-        ]
-      }
-    ],
-    badminton: [
-      {
-        id: "demo-badminton-1",
-        name: "Shuttle Sports Center",
-        city: "Bangalore",
-        address: "Koramangala, Bangalore",
-        sport: "badminton",
-        price_per_hour: 400,
-        status: "approved",
-        courts: [
-          { id: "court-5", name: "Court 1", facility_id: "demo-badminton-1" },
-          { id: "court-6", name: "Court 2", facility_id: "demo-badminton-1" },
-          { id: "court-7", name: "Court 3", facility_id: "demo-badminton-1" }
-        ]
-      },
-      {
-        id: "demo-badminton-2",
-        name: "Racquet Club",
-        city: "Pune",
-        address: "Koregaon Park, Pune",
-        sport: "badminton",
-        price_per_hour: 350,
-        status: "approved",
-        courts: [
-          { id: "court-8", name: "Premium Court", facility_id: "demo-badminton-2" },
-          { id: "court-9", name: "Standard Court", facility_id: "demo-badminton-2" }
-        ]
-      }
-    ],
-    "table-tennis": [
-      {
-        id: "demo-tt-1",
-        name: "Ping Pong Palace",
-        city: "Chennai",
-        address: "Anna Nagar, Chennai",
-        sport: "table-tennis",
-        price_per_hour: 200,
-        status: "approved",
-        courts: [
-          { id: "court-10", name: "Table 1", facility_id: "demo-tt-1" },
-          { id: "court-11", name: "Table 2", facility_id: "demo-tt-1" }
-        ]
-      }
-    ],
-    shooting: [
-      {
-        id: "demo-shooting-1",
-        name: "Precision Shooting Range",
-        city: "Hyderabad",
-        address: "Gachibowli, Hyderabad",
-        sport: "shooting",
-        price_per_hour: 1500,
-        status: "approved",
-        courts: [
-          { id: "court-12", name: "Range A (10m)", facility_id: "demo-shooting-1" },
-          { id: "court-13", name: "Range B (25m)", facility_id: "demo-shooting-1" }
-        ]
-      }
-    ],
-    football: [
-      {
-        id: "demo-football-1",
-        name: "Goal Masters Arena",
-        city: "Kolkata",
-        address: "Salt Lake, Kolkata",
-        sport: "football",
-        price_per_hour: 1000,
-        status: "approved",
-        courts: [
-          { id: "court-14", name: "Full Size Ground", facility_id: "demo-football-1" },
-          { id: "court-15", name: "Futsal Court", facility_id: "demo-football-1" }
-        ]
-      }
-    ],
-    basketball: [
-      {
-        id: "demo-basketball-1",
-        name: "Hoops & Dreams",
-        city: "Ahmedabad",
-        address: "Vastrapur, Ahmedabad",
-        sport: "basketball",
-        price_per_hour: 600,
-        status: "approved",
-        courts: [
-          { id: "court-16", name: "Indoor Court", facility_id: "demo-basketball-1" },
-          { id: "court-17", name: "Outdoor Court", facility_id: "demo-basketball-1" }
-        ]
-      }
-    ],
-    tennis: [
-      {
-        id: "demo-tennis-1",
-        name: "Ace Tennis Club",
-        city: "Jaipur",
-        address: "C-Scheme, Jaipur",
-        sport: "tennis",
-        price_per_hour: 800,
-        status: "approved",
-        courts: [
-          { id: "court-18", name: "Clay Court", facility_id: "demo-tennis-1" },
-          { id: "court-19", name: "Hard Court", facility_id: "demo-tennis-1" }
-        ]
-      }
-    ],
-    volleyball: [
-      {
-        id: "demo-volleyball-1",
-        name: "Spike Zone",
-        city: "Chandigarh",
-        address: "Sector 17, Chandigarh",
-        sport: "volleyball",
-        price_per_hour: 500,
-        status: "approved",
-        courts: [
-          { id: "court-20", name: "Beach Court", facility_id: "demo-volleyball-1" },
-          { id: "court-21", name: "Indoor Court", facility_id: "demo-volleyball-1" }
-        ]
-      }
-    ],
-    swimming: [
-      {
-        id: "demo-swimming-1",
-        name: "Aqua Sports Center",
-        city: "Goa",
-        address: "Panaji, Goa",
-        sport: "swimming",
-        price_per_hour: 300,
-        status: "approved",
-        courts: [
-          { id: "court-22", name: "Olympic Pool", facility_id: "demo-swimming-1" },
-          { id: "court-23", name: "Training Pool", facility_id: "demo-swimming-1" }
-        ]
-      }
-    ]
-  };
-
-  return demoData[sport] || [];
-};
-
 export default function TurfListing({ location, sport, onBack }: TurfListingProps) {
   const [facilities, setFacilities] = useState<Facility[]>([]);
   const [loading, setLoading] = useState(true);
@@ -241,11 +64,11 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
     const R = 6371; // Radius of the Earth in kilometers
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
 
@@ -380,7 +203,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
         // Calculate distances and sort by nearest first
         const facilitiesWithDistance = facilitiesToShow.map((facility: Facility) => {
           let distance = 0;
-          
+
           if (facility.latitude && facility.longitude) {
             // Use real coordinates from database
             distance = calculateDistance(
@@ -393,7 +216,7 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
             // If no coordinates, use a random distance for demo
             distance = Math.random() * 10; // Random distance between 0-10km
           }
-          
+
           return {
             ...facility,
             distance: distance
@@ -573,8 +396,8 @@ export default function TurfListing({ location, sport, onBack }: TurfListingProp
                 <button className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
                   View Details
                 </button>
-                <a 
-                  href="/login" 
+                <a
+                  href="/login"
                   className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors text-center"
                 >
                   Book Now

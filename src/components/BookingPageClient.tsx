@@ -35,8 +35,10 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [selectedCourtId, setSelectedCourtId] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [dateAvailability, setDateAvailability] = useState<{ [key: string]: { available: boolean, price: number }[] }>({});
+  const [dateAvailability, setDateAvailability] = useState<{ [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] }>({});
   const supabase = createClient();
 
   // Generate dates for the next 7 days
@@ -68,41 +70,100 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     return slots;
   };
 
-  // Generate availability and pricing for each date
-  const generateDateAvailability = (date: Date) => {
-    const availability = [];
-    for (let hour = 6; hour <= 20; hour++) {
-      // More realistic availability pattern
-      const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday or Saturday
-      const isPeakHour = hour >= 18 || hour <= 8; // Evening and morning hours
+  // Fetch actual time slots from database
+  const fetchTimeSlots = async (facilityId: string): Promise<{ [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] }> => {
+    try {
+      // Get all courts for this facility
+      const { data: courtsData } = await supabase
+        .from('courts')
+        .select('id')
+        .eq('facility_id', facilityId);
 
-      // Higher availability on weekends, lower on weekdays
-      const availabilityChance = isWeekend ? 0.7 : 0.5;
-      const isAvailable = Math.random() < availabilityChance;
-
-      // Pricing based on time and day
-      let price = 0;
-      if (isAvailable) {
-        if (isWeekend) {
-          price = isPeakHour ? 800 : 600;
-        } else {
-          price = isPeakHour ? 700 : 500;
-        }
+      if (!courtsData || courtsData.length === 0) {
+        return {};
       }
 
-      availability.push({
-        available: isAvailable,
-        price: price
+      const courtIds = courtsData.map(c => c.id);
+
+      // Get dates for the next 7 days
+      const dates = generateDates();
+      const dateStrings = dates.map(date => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
       });
+
+      // Fetch available time slots for this facility
+      const { data: slotsData, error } = await supabase
+        .from('time_slots')
+        .select('*')
+        .eq('facility_id', facilityId)
+        .in('court_id', courtIds)
+        .in('date', dateStrings)
+        .eq('is_available', true)
+        .eq('is_booked', false)
+        .order('date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching time slots:', error);
+        return {};
+      }
+
+      // Organize slots by date and time, storing slot_id for booking
+      const availability: { [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] } = {};
+      
+      dates.forEach((date, dateIndex) => {
+        const dateKey = date.toDateString();
+        const dateString = dateStrings[dateIndex];
+        
+        // Initialize availability array for this date
+        availability[dateKey] = [];
+        
+        // For each hour slot (6 AM to 8 PM)
+    for (let hour = 6; hour <= 20; hour++) {
+          const hourString = `${String(hour).padStart(2, '0')}:00:00`;
+          
+          // Find matching slot
+          const matchingSlot = slotsData?.find(slot => {
+            const slotDate = slot.date;
+            const slotStartTime = slot.start_time;
+            
+            // Check if date matches
+            if (slotDate !== dateString) return false;
+            
+            // Check if time matches (hour should match start_time)
+            const slotHour = parseInt(slotStartTime.split(':')[0]);
+            return slotHour === hour;
+          });
+
+          if (matchingSlot) {
+            availability[dateKey].push({
+              available: true,
+              price: matchingSlot.price_per_hour,
+              slot_id: matchingSlot.id,
+              court_id: matchingSlot.court_id
+            });
+        } else {
+            availability[dateKey].push({
+              available: false,
+              price: 0
+            });
+          }
+        }
+      });
+
+      return availability;
+    } catch (error) {
+      console.error('Error in fetchTimeSlots:', error);
+      return {};
     }
-    return availability;
   };
 
   useEffect(() => {
     async function fetchFacility() {
       try {
-        setLoading(true);
-
         // Try to fetch from database first
         const { data, error } = await supabase
           .from('facilities')
@@ -139,23 +200,22 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           rating_count: 39,
           status: "active"
         });
-      } finally {
-        setLoading(false);
       }
     }
 
-    fetchFacility();
+    async function loadData() {
+      setLoading(true);
+      await fetchFacility();
     const slots = generateTimeSlots();
     setTimeSlots(slots);
 
-    // Generate availability for all dates
-    const dates = generateDates();
-    const availability: { [key: string]: { available: boolean, price: number }[] } = {};
-    dates.forEach(date => {
-      const dateKey = date.toDateString();
-      availability[dateKey] = generateDateAvailability(date);
-    });
+      // Fetch actual time slots from database
+      const availability = await fetchTimeSlots(turfId);
     setDateAvailability(availability);
+      setLoading(false);
+    }
+
+    loadData();
   }, [turfId, supabase]);
 
 
@@ -171,9 +231,19 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     };
   };
 
-  const handleTimeSlotSelect = (time: string, date: Date) => {
+  const handleTimeSlotSelect = (time: string, date: Date, slotIndex: number) => {
     setSelectedTimeSlot(time);
     setSelectedDate(date); // Auto-select the date when a slot is clicked
+    
+    // Store slot_id and court_id for the selected slot
+    const dateKey = date.toDateString();
+    const slotInfo = dateAvailability[dateKey]?.[slotIndex];
+    if (slotInfo?.slot_id) {
+      setSelectedSlotId(slotInfo.slot_id);
+    }
+    if (slotInfo?.court_id) {
+      setSelectedCourtId(slotInfo.court_id);
+    }
   };
 
 
@@ -286,7 +356,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
                       return (
                         <button
                           key={`${dateIndex}-${timeIndex}`}
-                          onClick={() => isAvailable && handleTimeSlotSelect(slot.time, date)}
+                          onClick={() => isAvailable && handleTimeSlotSelect(slot.time, date, timeIndex)}
                           disabled={!isAvailable}
                           className={`w-full h-12 border-b border-gray-200 flex items-center justify-center text-xs transition-colors ${isSelected
                             ? 'bg-cyan-100 text-cyan-700 border-cyan-200'
@@ -311,13 +381,22 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
 
       {/* Next Button */}
       <div className="p-4 pb-20 border-t border-gray-200">
-        {selectedTimeSlot && selectedDate ? (
-          <a
-            href={`/booking-summary/${turfId}?date=${selectedDate.toISOString()}&time=${selectedTimeSlot}&price=${dateAvailability[selectedDate.toDateString()]?.find((slot, index) => timeSlots[index]?.time === selectedTimeSlot)?.price || 800}`}
+        {selectedTimeSlot && selectedDate && selectedSlotId && selectedCourtId ? (
+          (() => {
+            const dateKey = selectedDate.toDateString();
+            const slotIndex = timeSlots.findIndex(slot => slot.time === selectedTimeSlot);
+            const slotInfo = dateAvailability[dateKey]?.[slotIndex];
+            const price = slotInfo?.price || 800;
+            
+            return (
+              <a
+                href={`/booking-summary/${turfId}?date=${selectedDate.toISOString()}&time=${selectedTimeSlot}&price=${price}&slot_id=${selectedSlotId}&court_id=${selectedCourtId}`}
             className={`w-full py-3 rounded-lg font-semibold transition-colors bg-cyan-500 text-white hover:bg-cyan-600 block text-center`}
           >
             Next
           </a>
+            );
+          })()
         ) : (
           <button
             disabled={true}

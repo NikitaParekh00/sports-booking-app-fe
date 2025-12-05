@@ -6,13 +6,15 @@ import { createClient } from '@/lib/supabaseClient';
 import {
   getOwnerTimeSlots,
   getOwnerCourts,
+  getOwnerFacilities,
   createTimeSlot,
   updateTimeSlotAvailability,
   deleteTimeSlot,
   getOwnerStats,
   type TimeSlot,
   type Court,
-  type OwnerStats
+  type OwnerStats,
+  type Facility
 } from '@/lib/ownerDb';
 
 export default function OwnerDashboard() {
@@ -20,6 +22,7 @@ export default function OwnerDashboard() {
   const supabase = createClient();
   const [slots, setSlots] = useState<TimeSlot[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
   const [stats, setStats] = useState<OwnerStats>({
     totalCourts: 0,
     availableSlots: 0,
@@ -33,6 +36,8 @@ export default function OwnerDashboard() {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [price, setPrice] = useState('');
+  const [selectedFacility, setSelectedFacility] = useState<string>('all');
+  const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('all');
   const [user, setUser] = useState<{ user_id: string; full_name?: string; email?: string; role?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
@@ -40,33 +45,37 @@ export default function OwnerDashboard() {
     try {
       setLoading(true);
 
-      // For development: Get user from localStorage
-      const storedUser = localStorage.getItem('sf:user');
+      // Check for owner session (separate from app login)
+      const storedOwner = localStorage.getItem('sf:owner');
 
-      if (!storedUser) {
-        alert('Please sign in to access this page.');
-        router.push('/login');
+      if (!storedOwner) {
+        // No owner session found - redirect to owner login
+        router.push('/owner/login');
         return;
       }
 
-      const userData = JSON.parse(storedUser);
+      const ownerData = JSON.parse(storedOwner);
 
-      // Check if user is an owner by looking up their profile in the database
+      // Verify owner session is still valid by checking database
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', userData.user_id)
+        .eq('user_id', ownerData.user_id)
         .single();
 
       if (profileError || !profile) {
-        alert('User profile not found. Please sign up again.');
-        router.push('/login');
+        // Invalid session - clear and redirect to owner login
+        localStorage.removeItem('sf:owner');
+        router.push('/owner/login');
         return;
       }
 
+      // Double-check role
       if (profile.role !== 'owner' && profile.role !== 'admin') {
-        alert('Access denied. This page is for turf owners and admins only.');
-        router.push('/dashboard');
+        // User is not an owner - clear session and redirect
+        localStorage.removeItem('sf:owner');
+        alert('Access denied. This dashboard is only for turf owners and admins.');
+        router.push('/owner/login');
         return;
       }
 
@@ -74,15 +83,16 @@ export default function OwnerDashboard() {
       setAuthChecked(true);
 
       // Load all data in parallel
-      const [slotsData, courtsData, statsData] = await Promise.all([
-        getOwnerTimeSlots(profile.user_id),
-        getOwnerCourts(profile.user_id),
-        getOwnerStats(profile.user_id)
+      const [facilitiesData, courtsData] = await Promise.all([
+        getOwnerFacilities(profile.user_id),
+        getOwnerCourts(profile.user_id)
       ]);
 
-      setSlots(slotsData);
+      setFacilities(facilitiesData);
       setCourts(courtsData);
-      setStats(statsData);
+      
+      // Load slots and stats with current filters
+      await loadFilteredData(profile.user_id);
     } catch (error) {
       console.error('Error loading data:', error);
       alert('Error loading data. Please try again.');
@@ -91,10 +101,35 @@ export default function OwnerDashboard() {
     }
   }, [router, supabase]);
 
+  // Load filtered data based on selected filters
+  const loadFilteredData = useCallback(async (ownerId: string) => {
+    try {
+      const facilityId = selectedFacility === 'all' ? undefined : selectedFacility;
+      const courtId = selectedCourtFilter === 'all' ? undefined : selectedCourtFilter;
+
+      const [slotsData, statsData] = await Promise.all([
+        getOwnerTimeSlots(ownerId, facilityId, courtId),
+        getOwnerStats(ownerId, facilityId, courtId)
+      ]);
+
+      setSlots(slotsData);
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading filtered data:', error);
+    }
+  }, [selectedFacility, selectedCourtFilter]);
+
   // Load data on component mount
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Reload data when filters change
+  useEffect(() => {
+    if (user && authChecked) {
+      loadFilteredData(user.user_id);
+    }
+  }, [selectedFacility, selectedCourtFilter, user, authChecked, loadFilteredData]);
 
   const handleAddSlot = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,7 +149,6 @@ export default function OwnerDashboard() {
         price_per_hour: parseInt(price),
       });
 
-      setSlots([...slots, newSlot]);
       setShowAddSlot(false);
       setSelectedDate('');
       setSelectedCourt('');
@@ -122,9 +156,10 @@ export default function OwnerDashboard() {
       setEndTime('');
       setPrice('');
 
-      // Reload stats
-      const updatedStats = await getOwnerStats(user.user_id);
-      setStats(updatedStats);
+      // Reload filtered data
+      if (user) {
+        await loadFilteredData(user.user_id);
+      }
     } catch (error) {
       console.error('Error creating slot:', error);
       alert('Error creating slot. Please try again.');
@@ -134,12 +169,10 @@ export default function OwnerDashboard() {
   const handleDeleteSlot = async (slotId: string) => {
     try {
       await deleteTimeSlot(slotId);
-      setSlots(slots.filter(slot => slot.id !== slotId));
 
-      // Reload stats
+      // Reload filtered data
       if (user) {
-        const updatedStats = await getOwnerStats(user.user_id);
-        setStats(updatedStats);
+        await loadFilteredData(user.user_id);
       }
     } catch (error) {
       console.error('Error deleting slot:', error);
@@ -152,13 +185,11 @@ export default function OwnerDashboard() {
       const slot = slots.find(s => s.id === slotId);
       if (!slot) return;
 
-      const updatedSlot = await updateTimeSlotAvailability(slotId, !slot.is_available);
-      setSlots(slots.map(s => s.id === slotId ? updatedSlot : s));
+      await updateTimeSlotAvailability(slotId, !slot.is_available);
 
-      // Reload stats
+      // Reload filtered data
       if (user) {
-        const updatedStats = await getOwnerStats(user.user_id);
-        setStats(updatedStats);
+        await loadFilteredData(user.user_id);
       }
     } catch (error) {
       console.error('Error updating slot:', error);
@@ -192,14 +223,14 @@ export default function OwnerDashboard() {
   if (!user || (user.role !== 'owner' && user.role !== 'admin')) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
+        <div className="text-center max-w-md mx-auto p-8 bg-white rounded-lg shadow-lg">
           <div className="text-red-600 text-xl font-semibold mb-4">Access Denied</div>
-          <p className="text-gray-600">You don&apos;t have permission to access this page.</p>
+          <p className="text-gray-600 mb-6">You need to log in as an owner to access this dashboard.</p>
           <button
-            onClick={() => router.push('/dashboard')}
-            className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            onClick={() => router.push('/owner/login')}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Go to Dashboard
+            Go to Owner Login
           </button>
         </div>
       </div>
@@ -210,9 +241,66 @@ export default function OwnerDashboard() {
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Turf Owner Dashboard</h1>
-          <p className="text-gray-600 mt-2">Manage your courts, time slots, and bookings</p>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Turf Owner Dashboard</h1>
+            <p className="text-gray-600 mt-2">Manage your courts, time slots, and bookings</p>
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem('sf:owner');
+              router.push('/owner/login');
+            }}
+            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors text-sm"
+          >
+            Logout
+          </button>
+        </div>
+
+        {/* Filters */}
+        <div className="mb-6 bg-white p-4 rounded-lg shadow-sm border">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Turf Name
+              </label>
+              <select
+                value={selectedFacility}
+                onChange={(e) => {
+                  setSelectedFacility(e.target.value);
+                  setSelectedCourtFilter('all'); // Reset court filter when facility changes
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">See All (Accumulated)</option>
+                {facilities.map(facility => (
+                  <option key={facility.id} value={facility.id}>
+                    {facility.name} ({facility.sport})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Court
+              </label>
+              <select
+                value={selectedCourtFilter}
+                onChange={(e) => setSelectedCourtFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={selectedFacility === 'all'}
+              >
+                <option value="all">See All</option>
+                {courts
+                  .filter(court => selectedFacility === 'all' || court.facility_id === selectedFacility)
+                  .map(court => (
+                    <option key={court.id} value={court.id}>
+                      {court.name} ({court.sport}) - {court.facility_name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -393,6 +481,7 @@ export default function OwnerDashboard() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booked By</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -418,6 +507,16 @@ export default function OwnerDashboard() {
                         }`}>
                         {slot.is_available ? 'Available' : 'Booked'}
                       </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {slot.is_booked && slot.user_name ? (
+                        <div>
+                          <div className="font-medium">{slot.user_name}</div>
+                          <div className="text-xs text-gray-500">{slot.user_phone}</div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex gap-2">

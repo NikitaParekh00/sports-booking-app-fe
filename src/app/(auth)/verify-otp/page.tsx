@@ -12,10 +12,13 @@ function VerifyOtpContent() {
     const [loading, setLoading] = useState(false);
     const [otp, setOtp] = useState(['', '', '', '', '']);
     const [phone, setPhone] = useState('');
+    const [loginType, setLoginType] = useState('');
 
     useEffect(() => {
         const phoneParam = searchParams.get('phone');
+        const typeParam = searchParams.get('type');
         if (phoneParam) setPhone(phoneParam);
+        if (typeParam) setLoginType(typeParam);
     }, [searchParams]);
 
 
@@ -84,7 +87,7 @@ function VerifyOtpContent() {
             // Find user in profiles table (standard format: +91-XXXXXXXXXX)
             const { data: existingUsers, error: checkError } = await supabase
                 .from('profiles')
-                .select('user_id, full_name')
+                .select('user_id, full_name, role')
                 .eq('phone', phone);
 
             if (checkError) {
@@ -100,6 +103,29 @@ function VerifyOtpContent() {
                 return;
             }
 
+            // Handle owner login separately
+            if (loginType === 'owner-login') {
+                // Check if user is an owner or admin
+                if (userData.role !== 'owner' && userData.role !== 'admin') {
+                    alert('Access denied. This dashboard is only for turf owners and admins.');
+                    router.push('/owner/login');
+                    return;
+                }
+
+                // Store owner session in localStorage (separate from app login)
+                localStorage.setItem('sf:owner', JSON.stringify({
+                    user_id: userData.user_id,
+                    full_name: userData.full_name,
+                    role: userData.role,
+                    phone: phone
+                }));
+
+                // Success! Redirect to owner dashboard
+                router.push('/owner');
+                return;
+            }
+
+            // Regular app login
             // Store user data in localStorage for development
             localStorage.setItem('sf:user', JSON.stringify({
                 user_id: userData.user_id,
