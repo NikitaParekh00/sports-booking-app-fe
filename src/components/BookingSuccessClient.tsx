@@ -138,6 +138,7 @@ export default function BookingSuccessClient({
     }
 
     fetchFacilityAndCreateBooking();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turfId, courtId, supabase]);
 
   const createBooking = useCallback(async () => {

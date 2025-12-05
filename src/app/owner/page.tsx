@@ -99,7 +99,7 @@ export default function OwnerDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [router, supabase]);
+  }, [router, supabase, loadFilteredData]);
 
   // Load filtered data based on selected filters
   const loadFilteredData = useCallback(async (ownerId: string) => {
@@ -139,7 +139,7 @@ export default function OwnerDashboard() {
       const selectedCourtData = courts.find(c => c.id === selectedCourt);
       if (!selectedCourtData) return;
 
-      const newSlot = await createTimeSlot({
+      await createTimeSlot({
         court_id: selectedCourt,
         facility_id: selectedCourtData.facility_id,
         owner_id: user.user_id,

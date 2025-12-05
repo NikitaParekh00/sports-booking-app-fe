@@ -123,8 +123,6 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
         
         // For each hour slot (6 AM to 8 PM)
     for (let hour = 6; hour <= 20; hour++) {
-          const hourString = `${String(hour).padStart(2, '0')}:00:00`;
-          
           // Find matching slot
           const matchingSlot = slotsData?.find(slot => {
             const slotDate = slot.date;
@@ -216,6 +214,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
     }
 
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [turfId, supabase]);
 
 
