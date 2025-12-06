@@ -41,6 +41,25 @@ export default function OwnerDashboard() {
   const [user, setUser] = useState<{ user_id: string; full_name?: string; email?: string; role?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
+  // Load filtered data based on selected filters
+  const loadFilteredData = useCallback(async (ownerId: string) => {
+    try {
+      const facilityId = selectedFacility === 'all' ? undefined : selectedFacility;
+      const courtId = selectedCourtFilter === 'all' ? undefined : selectedCourtFilter;
+
+      const [slotsData, statsData] = await Promise.all([
+        getOwnerTimeSlots(ownerId, facilityId, courtId),
+        getOwnerStats(ownerId, facilityId, courtId)
+      ]);
+
+      setSlots(slotsData);
+      setStats(statsData);
+    } catch (error) {
+      console.error('Error loading filtered data:', error);
+    }
+  }, [selectedFacility, selectedCourtFilter]);
+
+  // Load initial data
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -100,24 +119,6 @@ export default function OwnerDashboard() {
       setLoading(false);
     }
   }, [router, supabase, loadFilteredData]);
-
-  // Load filtered data based on selected filters
-  const loadFilteredData = useCallback(async (ownerId: string) => {
-    try {
-      const facilityId = selectedFacility === 'all' ? undefined : selectedFacility;
-      const courtId = selectedCourtFilter === 'all' ? undefined : selectedCourtFilter;
-
-      const [slotsData, statsData] = await Promise.all([
-        getOwnerTimeSlots(ownerId, facilityId, courtId),
-        getOwnerStats(ownerId, facilityId, courtId)
-      ]);
-
-      setSlots(slotsData);
-      setStats(statsData);
-    } catch (error) {
-      console.error('Error loading filtered data:', error);
-    }
-  }, [selectedFacility, selectedCourtFilter]);
 
   // Load data on component mount
   useEffect(() => {
