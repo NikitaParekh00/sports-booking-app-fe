@@ -109,7 +109,7 @@ export default function OwnerDashboard() {
 
       setFacilities(facilitiesData);
       setCourts(courtsData);
-      
+
       // Load slots and stats with current filters
       await loadFilteredData(profile.user_id);
     } catch (error) {

@@ -38,7 +38,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [selectedCourtId, setSelectedCourtId] = useState<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
-  const [dateAvailability, setDateAvailability] = useState<{ [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] }>({});
+  const [dateAvailability, setDateAvailability] = useState<{ [key: string]: { available: boolean, booked: boolean, price: number, slot_id?: string, court_id?: string }[] }>({});
   const supabase = createClient();
 
   // Generate dates for the next 7 days
@@ -71,7 +71,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
   };
 
   // Fetch actual time slots from database
-  const fetchTimeSlots = async (facilityId: string): Promise<{ [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] }> => {
+  const fetchTimeSlots = async (facilityId: string): Promise<{ [key: string]: { available: boolean, booked: boolean, price: number, slot_id?: string, court_id?: string }[] }> => {
     try {
       // Get all courts for this facility
       const { data: courtsData } = await supabase
@@ -94,15 +94,13 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
         return `${year}-${month}-${day}`;
       });
 
-      // Fetch available time slots for this facility
+      // Fetch all time slots for this facility (including booked ones)
       const { data: slotsData, error } = await supabase
         .from('time_slots')
         .select('*')
         .eq('facility_id', facilityId)
         .in('court_id', courtIds)
         .in('date', dateStrings)
-        .eq('is_available', true)
-        .eq('is_booked', false)
         .order('date', { ascending: true })
         .order('start_time', { ascending: true });
 
@@ -112,7 +110,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
       }
 
       // Organize slots by date and time, storing slot_id for booking
-      const availability: { [key: string]: { available: boolean, price: number, slot_id?: string, court_id?: string }[] } = {};
+      const availability: { [key: string]: { available: boolean, booked: boolean, price: number, slot_id?: string, court_id?: string }[] } = {};
 
       dates.forEach((date, dateIndex) => {
         const dateKey = date.toDateString();
@@ -138,7 +136,8 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
 
           if (matchingSlot) {
             availability[dateKey].push({
-              available: true,
+              available: !matchingSlot.is_booked,
+              booked: matchingSlot.is_booked,
               price: matchingSlot.price_per_hour,
               slot_id: matchingSlot.id,
               court_id: matchingSlot.court_id
@@ -146,6 +145,7 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
           } else {
             availability[dateKey].push({
               available: false,
+              booked: false,
               price: 0
             });
           }
@@ -347,8 +347,9 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
 
                     {/* Time Slots */}
                     {timeSlots.map((slot, timeIndex) => {
-                      const slotAvailability = availability[timeIndex] || { available: false, price: 0 };
+                      const slotAvailability = availability[timeIndex] || { available: false, booked: false, price: 0 };
                       const isAvailable = slotAvailability.available;
+                      const isBooked = slotAvailability.booked;
                       const price = slotAvailability.price;
                       const isSelected = selectedTimeSlot === slot.time && date.toDateString() === selectedDate.toDateString();
 
@@ -359,14 +360,18 @@ export default function BookingPageClient({ turfId }: BookingPageClientProps) {
                           disabled={!isAvailable}
                           className={`w-full h-12 border-b border-gray-200 flex items-center justify-center text-xs transition-colors ${isSelected
                             ? 'bg-cyan-100 text-cyan-700 border-cyan-200'
-                            : isAvailable
-                              ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
-                              : 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                            : isBooked
+                              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                              : isAvailable
+                                ? 'bg-pink-50 text-pink-700 hover:bg-pink-100'
+                                : 'bg-gray-50 text-gray-400 cursor-not-allowed'
                             }`}
                         >
-                          {isAvailable && price > 0 && (
+                          {isBooked ? (
+                            <span className="text-xs text-gray-500">Booked</span>
+                          ) : isAvailable && price > 0 ? (
                             <span className="font-medium">₹ {price}</span>
-                          )}
+                          ) : null}
                         </button>
                       );
                     })}
