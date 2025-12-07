@@ -9,14 +9,13 @@ interface BookingSuccessPageProps {
     time?: string;
     price?: string;
     quantity?: string;
-    slot_id?: string;
-    court_id?: string;
+    slot_ids?: string;
   }>;
 }
 
 export default async function BookingSuccessPage({ params, searchParams }: BookingSuccessPageProps) {
   const { id } = await params;
-  const { date, time, price, quantity, slot_id, court_id } = await searchParams;
+  const { date, time, price, quantity, slot_ids } = await searchParams;
 
   return (
     <BookingSuccessClient
@@ -25,8 +24,7 @@ export default async function BookingSuccessPage({ params, searchParams }: Booki
       selectedTime={time}
       selectedPrice={price}
       quantity={quantity}
-      slotId={slot_id}
-      courtId={court_id}
+      slotIds={slot_ids}
     />
   );
 }

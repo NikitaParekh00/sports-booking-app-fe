@@ -24,8 +24,8 @@ interface BookingSummaryClientProps {
   selectedDate?: string;
   selectedTime?: string;
   selectedPrice?: string;
-  slotId?: string;
-  courtId?: string;
+  slotIds?: string;
+  availableCount?: number;
 }
 
 export default function BookingSummaryClient({
@@ -33,16 +33,18 @@ export default function BookingSummaryClient({
   selectedDate,
   selectedTime,
   selectedPrice,
-  slotId,
-  courtId
+  slotIds,
+  availableCount = 1
 }: BookingSummaryClientProps) {
   const [facility, setFacility] = useState<Facility | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [showSlotDetails, setShowSlotDetails] = useState(true);
   const [user, setUser] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
-  const [courtName, setCourtName] = useState<string>("Court 1");
   const supabase = createClient();
+  
+  // Parse slot IDs
+  const slotIdsArray = slotIds ? slotIds.split(',').filter(id => id) : [];
 
   // Parse the selected time to get start and end times
   const parseTimeSlot = (time: string) => {
@@ -105,17 +107,9 @@ export default function BookingSummaryClient({
           setFacility(data);
         }
 
-        // Fetch court name if courtId is provided
-        if (courtId) {
-          const { data: courtData, error: courtError } = await supabase
-            .from('courts')
-            .select('name')
-            .eq('id', courtId)
-            .single();
-
-          if (!courtError && courtData) {
-            setCourtName(courtData.name);
-          }
+        // Set initial quantity based on available count
+        if (availableCount) {
+          setQuantity(Math.min(1, availableCount));
         }
       } catch (error) {
         console.error('Error fetching facility:', error);
@@ -136,7 +130,7 @@ export default function BookingSummaryClient({
     }
 
     fetchFacility();
-  }, [turfId, courtId, supabase]);
+  }, [turfId, supabase, availableCount]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "Sep 6, 2025";
@@ -221,15 +215,23 @@ export default function BookingSummaryClient({
           <div className="mt-3 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
             <div className="flex items-center justify-between">
               <div>
-                <h4 className="text-red-600 font-semibold">{courtName}</h4>
+                <h4 className="text-red-600 font-semibold">Time Slot</h4>
                 <p className="text-sm text-gray-600 mt-1">{formatDate(selectedDate)}</p>
                 <p className="text-sm text-gray-600">{timeSlot.start} - {timeSlot.end}</p>
+                {availableCount > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">{availableCount} slot{availableCount > 1 ? 's' : ''} available</p>
+                )}
               </div>
               <div className="text-right">
                 <div className="flex items-center gap-3 mb-3">
                   <button
                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                    className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
+                    disabled={quantity <= 1}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                      quantity <= 1 
+                        ? 'bg-gray-100 cursor-not-allowed' 
+                        : 'bg-gray-200 hover:bg-gray-300'
+                    }`}
                   >
                     <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
@@ -237,8 +239,13 @@ export default function BookingSummaryClient({
                   </button>
                   <span className="w-8 text-center font-semibold">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(quantity + 1)}
-                    className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors"
+                    onClick={() => setQuantity(Math.min(availableCount, quantity + 1))}
+                    disabled={quantity >= availableCount}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                      quantity >= availableCount 
+                        ? 'bg-gray-100 cursor-not-allowed' 
+                        : 'bg-gray-200 hover:bg-gray-300'
+                    }`}
                   >
                     <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -324,7 +331,7 @@ export default function BookingSummaryClient({
             <p className="text-sm opacity-90">{quantity} Slot(s) selected</p>
           </div>
           <a
-            href={`/booking-success/${turfId}?date=${selectedDate}&time=${selectedTime}&price=${selectedPrice}&quantity=${quantity}&slot_id=${slotId || ''}&court_id=${courtId || ''}`}
+            href={`/booking-success/${turfId}?date=${selectedDate}&time=${selectedTime}&price=${selectedPrice}&quantity=${quantity}&slot_ids=${slotIds || ''}`}
             className="bg-red-500 text-white px-8 py-3 rounded-xl font-semibold hover:bg-red-400 transition-colors inline-block shadow-lg"
           >
             PROCEED

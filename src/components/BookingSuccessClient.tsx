@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabaseClient";
-import { bookTimeSlot } from "@/lib/ownerDb";
 
 interface Facility {
   id: string;
@@ -26,8 +25,7 @@ interface BookingSuccessClientProps {
   selectedTime?: string;
   selectedPrice?: string;
   quantity?: string;
-  slotId?: string;
-  courtId?: string;
+  slotIds?: string;
 }
 
 export default function BookingSuccessClient({
@@ -36,21 +34,29 @@ export default function BookingSuccessClient({
   selectedTime,
   selectedPrice,
   quantity = "1",
-  slotId,
-  courtId
+  slotIds
 }: BookingSuccessClientProps) {
   const [facility, setFacility] = useState<Facility | null>(null);
   const [loading, setLoading] = useState(true);
   const [bookingId, setBookingId] = useState<string>("");
-  const [courtName, setCourtName] = useState<string>("Court 1");
+  const [bookedCourts, setBookedCourts] = useState<string[]>([]);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const supabase = createClient();
 
-  // Generate a booking ID
+  // Parse slot IDs
+  const slotIdsArray = useMemo(() => {
+    return slotIds ? slotIds.split(',').filter(id => id) : [];
+  }, [slotIds]);
+
+  // Generate a booking ID (UUID format for database compatibility)
   useEffect(() => {
     const generateBookingId = () => {
-      const timestamp = Date.now().toString(36);
-      const random = Math.random().toString(36).substr(2, 5);
-      return `BK${timestamp}${random}`.toUpperCase();
+      // Generate a UUID-like string
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
     };
     setBookingId(generateBookingId());
   }, []);
@@ -103,18 +109,7 @@ export default function BookingSuccessClient({
           setFacility(data);
         }
 
-        // Fetch court name if courtId is provided
-        if (courtId) {
-          const { data: courtData, error: courtError } = await supabase
-            .from('courts')
-            .select('name')
-            .eq('id', courtId)
-            .single();
-
-          if (!courtError && courtData) {
-            setCourtName(courtData.name);
-          }
-        }
+        // Court names will be fetched after booking
 
         // Create booking in database
         await createBooking();
@@ -139,7 +134,7 @@ export default function BookingSuccessClient({
 
     fetchFacilityAndCreateBooking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [turfId, courtId, supabase]);
+  }, [turfId, supabase]);
 
   const createBooking = useCallback(async () => {
     try {
@@ -163,30 +158,103 @@ export default function BookingSuccessClient({
       const startTime24 = convertTo24Hour(timeSlot.start);
       const endTime24 = convertTo24Hour(timeSlot.end);
 
-      // Book the time slot if slot_id is provided
-      if (slotId && courtId) {
-        try {
-          await bookTimeSlot(
-            turfId,
-            courtId,
-            bookingDate,
-            startTime24,
-            userData.user_id,
-            bookingId
-          );
-          console.log('✅ Time slot booked successfully');
-        } catch (error) {
-          console.error('❌ Error booking time slot:', error);
-          alert('Failed to book time slot. It may have been booked by someone else.');
+      // Book the time slots if slot_ids are provided
+      if (slotIdsArray.length > 0) {
+        const quantityNum = parseInt(quantity);
+        const slotsToBook = slotIdsArray.slice(0, quantityNum);
+        const bookedCourtNames: string[] = [];
+        let successCount = 0;
+        const errorMessages: string[] = [];
+
+        // Book each slot and collect court names
+        for (const slotId of slotsToBook) {
+          try {
+            // Get slot details to find court_id
+            const { data: slotData, error: slotError } = await supabase
+              .from('time_slots')
+              .select('court_id, date, start_time, is_booked, is_available')
+              .eq('id', slotId)
+              .single();
+
+            if (slotError || !slotData) {
+              errorMessages.push(`Slot ${slotId}: ${slotError?.message || 'Slot not found'}`);
+              continue;
+            }
+
+            // Check if slot is already booked
+            if (slotData.is_booked || !slotData.is_available) {
+              errorMessages.push(`Slot ${slotId}: Already booked or unavailable`);
+              continue;
+            }
+
+            // Update the slot to mark as booked (use null if bookingId is empty)
+            const { error: updateError } = await supabase
+              .from('time_slots')
+              .update({
+                is_available: false,
+                is_booked: true,
+                user_id: userData.user_id,
+                booking_id: bookingId || null
+              })
+              .eq('id', slotId);
+
+            if (updateError) {
+              let errorMsg = updateError.message || 'Unknown error';
+              if (updateError.code === '22P02') {
+                errorMsg = 'Invalid booking ID format';
+              }
+              errorMessages.push(`Slot ${slotId}: ${errorMsg}`);
+              console.error('Error booking slot:', updateError);
+              continue;
+            }
+
+            successCount++;
+
+            // Fetch court name
+            const { data: courtData } = await supabase
+              .from('courts')
+              .select('name')
+              .eq('id', slotData.court_id)
+              .single();
+
+            if (courtData) {
+              bookedCourtNames.push(courtData.name);
+            }
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+            errorMessages.push(`Slot ${slotId}: ${errorMsg}`);
+            console.error('Error processing slot:', error);
+          }
+        }
+
+        // Check if any slots were successfully booked
+        if (successCount === 0) {
+          const errorMsg = errorMessages.length > 0
+            ? `Failed to book slots:\n${errorMessages.join('\n')}`
+            : 'Failed to book time slots. Please try again.';
+          setBookingError(errorMsg);
+          alert(errorMsg);
           return;
         }
+
+        // If some slots failed, show warning but continue
+        if (errorMessages.length > 0 && successCount < quantityNum) {
+          console.warn('Some slots failed to book:', errorMessages);
+          alert(`Warning: ${successCount} of ${quantityNum} slots booked successfully. Some slots may have been unavailable.`);
+        }
+
+        setBookedCourts(bookedCourtNames);
+        console.log(`✅ ${successCount} time slot(s) booked successfully`);
+      } else {
+        setBookingError('No slots selected for booking');
+        alert('No slots selected for booking');
+        return;
       }
 
       // Also create booking record if bookings table exists
       const bookingData = {
         user_id: userData.user_id,
         facility_id: turfId,
-        court_id: courtId || turfId,
         booking_date: bookingDate,
         start_time: startTime24,
         end_time: endTime24,
@@ -213,8 +281,12 @@ export default function BookingSuccessClient({
       }
     } catch (error) {
       console.error('❌ Unexpected error creating booking:', error);
+      const errorMsg = error instanceof Error ? error.message : 'An unexpected error occurred';
+      setBookingError(errorMsg);
+      alert(`Booking failed: ${errorMsg}`);
+      return;
     }
-  }, [supabase, quantity, selectedDate, selectedTime, totalPrice, turfId, slotId, courtId, bookingId]);
+  }, [supabase, quantity, selectedDate, selectedTime, totalPrice, turfId, slotIdsArray, bookingId]);
 
   const convertTo24Hour = (time12: string) => {
     const [time, period] = time12.split(' ');
@@ -254,6 +326,28 @@ export default function BookingSuccessClient({
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="text-gray-500">Facility not found</div>
+      </div>
+    );
+  }
+
+  if (bookingError) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center px-4">
+          <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Failed</h2>
+          <p className="text-gray-600 mb-4 whitespace-pre-line">{bookingError}</p>
+          <a
+            href={`/booking/${turfId}`}
+            className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+          >
+            Try Again
+          </a>
+        </div>
       </div>
     );
   }
@@ -298,8 +392,12 @@ export default function BookingSuccessClient({
             </div>
 
             <div className="flex justify-between items-center">
-              <span className="text-gray-600">Court</span>
-              <span className="font-semibold text-gray-900">{courtName}</span>
+              <span className="text-gray-600">Court{bookedCourts.length > 1 ? 's' : ''}</span>
+              <span className="font-semibold text-gray-900">
+                {bookedCourts.length > 0
+                  ? bookedCourts.join(', ')
+                  : 'Court assignment pending...'}
+              </span>
             </div>
 
             <div className="flex justify-between items-center">

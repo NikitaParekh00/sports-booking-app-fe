@@ -33,6 +33,7 @@ export default function OwnerDashboard() {
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
   const [selectedCourt, setSelectedCourt] = useState('');
+  const [slotDuration, setSlotDuration] = useState<'1hour' | '30mins' | 'custom'>('1hour');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [price, setPrice] = useState('');
@@ -40,6 +41,12 @@ export default function OwnerDashboard() {
   const [selectedCourtFilter, setSelectedCourtFilter] = useState<string>('all');
   const [user, setUser] = useState<{ user_id: string; full_name?: string; email?: string; role?: string } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [showRemarksModal, setShowRemarksModal] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [selectedSlotAction, setSelectedSlotAction] = useState<'book' | 'available' | null>(null);
+  const [remarkType, setRemarkType] = useState<string>('');
+  const [customRemark, setCustomRemark] = useState<string>('');
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
 
   // Load filtered data based on selected filters
   const loadFilteredData = useCallback(async (ownerId: string) => {
@@ -132,6 +139,80 @@ export default function OwnerDashboard() {
     }
   }, [selectedFacility, selectedCourtFilter, user, authChecked, loadFilteredData]);
 
+  // Real-time subscription for time_slots changes
+  useEffect(() => {
+    if (!user || !authChecked) return;
+
+    // Subscribe to time_slots changes for this owner
+    const channel = supabase
+      .channel('time-slots-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'time_slots',
+          filter: `owner_id=eq.${user.user_id}`
+        },
+        (payload) => {
+          console.log('Time slot changed:', payload);
+          // Reload data when any time slot changes
+          if (user) {
+            loadFilteredData(user.user_id);
+            setLastRefresh(new Date());
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user, authChecked, supabase, loadFilteredData]);
+
+  // Auto-refresh data every 30 seconds as backup (in case real-time subscription fails)
+  useEffect(() => {
+    if (!user || !authChecked) return;
+
+    const interval = setInterval(() => {
+      if (user) {
+        loadFilteredData(user.user_id);
+        setLastRefresh(new Date());
+      }
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [user, authChecked, loadFilteredData]);
+
+  // Manual refresh function
+  const handleRefresh = useCallback(async () => {
+    if (user) {
+      setLoading(true);
+      await loadFilteredData(user.user_id);
+      setLastRefresh(new Date());
+      setLoading(false);
+    }
+  }, [user, loadFilteredData]);
+
+  // Update end time when start time or duration changes
+  useEffect(() => {
+    if (startTime && slotDuration !== 'custom') {
+      const [hours, minutes] = startTime.split(':').map(Number);
+      const startDate = new Date();
+      startDate.setHours(hours, minutes, 0, 0);
+
+      if (slotDuration === '1hour') {
+        startDate.setHours(startDate.getHours() + 1);
+      } else if (slotDuration === '30mins') {
+        startDate.setMinutes(startDate.getMinutes() + 30);
+      }
+
+      const endHours = String(startDate.getHours()).padStart(2, '0');
+      const endMinutes = String(startDate.getMinutes()).padStart(2, '0');
+      setEndTime(`${endHours}:${endMinutes}`);
+    }
+  }, [startTime, slotDuration]);
+
   const handleAddSlot = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedDate || !selectedCourt || !startTime || !endTime || !price || !user) return;
@@ -153,6 +234,7 @@ export default function OwnerDashboard() {
       setShowAddSlot(false);
       setSelectedDate('');
       setSelectedCourt('');
+      setSlotDuration('1hour');
       setStartTime('');
       setEndTime('');
       setPrice('');
@@ -163,7 +245,17 @@ export default function OwnerDashboard() {
       }
     } catch (error) {
       console.error('Error creating slot:', error);
-      alert('Error creating slot. Please try again.');
+      let errorMessage = 'Error creating slot. Please try again.';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        // Handle Supabase errors or other error objects
+        const err = error as { message?: string; error?: string; details?: string };
+        errorMessage = err.message || err.error || err.details || errorMessage;
+      }
+
+      alert(errorMessage);
     }
   };
 
@@ -177,24 +269,70 @@ export default function OwnerDashboard() {
       }
     } catch (error) {
       console.error('Error deleting slot:', error);
-      alert('Error deleting slot. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : (error as { message?: string })?.message || 'Error deleting slot. Please try again.';
+      alert(errorMessage);
     }
   };
 
-  const handleToggleAvailability = async (slotId: string) => {
-    try {
-      const slot = slots.find(s => s.id === slotId);
-      if (!slot) return;
+  const handleToggleAvailability = (slotId: string) => {
+    const slot = slots.find(s => s.id === slotId);
+    if (!slot) return;
 
-      await updateTimeSlotAvailability(slotId, !slot.is_available);
+    setSelectedSlotId(slotId);
+    setSelectedSlotAction(slot.is_available ? 'book' : 'available');
+    setRemarkType('');
+    setCustomRemark('');
+    setShowRemarksModal(true);
+  };
+
+  const handleSubmitRemarks = async () => {
+    if (!selectedSlotId || !selectedSlotAction) return;
+
+    // Validate remarks
+    if (!remarkType) {
+      alert('Please select a remark type');
+      return;
+    }
+
+    let finalRemark = '';
+    if (remarkType === 'others') {
+      if (!customRemark.trim()) {
+        alert('Please enter a custom remark');
+        return;
+      }
+      finalRemark = customRemark.trim();
+    } else {
+      finalRemark = remarkType;
+    }
+
+    try {
+      const isAvailable = selectedSlotAction === 'available';
+      await updateTimeSlotAvailability(selectedSlotId, isAvailable, finalRemark);
 
       // Reload filtered data
       if (user) {
         await loadFilteredData(user.user_id);
       }
+
+      // Close modal
+      setShowRemarksModal(false);
+      setSelectedSlotId(null);
+      setSelectedSlotAction(null);
+      setRemarkType('');
+      setCustomRemark('');
     } catch (error) {
       console.error('Error updating slot:', error);
-      alert('Error updating slot. Please try again.');
+      let errorMessage = 'Error updating slot. Please try again.';
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (error && typeof error === 'object') {
+        // Handle Supabase errors or other error objects
+        const err = error as { message?: string; error?: string; details?: string };
+        errorMessage = err.message || err.error || err.details || errorMessage;
+      }
+
+      alert(errorMessage);
     }
   };
 
@@ -374,6 +512,16 @@ export default function OwnerDashboard() {
             </svg>
             Add New Slot
           </button>
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
           <button className="bg-gray-600 text-white px-6 py-3 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -381,6 +529,11 @@ export default function OwnerDashboard() {
             Manage Courts
           </button>
         </div>
+        {lastRefresh && (
+          <div className="mb-4 text-sm text-gray-500">
+            Last updated: {lastRefresh.toLocaleTimeString()}
+          </div>
+        )}
 
         {/* Add Slot Modal */}
         {showAddSlot && (
@@ -414,13 +567,62 @@ export default function OwnerDashboard() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Slot Duration</label>
+                  <select
+                    value={slotDuration}
+                    onChange={(e) => {
+                      const newDuration = e.target.value as '1hour' | '30mins' | 'custom';
+                      setSlotDuration(newDuration);
+                      if (newDuration !== 'custom' && startTime) {
+                        const [hours, minutes] = startTime.split(':').map(Number);
+                        const startDate = new Date();
+                        startDate.setHours(hours, minutes, 0, 0);
+
+                        if (newDuration === '1hour') {
+                          startDate.setHours(startDate.getHours() + 1);
+                        } else if (newDuration === '30mins') {
+                          startDate.setMinutes(startDate.getMinutes() + 30);
+                        }
+
+                        const endHours = String(startDate.getHours()).padStart(2, '0');
+                        const endMinutes = String(startDate.getMinutes()).padStart(2, '0');
+                        setEndTime(`${endHours}:${endMinutes}`);
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="1hour">1 Hour</option>
+                    <option value="30mins">30 Minutes</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
                     <input
                       type="time"
                       value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
+                      onChange={(e) => {
+                        const newStartTime = e.target.value;
+                        setStartTime(newStartTime);
+                        if (slotDuration !== 'custom' && newStartTime) {
+                          const [hours, minutes] = newStartTime.split(':').map(Number);
+                          const startDate = new Date();
+                          startDate.setHours(hours, minutes, 0, 0);
+
+                          if (slotDuration === '1hour') {
+                            startDate.setHours(startDate.getHours() + 1);
+                          } else if (slotDuration === '30mins') {
+                            startDate.setMinutes(startDate.getMinutes() + 30);
+                          }
+
+                          const endHours = String(startDate.getHours()).padStart(2, '0');
+                          const endMinutes = String(startDate.getMinutes()).padStart(2, '0');
+                          setEndTime(`${endHours}:${endMinutes}`);
+                        }
+                      }}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     />
@@ -431,7 +633,9 @@ export default function OwnerDashboard() {
                       type="time"
                       value={endTime}
                       onChange={(e) => setEndTime(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      disabled={slotDuration !== 'custom'}
+                      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${slotDuration !== 'custom' ? 'bg-gray-100 cursor-not-allowed' : ''
+                        }`}
                       required
                     />
                   </div>
@@ -483,6 +687,7 @@ export default function OwnerDashboard() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Booked By</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
@@ -519,6 +724,13 @@ export default function OwnerDashboard() {
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {slot.remarks ? (
+                        <span className="text-gray-700">{slot.remarks}</span>
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <div className="flex gap-2">
                         <button
@@ -545,6 +757,78 @@ export default function OwnerDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Remarks Modal */}
+      {showRemarksModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              {selectedSlotAction === 'book' ? 'Mark as Booked' : 'Mark as Available'}
+            </h3>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Remarks <span className="text-red-500">*</span>
+              </label>
+              <select
+                value={remarkType}
+                onChange={(e) => {
+                  setRemarkType(e.target.value);
+                  if (e.target.value !== 'others') {
+                    setCustomRemark('');
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">Select a remark</option>
+                <option value="Booked offline">Booked offline</option>
+                <option value="Customer cancelled">Customer cancelled</option>
+                <option value="Court maintenance">Court maintenance</option>
+                <option value="Special event">Special event</option>
+                <option value="others">Others</option>
+              </select>
+            </div>
+
+            {remarkType === 'others' && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Custom Remark <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={customRemark}
+                  onChange={(e) => setCustomRemark(e.target.value)}
+                  placeholder="Enter your remark..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  rows={3}
+                  required
+                />
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <button
+                onClick={handleSubmitRemarks}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Submit
+              </button>
+              <button
+                onClick={() => {
+                  setShowRemarksModal(false);
+                  setSelectedSlotId(null);
+                  setSelectedSlotAction(null);
+                  setRemarkType('');
+                  setCustomRemark('');
+                }}
+                className="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

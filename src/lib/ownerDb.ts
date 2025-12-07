@@ -20,6 +20,7 @@ export interface TimeSlot {
   sport?: string;
   user_name?: string;
   user_phone?: string;
+  remarks?: string;
 }
 
 export interface Court {
@@ -54,7 +55,7 @@ export async function getOwnerTimeSlots(
   courtId?: string
 ): Promise<TimeSlot[]> {
   const supabase = createClient();
-  
+
   // Use left join to include all slots and user information
   let query = supabase
     .from('time_slots')
@@ -73,14 +74,14 @@ export async function getOwnerTimeSlots(
       )
     `)
     .eq('owner_id', ownerId);
-  
+
   if (facilityId) {
     query = query.eq('facility_id', facilityId);
   }
   if (courtId) {
     query = query.eq('court_id', courtId);
   }
-  
+
   const { data, error } = await query
     .order('date', { ascending: true })
     .order('start_time', { ascending: true });
@@ -105,9 +106,9 @@ export async function getOwnerTimeSlots(
 // Get all courts for the current owner
 export async function getOwnerCourts(ownerId: string): Promise<Court[]> {
   const supabase = createClient();
-  
+
   console.log('Fetching courts for owner:', ownerId);
-  
+
   // First get facilities owned by this owner
   const { data: facilities, error: facilitiesError } = await supabase
     .from('facilities')
@@ -168,9 +169,9 @@ export async function createTimeSlot(slotData: {
   price_per_hour: number;
 }): Promise<TimeSlot> {
   const supabase = createClient();
-  
+
   console.log('Creating time slot with data:', slotData);
-  
+
   // Verify relationships before inserting
   // Check 1: Verify owner is valid
   const { data: ownerCheck, error: ownerError } = await supabase
@@ -179,9 +180,9 @@ export async function createTimeSlot(slotData: {
     .eq('user_id', slotData.owner_id)
     .eq('role', 'owner')
     .single();
-  
+
   console.log('Owner check:', ownerCheck, ownerError);
-  
+
   // Check 2: Verify facility belongs to owner
   const { data: facilityCheck, error: facilityError } = await supabase
     .from('facilities')
@@ -189,9 +190,9 @@ export async function createTimeSlot(slotData: {
     .eq('id', slotData.facility_id)
     .eq('owner_id', slotData.owner_id)
     .single();
-  
+
   console.log('Facility check:', facilityCheck, facilityError);
-  
+
   // Check 3: Verify court belongs to facility
   const { data: courtCheck, error: courtError } = await supabase
     .from('courts')
@@ -199,21 +200,54 @@ export async function createTimeSlot(slotData: {
     .eq('id', slotData.court_id)
     .eq('facility_id', slotData.facility_id)
     .single();
-  
+
   console.log('Court check:', courtCheck, courtError);
-  
+
   if (!ownerCheck || ownerError) {
     throw new Error(`Invalid owner: ${ownerError?.message || 'Owner not found'}`);
   }
-  
+
   if (!facilityCheck || facilityError) {
     throw new Error(`Facility does not belong to owner: ${facilityError?.message || 'Facility not found'}`);
   }
-  
+
   if (!courtCheck || courtError) {
     throw new Error(`Court does not belong to facility: ${courtError?.message || 'Court not found'}`);
   }
-  
+
+  // Check 4: Verify no overlapping available slot exists for the same court, date, and time
+  const { data: existingSlots, error: checkError } = await supabase
+    .from('time_slots')
+    .select('id, start_time, end_time')
+    .eq('court_id', slotData.court_id)
+    .eq('date', slotData.date)
+    .eq('is_available', true)
+    .eq('is_booked', false);
+
+  if (checkError) {
+    console.error('Error checking for existing slots:', checkError);
+    throw new Error('Error checking for existing slots');
+  }
+
+  // Check for time overlaps
+  if (existingSlots && existingSlots.length > 0) {
+    const newStart = slotData.start_time;
+    const newEnd = slotData.end_time;
+
+    const hasOverlap = existingSlots.some(existing => {
+      const existingStart = existing.start_time;
+      const existingEnd = existing.end_time;
+
+      // Check if time ranges overlap
+      // Two time ranges overlap if: newStart < existingEnd AND newEnd > existingStart
+      return newStart < existingEnd && newEnd > existingStart;
+    });
+
+    if (hasOverlap) {
+      throw new Error('An available time slot already exists for this court at this time. Only one available slot is allowed per court at a time.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('time_slots')
     .insert([slotData])
@@ -245,47 +279,148 @@ export async function createTimeSlot(slotData: {
 
 // Update time slot availability
 export async function updateTimeSlotAvailability(
-  slotId: string, 
-  isAvailable: boolean
+  slotId: string,
+  isAvailable: boolean,
+  remarks?: string
 ): Promise<TimeSlot> {
   const supabase = createClient();
-  
-  const { data, error } = await supabase
+
+  // First, get the current slot details
+  const { data: currentSlot, error: fetchError } = await supabase
     .from('time_slots')
-    .update({ 
-      is_available: isAvailable,
-      is_booked: !isAvailable 
-    })
+    .select('court_id, date, start_time, end_time')
     .eq('id', slotId)
-    .select(`
-      *,
-      courts!inner(
-        name,
-        facilities!inner(
-          name,
-          sport
-        )
-      )
-    `)
     .single();
 
-  if (error) {
-    console.error('Error updating time slot:', error);
-    throw error;
+  if (fetchError || !currentSlot) {
+    throw new Error('Time slot not found');
+  }
+
+  // If marking as available, check for overlapping available slots
+  if (isAvailable) {
+    const { data: existingSlots, error: checkError } = await supabase
+      .from('time_slots')
+      .select('id, start_time, end_time')
+      .eq('court_id', currentSlot.court_id)
+      .eq('date', currentSlot.date)
+      .eq('is_available', true)
+      .eq('is_booked', false)
+      .neq('id', slotId); // Exclude the current slot
+
+    if (checkError) {
+      console.error('Error checking for existing slots:', checkError);
+      throw new Error('Error checking for existing slots');
+    }
+
+    // Check for time overlaps
+    if (existingSlots && existingSlots.length > 0) {
+      const newStart = currentSlot.start_time;
+      const newEnd = currentSlot.end_time;
+
+      const hasOverlap = existingSlots.some(existing => {
+        const existingStart = existing.start_time;
+        const existingEnd = existing.end_time;
+
+        // Check if time ranges overlap
+        return newStart < existingEnd && newEnd > existingStart;
+      });
+
+      if (hasOverlap) {
+        throw new Error('An available time slot already exists for this court at this time. Only one available slot is allowed per court at a time.');
+      }
+    }
+  }
+
+  const updateData: {
+    is_available: boolean;
+    is_booked: boolean;
+    user_id?: null;
+    booking_id?: null;
+    remarks?: string;
+  } = {
+    is_available: isAvailable,
+    is_booked: !isAvailable
+  };
+
+  // Clear user_id and booking_id when marking as available
+  if (isAvailable) {
+    updateData.user_id = null;
+    updateData.booking_id = null;
+  }
+
+  if (remarks !== undefined) {
+    updateData.remarks = remarks;
+  }
+
+  // First, update the slot
+  const { error: updateError } = await supabase
+    .from('time_slots')
+    .update(updateData)
+    .eq('id', slotId);
+
+  if (updateError) {
+    console.error('Error updating time slot:', updateError);
+    throw updateError;
+  }
+
+  // Then, fetch the updated slot with all related data
+  const { data: updatedSlot, error: selectError } = await supabase
+    .from('time_slots')
+    .select('*')
+    .eq('id', slotId)
+    .single();
+
+  if (selectError || !updatedSlot) {
+    console.error('Error fetching updated time slot:', selectError);
+    throw new Error('Failed to fetch updated time slot');
+  }
+
+  // Fetch court and facility data separately
+  const { data: courtData } = await supabase
+    .from('courts')
+    .select(`
+      name,
+      facility_id
+    `)
+    .eq('id', updatedSlot.court_id)
+    .single();
+
+  // Fetch facility data
+  let facilityData = null;
+  if (courtData?.facility_id) {
+    const { data: facility } = await supabase
+      .from('facilities')
+      .select('name, sport')
+      .eq('id', courtData.facility_id)
+      .single();
+    facilityData = facility;
+  }
+
+  // Fetch user profile separately if user_id exists
+  let userProfile = null;
+  if (updatedSlot.user_id) {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('full_name, phone')
+      .eq('user_id', updatedSlot.user_id)
+      .single();
+    userProfile = profileData;
   }
 
   return {
-    ...data,
-    court_name: data.courts?.name,
-    facility_name: data.courts?.facilities?.name,
-    sport: data.courts?.facilities?.sport,
+    ...updatedSlot,
+    court_name: courtData?.name,
+    facility_name: facilityData?.name,
+    sport: facilityData?.sport,
+    user_name: userProfile?.full_name,
+    user_phone: userProfile?.phone,
   };
 }
 
 // Delete a time slot
 export async function deleteTimeSlot(slotId: string): Promise<void> {
   const supabase = createClient();
-  
+
   const { error } = await supabase
     .from('time_slots')
     .delete()
@@ -307,7 +442,7 @@ export async function bookTimeSlot(
   bookingId?: string
 ): Promise<TimeSlot> {
   const supabase = createClient();
-  
+
   // Find the matching time slot
   const { data: slot, error: findError } = await supabase
     .from('time_slots')
@@ -368,7 +503,7 @@ export async function bookTimeSlot(
 // Get all facilities (turfs) for the current owner
 export async function getOwnerFacilities(ownerId: string): Promise<Facility[]> {
   const supabase = createClient();
-  
+
   const { data, error } = await supabase
     .from('facilities')
     .select('id, name, sport, city, address')
@@ -385,12 +520,12 @@ export async function getOwnerFacilities(ownerId: string): Promise<Facility[]> {
 
 // Get owner statistics with optional filters
 export async function getOwnerStats(
-  ownerId: string, 
-  facilityId?: string, 
+  ownerId: string,
+  facilityId?: string,
   courtId?: string
 ): Promise<OwnerStats> {
   const supabase = createClient();
-  
+
   // Get total courts - first get facility IDs
   const { data: facilities } = await supabase
     .from('facilities')
@@ -402,18 +537,18 @@ export async function getOwnerStats(
   if (facilityId) {
     filteredFacilityIds = filteredFacilityIds.filter(id => id === facilityId);
   }
-  
+
   let totalCourts = 0;
   if (filteredFacilityIds.length > 0) {
     let courtsQuery = supabase
       .from('courts')
       .select('*', { count: 'exact', head: true })
       .in('facility_id', filteredFacilityIds);
-    
+
     if (courtId) {
       courtsQuery = courtsQuery.eq('id', courtId);
     }
-    
+
     const { count } = await courtsQuery;
     totalCourts = count || 0;
   }
@@ -425,14 +560,14 @@ export async function getOwnerStats(
     .eq('owner_id', ownerId)
     .eq('is_available', true)
     .eq('is_booked', false);
-  
+
   if (facilityId) {
     availableSlotsQuery = availableSlotsQuery.eq('facility_id', facilityId);
   }
   if (courtId) {
     availableSlotsQuery = availableSlotsQuery.eq('court_id', courtId);
   }
-  
+
   const { count: availableSlots } = await availableSlotsQuery;
 
   // Get booked slots with filters
@@ -441,14 +576,14 @@ export async function getOwnerStats(
     .select('*', { count: 'exact', head: true })
     .eq('owner_id', ownerId)
     .eq('is_booked', true);
-  
+
   if (facilityId) {
     bookedSlotsQuery = bookedSlotsQuery.eq('facility_id', facilityId);
   }
   if (courtId) {
     bookedSlotsQuery = bookedSlotsQuery.eq('court_id', courtId);
   }
-  
+
   const { count: bookedSlots } = await bookedSlotsQuery;
 
   // Get total revenue from booked slots with filters
@@ -457,14 +592,14 @@ export async function getOwnerStats(
     .select('price_per_hour, start_time, end_time')
     .eq('owner_id', ownerId)
     .eq('is_booked', true);
-  
+
   if (facilityId) {
     revenueQuery = revenueQuery.eq('facility_id', facilityId);
   }
   if (courtId) {
     revenueQuery = revenueQuery.eq('court_id', courtId);
   }
-  
+
   const { data: revenueData } = await revenueQuery;
 
   const totalRevenue = revenueData?.reduce((sum, slot) => {
@@ -486,9 +621,9 @@ export async function getOwnerStats(
 // Get current user's profile to check if they're an owner
 export async function getCurrentUserProfile() {
   const supabase = createClient();
-  
+
   const { data: { user } } = await supabase.auth.getUser();
-  
+
   if (!user) {
     return null;
   }
