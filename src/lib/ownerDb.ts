@@ -218,23 +218,29 @@ export async function createTimeSlot(slotData: {
   // Check 4: Verify no overlapping available slot exists for the same court, date, and time
   const { data: existingSlots, error: checkError } = await supabase
     .from('time_slots')
-    .select('id, start_time, end_time')
+    .select('id, start_time, end_time, is_available, is_booked')
     .eq('court_id', slotData.court_id)
-    .eq('date', slotData.date)
-    .eq('is_available', true)
-    .eq('is_booked', false);
+    .eq('date', slotData.date);
 
   if (checkError) {
     console.error('Error checking for existing slots:', checkError);
     throw new Error('Error checking for existing slots');
   }
 
-  // Check for time overlaps
-  if (existingSlots && existingSlots.length > 0) {
+  console.log('Existing slots found for this court and date:', existingSlots);
+  console.log('New slot being created:', { start: slotData.start_time, end: slotData.end_time });
+
+  // Filter to only available slots (not booked)
+  const availableSlots = existingSlots?.filter(slot => slot.is_available === true && slot.is_booked === false) || [];
+
+  console.log('Available (non-booked) slots:', availableSlots);
+
+  // Check for time overlaps with available slots only
+  if (availableSlots.length > 0) {
     const newStart = slotData.start_time;
     const newEnd = slotData.end_time;
 
-    const hasOverlap = existingSlots.some(existing => {
+    const overlappingSlot = availableSlots.find(existing => {
       const existingStart = existing.start_time;
       const existingEnd = existing.end_time;
 
@@ -243,8 +249,14 @@ export async function createTimeSlot(slotData: {
       return newStart < existingEnd && newEnd > existingStart;
     });
 
-    if (hasOverlap) {
-      throw new Error('An available time slot already exists for this court at this time. Only one available slot is allowed per court at a time.');
+    if (overlappingSlot) {
+      console.error('Overlapping slot found:', overlappingSlot);
+      throw new Error(
+        `An available time slot already exists for this court at this time. ` +
+        `Existing slot: ${overlappingSlot.start_time} - ${overlappingSlot.end_time}. ` +
+        `New slot: ${slotData.start_time} - ${slotData.end_time}. ` +
+        `Please delete or mark the existing slot as booked first.`
+      );
     }
   }
 
@@ -379,7 +391,7 @@ export async function updateTimeSlotAvailability(
   const { data: courtData } = await supabase
     .from('courts')
     .select(`
-      name,
+        name,
       facility_id
     `)
     .eq('id', updatedSlot.court_id)
