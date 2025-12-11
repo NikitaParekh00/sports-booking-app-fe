@@ -183,6 +183,7 @@ export default function AuctionClient() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
+    const [imageReloadKey, setImageReloadKey] = useState(0);
     const [teams, setTeams] = useState<Team[]>(() => {
         return Array.from({ length: TEAMS_COUNT }, (_, i) => ({
             id: i + 1,
@@ -659,6 +660,13 @@ export default function AuctionClient() {
 
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
+
+    // Force image reload when player changes
+    useEffect(() => {
+        if (currentPlayer?.photo) {
+            setImageReloadKey(prev => prev + 1);
+        }
+    }, [currentPlayerIndex, currentPlayer?.photo]);
 
     // Get current skipped players (players that have been processed but not bought)
     const getCurrentSkippedPlayers = useCallback(() => {
@@ -1208,7 +1216,7 @@ export default function AuctionClient() {
                 pdf.setFontSize(10);
                 pdf.setFont('helvetica', 'bold');
                 pdf.text('S.No', playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
-                pdf.text('Player Name (Category)', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Player Name', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
                 pdf.text('Amount', playerTableStartX + sNoWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
                 yPosition += playerRowHeight;
 
@@ -1235,8 +1243,8 @@ export default function AuctionClient() {
                     // S.No
                     pdf.text(String(index + 1), playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
 
-                    // Player Name and Category - truncate if too long
-                    const playerText = `${player.name} (${player.category})`;
+                    // Player Name - truncate if too long
+                    const playerText = player.name;
                     const maxNameWidth = nameWidth - 4; // Leave padding
                     let displayName = playerText;
                     const textWidth = pdf.getTextWidth(playerText);
@@ -1351,7 +1359,7 @@ export default function AuctionClient() {
                                 <div className="space-y-1 mb-4">
                                     {team.players.map((player, idx) => (
                                         <div key={idx} className="text-sm text-gray-700 py-1 border-b border-gray-100 last:border-0">
-                                            {player.name} ({player.category})
+                                            {player.name}
                                         </div>
                                     ))}
                                 </div>
@@ -1614,7 +1622,6 @@ export default function AuctionClient() {
                                                                 <div key={idx} className="flex justify-between items-center text-xs py-0.5">
                                                                     <span className="text-gray-700">
                                                                         {player.name}
-                                                                        <span className="text-gray-500 ml-1">({player.category})</span>
                                                                     </span>
                                                                     <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                                 </div>
@@ -1656,28 +1663,37 @@ export default function AuctionClient() {
                                 {/* Player Photo - Top on mobile, Left on desktop */}
                                 <div className="flex-shrink-0 flex justify-center md:justify-start">
                                     {currentPlayer.photo && (
-                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}`} className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
                                             {/* Automatically converts Google Drive links to direct image URLs */}
                                             {(() => {
                                                 const imageUrl = processImageUrl(currentPlayer.photo);
                                                 console.log('Original photo URL:', currentPlayer.photo);
                                                 console.log('Processed image URL:', imageUrl);
+                                                console.log('Image reload key:', imageReloadKey);
 
                                                 if (!imageUrl) return null;
 
-                                                // Add cache-busting parameter using player name to prevent browser caching
-                                                // This ensures each player's image is unique and not cached incorrectly
-                                                const cacheBuster = imageUrl.includes('?') ? `&_player=${encodeURIComponent(currentPlayer.name)}` : `?_player=${encodeURIComponent(currentPlayer.name)}`;
+                                                // Add aggressive cache-busting: player name + index + reload key + timestamp
+                                                // This ensures each player's image is unique and forces reload
+                                                const cacheParams = new URLSearchParams({
+                                                    _player: currentPlayer.name,
+                                                    _idx: String(currentPlayerIndex),
+                                                    _key: String(imageReloadKey),
+                                                    _t: String(Date.now())
+                                                });
+                                                const cacheBuster = imageUrl.includes('?') ? `&${cacheParams.toString()}` : `?${cacheParams.toString()}`;
                                                 const finalImageUrl = `${imageUrl}${cacheBuster}`;
 
                                                 // Use regular img tag for all URLs (proxy API route or external URLs)
                                                 // Next.js Image doesn't support query strings in local patterns
                                                 return (
                                                     <img
-                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}`}
+                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}`}
                                                         src={finalImageUrl}
                                                         alt={currentPlayer.name}
                                                         className="object-cover w-full h-full"
+                                                        loading="eager"
+                                                        decoding="async"
                                                         onError={(e) => {
                                                             const target = e.target as HTMLImageElement;
                                                             console.error('❌ Failed to load player image:', finalImageUrl);
@@ -1959,7 +1975,6 @@ export default function AuctionClient() {
                                                     <div key={idx} className="flex justify-between items-center text-sm py-1">
                                                         <span className="text-gray-700">
                                                             {player.name}
-                                                            <span className="text-gray-500 ml-1">({player.category})</span>
                                                         </span>
                                                         <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                     </div>
