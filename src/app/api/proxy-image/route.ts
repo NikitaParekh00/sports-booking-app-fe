@@ -44,12 +44,14 @@ export async function GET(request: NextRequest) {
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
     // Return the image with proper headers
+    // Use shorter cache time and ensure cache varies by URL parameters
     return new NextResponse(imageBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=3600, s-maxage=3600', // Cache for 1 hour
+        'Cache-Control': 'public, max-age=300, s-maxage=300, must-revalidate', // Cache for 5 minutes, must revalidate
         'Access-Control-Allow-Origin': '*', // Allow CORS
+        'Vary': 'Accept, Origin', // Ensure cache varies by request headers
       },
     });
   } catch (error) {
