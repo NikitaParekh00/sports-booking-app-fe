@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
 import jsPDF from 'jspdf';
+import { processImageUrl } from '@/lib/imageUrlHelper';
 
 interface Player {
     name: string;
@@ -20,6 +21,43 @@ interface Player {
     ro: number;
     mvp: number;
     bidAmount?: number; // Optional for players in team (bought players have bid amount)
+    photo?: string; // Player photo URL
+    age?: number; // Player age
+    played_s1?: string; // Played S1: Yes/No
+    experience?: string; // Experience
+    active_sport?: string; // Active sport practiced
+    skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
+    batting_hand?: string; // Right/Left
+    s1_ranking?: string; // S1 Ranking
+    s2_ranking?: string; // S2 Ranking
+    s3_ranking?: string; // S3 Ranking
+}
+
+interface DbPlayerPool {
+    id: string;
+    session_id: string;
+    player_order: number;
+    name: string;
+    payment_status: string;
+    gender: string;
+    category: string;
+    runs: number;
+    strike_rate: number;
+    wickets: number;
+    average: number;
+    catch_count: number;
+    ro: number;
+    mvp: number;
+    photo?: string;
+    age?: number;
+    played_s1?: string;
+    experience?: string;
+    active_sport?: string;
+    skill?: string;
+    batting_hand?: string;
+    s1_ranking?: string;
+    s2_ranking?: string;
+    s3_ranking?: string;
 }
 
 interface Team {
@@ -110,6 +148,16 @@ interface DbPlayerPool {
     catch_count: number;
     ro: number;
     mvp: number;
+    photo?: string;
+    age?: number;
+    played_s1?: string;
+    experience?: string;
+    active_sport?: string;
+    skill?: string;
+    batting_hand?: string;
+    s1_ranking?: string;
+    s2_ranking?: string;
+    s3_ranking?: string;
 }
 
 // Configure the allowed user for auction access
@@ -313,21 +361,35 @@ export default function AuctionClient() {
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
-                if (poolError) throw poolError;
+                if (poolError) {
+                    console.error('Error fetching player pool:', poolError);
+                    throw poolError;
+                }
 
                 // Map database player pool to component players
-                const mappedPlayers: Player[] = (playerPoolData || []).map((p: DbPlayerPool) => ({
+                // Safely handle missing fields (in case migration hasn't been run yet)
+                const mappedPlayers: Player[] = (playerPoolData || []).map((p: Partial<DbPlayerPool> & { name: string; payment_status: string; gender: string; category: string }) => ({
                     name: p.name,
                     payment: p.payment_status as 'Y' | 'N',
                     gender: p.gender as 'M' | 'F',
-                    category: p.category,
-                    runs: p.runs,
-                    strikeRate: p.strike_rate,
-                    wickets: p.wickets,
-                    average: p.average,
-                    catch: p.catch_count,
-                    ro: p.ro,
-                    mvp: p.mvp
+                    category: p.category || 'Non Marquee',
+                    runs: p.runs || 0,
+                    strikeRate: p.strike_rate || 0,
+                    wickets: p.wickets || 0,
+                    average: p.average || 0,
+                    catch: p.catch_count || 0,
+                    ro: p.ro || 0,
+                    mvp: p.mvp || 0,
+                    photo: p.photo || undefined,
+                    age: p.age || undefined,
+                    played_s1: p.played_s1 || undefined,
+                    experience: p.experience || undefined,
+                    active_sport: p.active_sport || undefined,
+                    skill: p.skill || undefined,
+                    batting_hand: p.batting_hand || undefined,
+                    s1_ranking: p.s1_ranking || undefined,
+                    s2_ranking: p.s2_ranking || undefined,
+                    s3_ranking: p.s3_ranking || undefined
                 }));
 
                 setPlayers(mappedPlayers);
@@ -421,6 +483,7 @@ export default function AuctionClient() {
                 }
             } catch (error) {
                 console.error('Error loading auction state:', error);
+                // Ensure loading state is set to false even on error
             } finally {
                 setLoadingState(false);
             }
@@ -474,7 +537,8 @@ export default function AuctionClient() {
                         A: team.category_a_count,
                         B: team.category_b_count,
                         C: team.category_c_count
-                    }
+                    },
+                    ownerName: team.owner_name
                 };
             });
 
@@ -555,18 +619,29 @@ export default function AuctionClient() {
                     .order('player_order', { ascending: true });
 
                 if (playerPoolData) {
-                    const mappedPlayers: Player[] = playerPoolData.map((p: DbPlayerPool) => ({
+                    // Safely handle missing fields (in case migration hasn't been run yet)
+                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string; payment_status: string; gender: string; category: string }) => ({
                         name: p.name,
                         payment: p.payment_status as 'Y' | 'N',
                         gender: p.gender as 'M' | 'F',
-                        category: p.category,
-                        runs: p.runs,
-                        strikeRate: p.strike_rate,
-                        wickets: p.wickets,
-                        average: p.average,
-                        catch: p.catch_count,
-                        ro: p.ro,
-                        mvp: p.mvp
+                        category: p.category || 'Non Marquee',
+                        runs: p.runs || 0,
+                        strikeRate: p.strike_rate || 0,
+                        wickets: p.wickets || 0,
+                        average: p.average || 0,
+                        catch: p.catch_count || 0,
+                        ro: p.ro || 0,
+                        mvp: p.mvp || 0,
+                        photo: p.photo || undefined,
+                        age: p.age || undefined,
+                        played_s1: p.played_s1 || undefined,
+                        experience: p.experience || undefined,
+                        active_sport: p.active_sport || undefined,
+                        skill: p.skill || undefined,
+                        batting_hand: p.batting_hand || undefined,
+                        s1_ranking: p.s1_ranking || undefined,
+                        s2_ranking: p.s2_ranking || undefined,
+                        s3_ranking: p.s3_ranking || undefined
                     }));
 
                     setPlayers(mappedPlayers);
@@ -1418,8 +1493,8 @@ export default function AuctionClient() {
             )}
 
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 sticky top-0 z-10 shadow-sm">
-                <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+            <div className="bg-white border-b border-gray-200 px-2 md:px-3 py-3 sticky top-0 z-10 shadow-sm">
+                <div className="w-full flex items-center justify-between gap-2">
                     <button
                         onClick={() => router.back()}
                         className="text-gray-600 hover:text-gray-900 flex items-center gap-1 md:gap-2 flex-shrink-0"
@@ -1472,11 +1547,11 @@ export default function AuctionClient() {
                 </div>
             </div>
 
-            <div className="max-w-7xl mx-auto px-4 md:px-8 py-6">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="w-full px-2 md:px-3 py-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
                     {/* Left Sidebar - Teams Overview (Desktop) */}
                     <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-6 sticky top-24 h-[calc(100vh-8rem)] overflow-y-auto space-y-6">
+                        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 md:p-5 sticky top-24 h-[calc(100vh-8rem)] overflow-y-auto space-y-4">
                             {/* Team Dynamics Section */}
                             <div>
                                 <h2 className="text-xl font-bold text-gray-900 mb-4">Team Dynamics</h2>
@@ -1560,9 +1635,9 @@ export default function AuctionClient() {
                     </div>
 
                     {/* Main Content Area */}
-                    <div className="lg:col-span-2 space-y-6 pb-32 md:pb-6">
+                    <div className="lg:col-span-2 space-y-4 pb-32 md:pb-4">
                         {/* Progress */}
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-4">
+                        <div className="bg-white rounded-xl border-2 border-gray-200 p-3 md:p-4">
                             <div className="flex justify-between text-sm text-gray-600 mb-2">
                                 <span>Player {currentPlayerIndex + 1} of {players.length}</span>
                                 <span>{remainingPlayers} remaining</span>
@@ -1576,56 +1651,133 @@ export default function AuctionClient() {
                         </div>
 
                         {/* Current Player Card */}
-                        <div className={`${cardStyle.bg} ${cardStyle.border} rounded-xl p-6 md:p-8 ${cardStyle.shadow}`}>
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="flex-1">
-                                    <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">{currentPlayer.name}</h2>
-                                    <div className="flex flex-wrap gap-2 text-sm">
-                                        <span className="bg-gray-100 px-3 py-1.5 rounded-lg text-gray-600">{currentPlayer.gender === 'M' ? 'Male' : 'Female'}</span>
-                                        <span className={`px-3 py-1.5 rounded-lg font-medium ${getCategoryTagStyle(currentPlayer.category)}`}>{currentPlayer.category}</span>
+                        <div className={`${cardStyle.bg} ${cardStyle.border} rounded-xl p-5 md:p-7 ${cardStyle.shadow}`}>
+                            <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-6">
+                                {/* Player Photo - Top on mobile, Left on desktop */}
+                                <div className="flex-shrink-0 flex justify-center md:justify-start">
+                                    {currentPlayer.photo && (
+                                        <div className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                            {/* Automatically converts Google Drive links to direct image URLs */}
+                                            {(() => {
+                                                const imageUrl = processImageUrl(currentPlayer.photo);
+                                                console.log('Original photo URL:', currentPlayer.photo);
+                                                console.log('Processed image URL:', imageUrl);
+
+                                                if (!imageUrl) return null;
+
+                                                // Use regular img tag for all URLs (proxy API route or external URLs)
+                                                // Next.js Image doesn't support query strings in local patterns
+                                                return (
+                                                    <img
+                                                        src={imageUrl}
+                                                        alt={currentPlayer.name}
+                                                        className="object-cover w-full h-full"
+                                                        onError={(e) => {
+                                                            const target = e.target as HTMLImageElement;
+                                                            console.error('❌ Failed to load player image:', imageUrl);
+                                                            console.error('Original URL:', currentPlayer.photo);
+                                                            // Hide the broken image
+                                                            target.style.display = 'none';
+                                                            // Show a placeholder
+                                                            const parent = target.parentElement;
+                                                            if (parent && !parent.querySelector('.placeholder')) {
+                                                                const placeholder = document.createElement('div');
+                                                                placeholder.className = 'placeholder w-full h-full flex items-center justify-center bg-gray-200 text-gray-400 text-xs';
+                                                                placeholder.textContent = 'Image unavailable';
+                                                                parent.appendChild(placeholder);
+                                                            }
+                                                        }}
+                                                        onLoad={() => {
+                                                            console.log('✅ Successfully loaded player image:', imageUrl);
+                                                        }}
+                                                    />
+                                                );
+                                            })()}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Player Info - Below image on mobile, Right side on desktop */}
+                                <div className="flex-1 flex flex-col">
+                                    {/* Header: Name and Logo */}
+                                    <div className="flex items-center justify-center md:justify-between gap-3 md:gap-4 mb-3">
+                                        <h2 className="text-3xl md:text-4xl font-bold text-gray-900">{currentPlayer.name}</h2>
+                                        <div className="flex-shrink-0">
+                                            <Image
+                                                src="/logo.jpeg"
+                                                alt="Logo"
+                                                width={180}
+                                                height={80}
+                                                className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Basic Info Badges - Right below name */}
+                                    <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
+                                        {currentPlayer.age && (
+                                            <span className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-medium border border-blue-200">
+                                                Age: {currentPlayer.age}
+                                            </span>
+                                        )}
+                                        {currentPlayer.batting_hand && (
+                                            <span className="bg-purple-50 text-purple-700 px-4 py-2 rounded-lg font-medium border border-purple-200">
+                                                {currentPlayer.batting_hand} Handed
+                                            </span>
+                                        )}
+                                        {currentPlayer.skill && (
+                                            <span className="bg-green-50 text-green-700 px-4 py-2 rounded-lg font-medium border border-green-200">
+                                                {currentPlayer.skill}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Player Details Grid */}
+                                    <div className="space-y-4">
+                                        {/* Experience */}
+                                        {currentPlayer.experience && (
+                                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 md:p-5 border border-gray-200">
+                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Experience</div>
+                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.experience}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Rankings */}
+                                        {(currentPlayer.s1_ranking || currentPlayer.s2_ranking || currentPlayer.s3_ranking) && (
+                                            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-5 md:p-6 border border-indigo-200">
+                                                <div className="text-sm md:text-base font-semibold text-indigo-600 uppercase tracking-wide mb-4">Season Rankings</div>
+                                                <div className="grid grid-cols-3 gap-4">
+                                                    {currentPlayer.s1_ranking && (
+                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
+                                                            <div className="text-sm text-gray-500 mb-2">S1</div>
+                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s1_ranking}</div>
+                                                        </div>
+                                                    )}
+                                                    {currentPlayer.s2_ranking && (
+                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
+                                                            <div className="text-sm text-gray-500 mb-2">S2</div>
+                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s2_ranking}</div>
+                                                        </div>
+                                                    )}
+                                                    {currentPlayer.s3_ranking && (
+                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
+                                                            <div className="text-sm text-gray-500 mb-2">S3</div>
+                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s3_ranking}</div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <Image
-                                    src="/logo.jpeg"
-                                    alt="Logo"
-                                    width={180}
-                                    height={80}
-                                    className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
-                                />
                             </div>
 
-                            {/* Stats Grid */}
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">Runs</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.runs}</div>
+                            {/* Active Sport - Full Width Below Image */}
+                            {currentPlayer.active_sport && (
+                                <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 md:p-5 border border-blue-200 w-full mt-6">
+                                    <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.active_sport}</div>
                                 </div>
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">Strike Rate</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.strikeRate}</div>
-                                </div>
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">Wickets</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.wickets}</div>
-                                </div>
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">Average</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.average}</div>
-                                </div>
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">Catches</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.catch}</div>
-                                </div>
-                                <div className="bg-gray-50 rounded-lg p-4">
-                                    <div className="text-xs text-gray-500 mb-1">R/O</div>
-                                    <div className="text-2xl font-semibold text-gray-900">{currentPlayer.ro}</div>
-                                </div>
-                            </div>
-
-                            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
-                                <div className="text-sm text-red-600 mb-1 font-medium">MVP Score</div>
-                                <div className="text-3xl font-bold text-red-700">{currentPlayer.mvp}</div>
-                            </div>
+                            )}
                         </div>
 
                         {/* Bid Amount */}
