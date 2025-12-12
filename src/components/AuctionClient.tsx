@@ -80,7 +80,7 @@ const TOTAL_AMOUNT = 111000;
 const MINIMUM_BID = 5000;
 const BID_INCREASE = 5000;
 const TEAMS_COUNT = 8;
-const PLAYERS_PER_TEAM = 10;
+const PLAYERS_PER_TEAM = 11; // Maximum 11 players per team
 
 // Team logos mapping
 const TEAM_LOGOS: { [key: number]: string } = {
@@ -755,14 +755,31 @@ export default function AuctionClient() {
         const team = teams.find(t => t.id === selectedTeamId);
         if (!team) return;
 
+        // Check if team has space (maximum 11 players)
+        if (team.players.length >= PLAYERS_PER_TEAM) {
+            alert(`Team ${team.name} already has ${PLAYERS_PER_TEAM} players! Maximum allowed is ${PLAYERS_PER_TEAM}.`);
+            return;
+        }
+
+        // Check if team has enough budget for current bid
         if (team.budget < currentBid) {
             alert(`Team ${team.name} doesn't have enough budget!`);
             return;
         }
 
-        // Check if team has space
-        if (team.players.length >= PLAYERS_PER_TEAM) {
-            alert(`Team ${team.name} already has ${PLAYERS_PER_TEAM} players!`);
+        // Calculate remaining players needed
+        const remainingPlayersNeeded = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because we're about to buy this player
+        const minimumRequiredBudget = remainingPlayersNeeded * MINIMUM_BID;
+
+        // Check if after this bid, team will have enough budget for remaining players
+        const budgetAfterBid = team.budget - currentBid;
+        if (budgetAfterBid < minimumRequiredBudget) {
+            alert(
+                `Team ${team.name} cannot bid ₹${currentBid.toLocaleString()} on this player.\n\n` +
+                `After this bid, the team will have ₹${budgetAfterBid.toLocaleString()} remaining, ` +
+                `but needs at least ₹${minimumRequiredBudget.toLocaleString()} to buy ${remainingPlayersNeeded} more player(s) at minimum bid (₹${MINIMUM_BID.toLocaleString()} each).\n\n` +
+                `Maximum allowed bid: ₹${(team.budget - minimumRequiredBudget).toLocaleString()}`
+            );
             return;
         }
 
