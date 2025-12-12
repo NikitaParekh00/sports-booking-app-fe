@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
@@ -184,6 +184,7 @@ export default function AuctionClient() {
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
     const [imageReloadKey, setImageReloadKey] = useState(0);
+    const imageRef = useRef<HTMLImageElement | null>(null);
     const [teams, setTeams] = useState<Team[]>(() => {
         return Array.from({ length: TEAMS_COUNT }, (_, i) => ({
             id: i + 1,
@@ -1673,13 +1674,13 @@ export default function AuctionClient() {
 
                                                 if (!imageUrl) return null;
 
-                                                // Add aggressive cache-busting: player name + index + reload key + timestamp
-                                                // This ensures each player's image is unique and forces reload
+                                                // Use photo URL itself as cache key - each player has unique photo URL
+                                                // Add minimal cache-busting only with player identifier (no timestamp to avoid slow loading)
+                                                const photoUrlHash = currentPlayer.photo ? currentPlayer.photo.substring(Math.max(0, currentPlayer.photo.length - 30)) : '';
                                                 const cacheParams = new URLSearchParams({
-                                                    _player: currentPlayer.name,
-                                                    _idx: String(currentPlayerIndex),
-                                                    _key: String(imageReloadKey),
-                                                    _t: String(Date.now())
+                                                    _p: currentPlayer.name.substring(0, 10), // First 10 chars of name
+                                                    _i: String(currentPlayerIndex),
+                                                    _h: photoUrlHash.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15) // Last part of photo URL
                                                 });
                                                 const cacheBuster = imageUrl.includes('?') ? `&${cacheParams.toString()}` : `?${cacheParams.toString()}`;
                                                 const finalImageUrl = `${imageUrl}${cacheBuster}`;
@@ -1688,12 +1689,14 @@ export default function AuctionClient() {
                                                 // Next.js Image doesn't support query strings in local patterns
                                                 return (
                                                     <img
-                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}`}
+                                                        ref={imageRef}
+                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}-${currentPlayer.photo?.substring(0, 20)}`}
                                                         src={finalImageUrl}
                                                         alt={currentPlayer.name}
                                                         className="object-cover w-full h-full"
                                                         loading="eager"
                                                         decoding="async"
+                                                        crossOrigin="anonymous"
                                                         onError={(e) => {
                                                             const target = e.target as HTMLImageElement;
                                                             console.error('❌ Failed to load player image:', finalImageUrl);

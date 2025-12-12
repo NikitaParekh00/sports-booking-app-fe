@@ -23,6 +23,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Extract cache-busting parameters to ensure unique cache keys
+  const playerName = searchParams.get('_player');
+  const playerIdx = searchParams.get('_idx');
+  const cacheKey = playerName && playerIdx ? `${imageUrl}-${playerName}-${playerIdx}` : imageUrl;
+
   try {
     // Fetch the image from Google Drive
     const response = await fetch(imageUrl, {
@@ -44,14 +49,16 @@ export async function GET(request: NextRequest) {
     const contentType = response.headers.get('content-type') || 'image/jpeg';
 
     // Return the image with proper headers
-    // Use shorter cache time and ensure cache varies by URL parameters
+    // Disable caching to prevent showing wrong images for different players
     return new NextResponse(imageBuffer, {
       status: 200,
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=300, s-maxage=300, must-revalidate', // Cache for 5 minutes, must revalidate
+        'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0', // Disable all caching
+        'Pragma': 'no-cache', // HTTP 1.0 compatibility
+        'Expires': '0', // HTTP 1.0 compatibility
         'Access-Control-Allow-Origin': '*', // Allow CORS
-        'Vary': 'Accept, Origin', // Ensure cache varies by request headers
+        'Vary': '*', // Ensure cache varies by all request headers
       },
     });
   } catch (error) {
