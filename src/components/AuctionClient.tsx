@@ -28,9 +28,6 @@ interface Player {
     active_sport?: string; // Active sport practiced
     skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
     batting_hand?: string; // Right/Left
-    s1_ranking?: string; // S1 Ranking
-    s2_ranking?: string; // S2 Ranking
-    s3_ranking?: string; // S3 Ranking
 }
 
 interface DbPlayerPool {
@@ -55,9 +52,6 @@ interface DbPlayerPool {
     active_sport?: string;
     skill?: string;
     batting_hand?: string;
-    s1_ranking?: string;
-    s2_ranking?: string;
-    s3_ranking?: string;
 }
 
 interface Team {
@@ -84,7 +78,7 @@ const initialPlayers: Player[] = [
 
 const TOTAL_AMOUNT = 111000;
 const MINIMUM_BID = 5000;
-const BID_INCREASE = 1000;
+const BID_INCREASE = 5000;
 const TEAMS_COUNT = 8;
 const PLAYERS_PER_TEAM = 10;
 
@@ -155,9 +149,6 @@ interface DbPlayerPool {
     active_sport?: string;
     skill?: string;
     batting_hand?: string;
-    s1_ranking?: string;
-    s2_ranking?: string;
-    s3_ranking?: string;
 }
 
 // Configure the allowed user for auction access
@@ -183,7 +174,6 @@ export default function AuctionClient() {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
-    const [imageReloadKey, setImageReloadKey] = useState(0);
     const imageRef = useRef<HTMLImageElement | null>(null);
     const [teams, setTeams] = useState<Team[]>(() => {
         return Array.from({ length: TEAMS_COUNT }, (_, i) => ({
@@ -207,6 +197,8 @@ export default function AuctionClient() {
     const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
     const [skippedPlayers, setSkippedPlayers] = useState<Player[]>([]);
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
+    const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
+    const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
     const [topPlayersGenderFilter, setTopPlayersGenderFilter] = useState<'all' | 'M' | 'F'>('all');
 
     // Check authentication and edit permissions
@@ -356,10 +348,10 @@ export default function AuctionClient() {
                 setCurrentPlayerIndex(finalSession.current_player_index);
                 setAuctionComplete(finalSession.is_complete);
 
-                // Load player pool from database
+                // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
-                    .select('*')
+                    .select('id, player_order, name, payment_status, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand, runs, wickets, mvp')
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
@@ -376,11 +368,11 @@ export default function AuctionClient() {
                     gender: p.gender as 'M' | 'F',
                     category: p.category || 'Non Marquee',
                     runs: p.runs || 0,
-                    strikeRate: p.strike_rate || 0,
+                    strikeRate: 0, // Not displayed, set to 0
                     wickets: p.wickets || 0,
-                    average: p.average || 0,
-                    catch: p.catch_count || 0,
-                    ro: p.ro || 0,
+                    average: 0, // Not displayed, set to 0
+                    catch: 0, // Not displayed, set to 0
+                    ro: 0, // Not displayed, set to 0
                     mvp: p.mvp || 0,
                     photo: p.photo || undefined,
                     age: p.age || undefined,
@@ -388,10 +380,7 @@ export default function AuctionClient() {
                     experience: p.experience || undefined,
                     active_sport: p.active_sport || undefined,
                     skill: p.skill || undefined,
-                    batting_hand: p.batting_hand || undefined,
-                    s1_ranking: p.s1_ranking || undefined,
-                    s2_ranking: p.s2_ranking || undefined,
-                    s3_ranking: p.s3_ranking || undefined
+                    batting_hand: p.batting_hand || undefined
                 }));
 
                 setPlayers(mappedPlayers);
@@ -460,28 +449,29 @@ export default function AuctionClient() {
                         player => !boughtNames.has(player.name)
                     );
                     setSkippedPlayers(skipped);
+
+                    // Only show skipped players if auction is complete AND there are skipped players
+                    // This means we've finished the main auction and are now auctioning skipped players
+                    if (skipped.length > 0) {
+                        setPlayers(skipped);
+                        setIsSkippedPlayersMode(true);
+                        // Reset current player index to 0 since we're starting skipped players auction
+                        setCurrentPlayerIndex(0);
+                        // Update session to reflect we're starting from index 0 for skipped players
+                        await supabase
+                            .from('auction_sessions')
+                            .update({ current_player_index: 0 })
+                            .eq('id', finalSession.id);
+                    } else {
+                        // No skipped players, show all players (auction is complete with all players bought)
+                        setPlayers(mappedPlayers);
+                        setIsSkippedPlayersMode(false);
+                    }
                 } else {
+                    // Auction is not complete, show all players normally
                     setSkippedPlayers([]);
-                }
-
-                // Filter to show only skipped players (players processed but not bought)
-                const skippedOnly = mappedPlayers
-                    .slice(0, finalSession.current_player_index)
-                    .filter(player => !boughtNames.has(player.name));
-
-                // Set players to only skipped players if there are any
-                if (skippedOnly.length > 0) {
-                    setPlayers(skippedOnly);
-                    // Reset current player index to 0 since we're showing only skipped players
-                    setCurrentPlayerIndex(0);
-                    // Update session to reflect we're starting from index 0 for skipped players
-                    await supabase
-                        .from('auction_sessions')
-                        .update({ current_player_index: 0 })
-                        .eq('id', finalSession.id);
-                } else {
-                    // If no skipped players, show all players as normal
                     setPlayers(mappedPlayers);
+                    setIsSkippedPlayersMode(false);
                 }
             } catch (error) {
                 console.error('Error loading auction state:', error);
@@ -613,10 +603,10 @@ export default function AuctionClient() {
                 table: 'auction_player_pool',
                 filter: `session_id=eq.${sessionId}`
             }, async () => {
-                // Reload player pool when it changes
+                // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('*')
+                    .select('id, player_order, name, payment_status, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand, runs, wickets, mvp')
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
 
@@ -628,11 +618,11 @@ export default function AuctionClient() {
                         gender: p.gender as 'M' | 'F',
                         category: p.category || 'Non Marquee',
                         runs: p.runs || 0,
-                        strikeRate: p.strike_rate || 0,
+                        strikeRate: 0, // Not displayed, set to 0
                         wickets: p.wickets || 0,
-                        average: p.average || 0,
-                        catch: p.catch_count || 0,
-                        ro: p.ro || 0,
+                        average: 0, // Not displayed, set to 0
+                        catch: 0, // Not displayed, set to 0
+                        ro: 0, // Not displayed, set to 0
                         mvp: p.mvp || 0,
                         photo: p.photo || undefined,
                         age: p.age || undefined,
@@ -640,10 +630,7 @@ export default function AuctionClient() {
                         experience: p.experience || undefined,
                         active_sport: p.active_sport || undefined,
                         skill: p.skill || undefined,
-                        batting_hand: p.batting_hand || undefined,
-                        s1_ranking: p.s1_ranking || undefined,
-                        s2_ranking: p.s2_ranking || undefined,
-                        s3_ranking: p.s3_ranking || undefined
+                        batting_hand: p.batting_hand || undefined
                     }));
 
                     setPlayers(mappedPlayers);
@@ -662,93 +649,45 @@ export default function AuctionClient() {
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
 
-    // Force image reload when player changes
-    useEffect(() => {
-        if (currentPlayer?.photo) {
-            setImageReloadKey(prev => prev + 1);
-        }
-    }, [currentPlayerIndex, currentPlayer?.photo]);
 
-    // Get current skipped players (players that have been processed but not bought)
+    // Get current skipped players
     const getCurrentSkippedPlayers = useCallback(() => {
-        // Players that have been processed (index < currentPlayerIndex) but not bought
+        // If auction is complete, return all players that were never bought
+        if (auctionComplete) {
+            return players.filter(player => !boughtPlayerNames.has(player.name));
+        }
+
+        // If auction is in progress, only return players that have been processed (index < currentPlayerIndex) but not bought
+        // This gives the list of players that were skipped during the auction so far
         return players
             .slice(0, currentPlayerIndex)
             .filter(player => !boughtPlayerNames.has(player.name));
-    }, [players, currentPlayerIndex, boughtPlayerNames]);
+    }, [players, boughtPlayerNames, auctionComplete, currentPlayerIndex]);
 
     // Freeze skipped players list when sheet opens
     useEffect(() => {
         if (isSkippedPlayersSheetOpen) {
             // Freeze the skipped players list when sheet opens
-            setFrozenSkippedPlayers(getCurrentSkippedPlayers());
+            // Use skippedPlayers state if available, otherwise calculate from current players
+            const skippedList = skippedPlayers.length > 0
+                ? skippedPlayers
+                : getCurrentSkippedPlayers();
+            setFrozenSkippedPlayers(skippedList);
         } else {
             // Clear frozen list when sheet closes
             setFrozenSkippedPlayers([]);
         }
-    }, [isSkippedPlayersSheetOpen, getCurrentSkippedPlayers]);
+    }, [isSkippedPlayersSheetOpen, getCurrentSkippedPlayers, skippedPlayers]);
 
-    // Get card styling based on player category
-    const getPlayerCardStyle = (category: string) => {
-        const categoryLower = category.toLowerCase();
-        if (categoryLower.includes('super marquee')) {
-            // Rich gold styling for Super Marquee
-            return {
-                bg: 'bg-gradient-to-br from-yellow-100 via-amber-100 to-yellow-200',
-                border: 'border-4 border-amber-500',
-                shadow: 'shadow-2xl shadow-amber-400/60'
-            };
-        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
-            // Blue styling for Marquee (but not Super Marquee or Non Marquee)
-            return {
-                bg: 'bg-gradient-to-br from-blue-100 via-blue-200 to-blue-300',
-                border: 'border-4 border-blue-500',
-                shadow: 'shadow-2xl shadow-blue-500/50'
-            };
-        } else {
-            // Default styling for others (Non Marquee, etc.)
-            return {
-                bg: 'bg-white',
-                border: 'border-2 border-gray-200',
-                shadow: 'shadow-sm'
-            };
-        }
-    };
+    // Default card styling (no category-based styling)
+    const cardStyle = { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
 
-    // Get category tag styling
-    const getCategoryTagStyle = (category: string) => {
-        const categoryLower = category.toLowerCase();
-        if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
-            // Blue styling for Marquee category tag
-            return 'bg-gradient-to-r from-blue-200 via-blue-300 to-blue-200 text-blue-900 border-2 border-blue-500 shadow-lg font-semibold';
-        } else if (categoryLower.includes('super marquee')) {
-            // Rich gold styling for Super Marquee category tag
-            return 'bg-gradient-to-r from-yellow-300 via-amber-300 to-yellow-300 text-amber-900 border-2 border-amber-500 shadow-lg font-semibold';
-        } else {
-            return 'bg-gray-100 text-gray-600';
-        }
-    };
-
-    const cardStyle = currentPlayer ? getPlayerCardStyle(currentPlayer.category) : { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
-
-    // Get minimum bid based on player category
-    const getMinimumBid = (category: string) => {
-        const categoryLower = category.toLowerCase();
-        if (categoryLower.includes('super marquee')) {
-            return 10000; // Super Marquee: ₹10,000
-        } else if (categoryLower.includes('marquee') && !categoryLower.includes('super') && !categoryLower.includes('non')) {
-            return 5000; // Marquee: ₹5,000
-        } else {
-            return 2000; // Others (Non Marquee, etc.): ₹2,000
-        }
-    };
-
-    const currentMinimumBid = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
+    const currentMinimumBid = 5000
 
     // Update bid when player changes
     useEffect(() => {
         if (currentPlayer) {
-            const newMinimum = getMinimumBid(currentPlayer.category);
+            const newMinimum = MINIMUM_BID;
             setCurrentBid(newMinimum);
         }
     }, [currentPlayerIndex, currentPlayer]);
@@ -759,8 +698,41 @@ export default function AuctionClient() {
 
     const handleBidDecrease = () => {
         if (currentBid > currentMinimumBid) {
-            setCurrentBid(prev => prev - BID_INCREASE);
+            setCurrentBid(prev => Math.max(currentMinimumBid, prev - BID_INCREASE));
         }
+    };
+
+    const [bidInputValue, setBidInputValue] = useState<string>('');
+
+    // Sync bidInputValue with currentBid when it changes externally
+    useEffect(() => {
+        setBidInputValue(currentBid.toString());
+    }, [currentBid]);
+
+    const handleBidInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!canEdit) return;
+
+        const value = e.target.value.replace(/[^0-9]/g, ''); // Remove non-numeric characters
+        setBidInputValue(value);
+
+        if (value === '') {
+            return;
+        }
+
+        const numValue = parseInt(value, 10);
+        if (!isNaN(numValue)) {
+            // Ensure the value is at least the minimum bid
+            setCurrentBid(Math.max(currentMinimumBid, numValue));
+        }
+    };
+
+    const handleBidInputBlur = () => {
+        // Ensure bid is at least minimum when input loses focus
+        if (currentBid < currentMinimumBid) {
+            setCurrentBid(currentMinimumBid);
+        }
+        // Sync input value with current bid (in case it was adjusted)
+        setBidInputValue(currentBid.toString());
     };
 
     const handleBuyPlayer = async () => {
@@ -877,6 +849,9 @@ export default function AuctionClient() {
             // Move to next player
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
 
+            // Update local state immediately for instant UI update
+            setCurrentPlayerIndex(nextIndex);
+
             await supabase
                 .from('auction_sessions')
                 .update({
@@ -885,7 +860,7 @@ export default function AuctionClient() {
                 .eq('id', sessionId);
 
             // Reset UI state
-            const newMinimum = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
+            const newMinimum = MINIMUM_BID;
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
@@ -906,23 +881,87 @@ export default function AuctionClient() {
         }
 
         try {
-            // Move to next player
-            const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+            // Check if this is the last player
+            const isLastPlayer = currentPlayerIndex >= players.length - 1;
 
-            await supabase
-                .from('auction_sessions')
-                .update({
-                    current_player_index: nextIndex
-                })
-                .eq('id', sessionId);
+            if (isLastPlayer) {
+                // When skipping the last player, check for skipped players
+                // Get all bought players to calculate skipped ones
+                const { data: boughtPlayersData } = await supabase
+                    .from('auction_players')
+                    .select('player_name')
+                    .eq('session_id', sessionId);
 
-            // Reset UI state
-            const newMinimum = currentPlayer ? getMinimumBid(currentPlayer.category) : MINIMUM_BID;
-            setCurrentBid(newMinimum);
-            setSelectedTeamId(null);
+                const boughtPlayerNames = new Set(
+                    (boughtPlayersData || []).map((p: { player_name: string }) => p.player_name)
+                );
+
+                // Calculate skipped players (all players that were not bought)
+                const skippedPlayersList = players.filter(
+                    player => !boughtPlayerNames.has(player.name)
+                );
+
+                if (skippedPlayersList.length > 0) {
+                    // Switch to skipped players mode
+                    if (!isSkippedPlayersMode && allPlayers.length === 0) {
+                        setAllPlayers([...players]);
+                    }
+                    setPlayers(skippedPlayersList);
+                    setCurrentPlayerIndex(0);
+                    setSkippedPlayers(skippedPlayersList);
+                    setIsSkippedPlayersMode(true);
+
+                    // Update database to start from index 0 for skipped players
+                    await supabase
+                        .from('auction_sessions')
+                        .update({
+                            current_player_index: 0
+                        })
+                        .eq('id', sessionId);
+
+                    // Reset UI state for first skipped player
+                    const newMinimum = MINIMUM_BID;
+                    setCurrentBid(newMinimum);
+                    setSelectedTeamId(null);
+                } else {
+                    // No skipped players, mark auction as complete
+                    const finalIndex = players.length - 1;
+                    setCurrentPlayerIndex(finalIndex);
+                    setAuctionComplete(true);
+
+                    await supabase
+                        .from('auction_sessions')
+                        .update({
+                            current_player_index: finalIndex,
+                            is_complete: true
+                        })
+                        .eq('id', sessionId);
+                }
+            } else {
+                // Move to next player
+                const nextIndex = currentPlayerIndex + 1;
+
+                // Update local state immediately for instant UI update
+                setCurrentPlayerIndex(nextIndex);
+
+                // Update database
+                await supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_player_index: nextIndex
+                    })
+                    .eq('id', sessionId);
+
+                // Reset UI state
+                const newMinimum = MINIMUM_BID;
+                setCurrentBid(newMinimum);
+                setSelectedTeamId(null);
+            }
         } catch (error) {
             console.error('Error skipping player:', error);
             alert('Failed to save auction state. Please try again.');
+            // Revert local state on error
+            // The real-time subscription will sync the correct state
         }
     };
 
@@ -937,14 +976,28 @@ export default function AuctionClient() {
             return;
         }
 
-        // Find the player's index
-        const playerIndex = players.findIndex(p => p.name === playerName);
-        if (playerIndex === -1) {
-            alert('Player not found in the auction pool.');
-            return;
-        }
-
         try {
+            // Get the list of skipped players (all players not bought)
+            const skippedList = skippedPlayers.length > 0
+                ? skippedPlayers
+                : getCurrentSkippedPlayers();
+
+            // Find the player's index in the skipped players list
+            const playerIndex = skippedList.findIndex(p => p.name === playerName);
+            if (playerIndex === -1) {
+                alert('Player not found in skipped players list.');
+                return;
+            }
+
+            // If not already in skipped players mode, switch to it
+            if (!isSkippedPlayersMode) {
+                // Store all current players
+                setAllPlayers([...players]);
+                // Switch to skipped players only
+                setPlayers(skippedList);
+                setIsSkippedPlayersMode(true);
+            }
+
             // Update database session
             await supabase
                 .from('auction_sessions')
@@ -953,12 +1006,11 @@ export default function AuctionClient() {
                 })
                 .eq('id', sessionId);
 
-            // Update local state
+            // Update local state to the specific player index
             setCurrentPlayerIndex(playerIndex);
 
-            // Reset bid to minimum for this player's category
-            const targetPlayer = players[playerIndex];
-            const newMinimum = targetPlayer ? getMinimumBid(targetPlayer.category) : MINIMUM_BID;
+            // Reset bid to minimum
+            const newMinimum = MINIMUM_BID;
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
 
@@ -1557,10 +1609,10 @@ export default function AuctionClient() {
             </div>
 
             <div className="w-full px-2 md:px-3 py-4">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 items-start">
                     {/* Left Sidebar - Teams Overview (Desktop) */}
                     <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 md:p-5 sticky top-24 h-[calc(100vh-8rem)] overflow-y-auto space-y-4">
+                        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 md:p-5 space-y-4">
                             {/* Team Dynamics Section */}
                             <div>
                                 <h2 className="text-xl font-bold text-gray-900 mb-4">Team Dynamics</h2>
@@ -1645,7 +1697,7 @@ export default function AuctionClient() {
                     {/* Main Content Area */}
                     <div className="lg:col-span-2 space-y-4 pb-32 md:pb-4">
                         {/* Progress */}
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-3 md:p-4">
+                        <div className="bg-white rounded-xl border-2 border-gray-200 p-3 md:p-4 lg:mt-0">
                             <div className="flex justify-between text-sm text-gray-600 mb-2">
                                 <span>Player {currentPlayerIndex + 1} of {players.length}</span>
                                 <span>{remainingPlayers} remaining</span>
@@ -1664,46 +1716,32 @@ export default function AuctionClient() {
                                 {/* Player Photo - Top on mobile, Left on desktop */}
                                 <div className="flex-shrink-0 flex justify-center md:justify-start">
                                     {currentPlayer.photo && (
-                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}`} className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
                                             {/* Automatically converts Google Drive links to direct image URLs */}
                                             {(() => {
                                                 const imageUrl = processImageUrl(currentPlayer.photo);
-                                                console.log('Original photo URL:', currentPlayer.photo);
-                                                console.log('Processed image URL:', imageUrl);
-                                                console.log('Image reload key:', imageReloadKey);
-
                                                 if (!imageUrl) return null;
 
-                                                // Use photo URL itself as cache key - each player has unique photo URL
-                                                // Add minimal cache-busting only with player identifier (no timestamp to avoid slow loading)
-                                                const photoUrlHash = currentPlayer.photo ? currentPlayer.photo.substring(Math.max(0, currentPlayer.photo.length - 30)) : '';
-                                                const cacheParams = new URLSearchParams({
-                                                    _p: currentPlayer.name.substring(0, 10), // First 10 chars of name
-                                                    _i: String(currentPlayerIndex),
-                                                    _h: photoUrlHash.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15) // Last part of photo URL
-                                                });
-                                                const cacheBuster = imageUrl.includes('?') ? `&${cacheParams.toString()}` : `?${cacheParams.toString()}`;
-                                                const finalImageUrl = `${imageUrl}${cacheBuster}`;
+                                                // Simple cache-busting: use player index only (changes when player changes)
+                                                // This ensures images reload when switching players without excessive parameters
+                                                const finalImageUrl = imageUrl.includes('?')
+                                                    ? `${imageUrl}&_idx=${currentPlayerIndex}`
+                                                    : `${imageUrl}?_idx=${currentPlayerIndex}`;
 
                                                 // Use regular img tag for all URLs (proxy API route or external URLs)
                                                 // Next.js Image doesn't support query strings in local patterns
                                                 return (
                                                     <img
                                                         ref={imageRef}
-                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}-${imageReloadKey}-${currentPlayer.photo?.substring(0, 20)}`}
+                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}`}
                                                         src={finalImageUrl}
                                                         alt={currentPlayer.name}
                                                         className="object-cover w-full h-full"
                                                         loading="eager"
                                                         decoding="async"
-                                                        crossOrigin="anonymous"
                                                         onError={(e) => {
                                                             const target = e.target as HTMLImageElement;
-                                                            console.error('❌ Failed to load player image:', finalImageUrl);
-                                                            console.error('Original URL:', currentPlayer.photo);
-                                                            // Hide the broken image
                                                             target.style.display = 'none';
-                                                            // Show a placeholder
                                                             const parent = target.parentElement;
                                                             if (parent && !parent.querySelector('.placeholder')) {
                                                                 const placeholder = document.createElement('div');
@@ -1711,9 +1749,6 @@ export default function AuctionClient() {
                                                                 placeholder.textContent = 'Image unavailable';
                                                                 parent.appendChild(placeholder);
                                                             }
-                                                        }}
-                                                        onLoad={() => {
-                                                            console.log('✅ Successfully loaded player image:', finalImageUrl);
                                                         }}
                                                     />
                                                 );
@@ -1767,42 +1802,15 @@ export default function AuctionClient() {
                                             </div>
                                         )}
 
-                                        {/* Rankings */}
-                                        {(currentPlayer.s1_ranking || currentPlayer.s2_ranking || currentPlayer.s3_ranking) && (
-                                            <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-5 md:p-6 border border-indigo-200">
-                                                <div className="text-sm md:text-base font-semibold text-indigo-600 uppercase tracking-wide mb-4">Season Rankings</div>
-                                                <div className="grid grid-cols-3 gap-4">
-                                                    {currentPlayer.s1_ranking && (
-                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
-                                                            <div className="text-sm text-gray-500 mb-2">S1</div>
-                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s1_ranking}</div>
-                                                        </div>
-                                                    )}
-                                                    {currentPlayer.s2_ranking && (
-                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
-                                                            <div className="text-sm text-gray-500 mb-2">S2</div>
-                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s2_ranking}</div>
-                                                        </div>
-                                                    )}
-                                                    {currentPlayer.s3_ranking && (
-                                                        <div className="text-center bg-white rounded-lg p-4 border border-indigo-100">
-                                                            <div className="text-sm text-gray-500 mb-2">S3</div>
-                                                            <div className="text-xl md:text-2xl font-bold text-indigo-700">{currentPlayer.s3_ranking}</div>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                        {/* Active Sport - Below Experience */}
+                                        {currentPlayer.active_sport && (
+                                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 md:p-5 border border-blue-200">
+                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.active_sport}</div>
                                             </div>
                                         )}
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Active Sport - Full Width Below Image */}
-                            {currentPlayer.active_sport && (
-                                <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 md:p-5 border border-blue-200 w-full mt-6">
-                                    <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.active_sport}</div>
-                                </div>
-                            )}
                         </div>
 
                         {/* Bid Amount */}
@@ -1830,6 +1838,24 @@ export default function AuctionClient() {
                                     +
                                 </button>
                             </div>
+
+                            {/* Custom Bid Input */}
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Enter Custom Bid Amount</label>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-gray-500">₹</span>
+                                    <input
+                                        type="text"
+                                        value={bidInputValue}
+                                        onChange={handleBidInputChange}
+                                        onBlur={handleBidInputBlur}
+                                        disabled={!canEdit}
+                                        className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg text-lg font-semibold text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        placeholder="Enter amount"
+                                    />
+                                </div>
+                            </div>
+
                             <div className="text-sm text-gray-500 text-center">
                                 Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{BID_INCREASE.toLocaleString()}
                             </div>
@@ -2123,9 +2149,24 @@ export default function AuctionClient() {
                 title="Skipped Players"
             >
                 <div className="pb-6">
-                    {(frozenSkippedPlayers.length > 0 ? frozenSkippedPlayers : getCurrentSkippedPlayers()).length > 0 ? (
+                    {(() => {
+                        // Use frozen list if available, otherwise use skippedPlayers state if available, otherwise calculate from current players
+                        const skippedList = frozenSkippedPlayers.length > 0
+                            ? frozenSkippedPlayers
+                            : (skippedPlayers.length > 0
+                                ? skippedPlayers
+                                : getCurrentSkippedPlayers());
+                        return skippedList;
+                    })().length > 0 ? (
                         <div className="space-y-3">
-                            {(frozenSkippedPlayers.length > 0 ? frozenSkippedPlayers : getCurrentSkippedPlayers()).map((player, idx) => (
+                            {(() => {
+                                const skippedList = frozenSkippedPlayers.length > 0
+                                    ? frozenSkippedPlayers
+                                    : (skippedPlayers.length > 0
+                                        ? skippedPlayers
+                                        : getCurrentSkippedPlayers());
+                                return skippedList;
+                            })().map((player, idx) => (
                                 <div
                                     key={idx}
                                     onClick={() => canEdit && handleJumpToSkippedPlayer(player.name)}
@@ -2169,9 +2210,65 @@ export default function AuctionClient() {
                             No skipped players yet
                         </div>
                     )}
+
+                    {/* Button to start auction with skipped players */}
+                    {canEdit && (() => {
+                        const skippedList = frozenSkippedPlayers.length > 0
+                            ? frozenSkippedPlayers
+                            : (skippedPlayers.length > 0
+                                ? skippedPlayers
+                                : getCurrentSkippedPlayers());
+                        return skippedList.length > 0 && !isSkippedPlayersMode ? (
+                            <div className="mt-6 pt-6 border-t border-gray-200">
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            // Store all current players if not already stored
+                                            if (allPlayers.length === 0) {
+                                                setAllPlayers([...players]);
+                                            }
+
+                                            // Switch to skipped players mode
+                                            const skippedList = skippedPlayers.length > 0
+                                                ? skippedPlayers
+                                                : getCurrentSkippedPlayers();
+                                            setPlayers(skippedList);
+                                            setIsSkippedPlayersMode(true);
+
+                                            // Reset to first skipped player
+                                            setCurrentPlayerIndex(0);
+
+                                            // Update database
+                                            await supabase
+                                                .from('auction_sessions')
+                                                .update({
+                                                    current_player_index: 0
+                                                })
+                                                .eq('id', sessionId);
+
+                                            // Reset bid
+                                            const newMinimum = MINIMUM_BID;
+                                            setCurrentBid(newMinimum);
+                                            setSelectedTeamId(null);
+
+                                            // Close the sheet
+                                            setIsSkippedPlayersSheetOpen(false);
+                                        } catch (error) {
+                                            console.error('Error starting skipped players auction:', error);
+                                            alert('Failed to start skipped players auction. Please try again.');
+                                        }
+                                    }}
+                                    className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+                                >
+                                    Start Auction with Skipped Players
+                                </button>
+                            </div>
+                        ) : null;
+                    })()}
                 </div>
             </BottomSheet>
         </div>
     );
 }
+
 
