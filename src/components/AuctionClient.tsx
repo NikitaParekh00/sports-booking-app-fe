@@ -200,6 +200,7 @@ export default function AuctionClient() {
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
     const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
     const [topPlayersGenderFilter, setTopPlayersGenderFilter] = useState<'all' | 'M' | 'F'>('all');
+    const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -1080,6 +1081,8 @@ export default function AuctionClient() {
 
     // Generate PDF for a team
     const generateTeamPDF = async (team: Team) => {
+        // Set loading state
+        setPdfGeneratingTeamId(team.id);
         try {
             const pdf = new jsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
@@ -1257,10 +1260,14 @@ export default function AuctionClient() {
                 const playerTableStartX = margin;
                 const playerTableWidth = pageWidth - (2 * margin);
                 const playerRowHeight = 8;
-                // Adjusted column widths: S.No (10mm), Name (flexible), Amount (35mm fixed)
-                const sNoWidth = 10;
+                // Adjusted column widths: S.No (5mm), Photo (fixed size matching auction UI), Name (flexible), Amount (35mm fixed)
+                const sNoWidth = 5; // Reduced from 10mm
+                // Fixed image size matching auction UI: w-72 (288px ≈ 76mm) h-96 (384px ≈ 102mm)
+                const imageWidth = 76; // Fixed width matching auction UI
+                const imageHeight = 102; // Fixed height matching auction UI
+                const imageRowHeight = imageHeight + 4; // Image height + 2mm padding top and bottom
                 const amountWidth = 35;
-                const nameWidth = playerTableWidth - sNoWidth - amountWidth - 2; // Extra 2mm for spacing
+                const nameWidth = playerTableWidth - sNoWidth - imageWidth - amountWidth - 2; // Extra 2mm for spacing
 
                 // Table Header
                 pdf.setFillColor(220, 38, 38);
@@ -1268,19 +1275,41 @@ export default function AuctionClient() {
                 pdf.setTextColor(255, 255, 255);
                 pdf.setFontSize(10);
                 pdf.setFont('helvetica', 'bold');
-                pdf.text('S.No', playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
-                pdf.text('Player Name', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
-                pdf.text('Amount', playerTableStartX + sNoWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('No', playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Photo', playerTableStartX + sNoWidth + imageWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Player Name', playerTableStartX + sNoWidth + imageWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Amount', playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
                 yPosition += playerRowHeight;
+
+                // Fetch player photos from player pool
+                const { data: playerPoolData } = await supabase
+                    .from('auction_player_pool')
+                    .select('name, photo')
+                    .eq('session_id', sessionId || '');
+
+                const playerPhotoMap = new Map<string, string>();
+                if (playerPoolData) {
+                    for (const poolPlayer of playerPoolData) {
+                        if (poolPlayer.photo) {
+                            playerPhotoMap.set(poolPlayer.name, poolPlayer.photo);
+                        }
+                    }
+                }
 
                 // Player Rows
                 pdf.setTextColor(0, 0, 0);
                 pdf.setFont('helvetica', 'normal');
                 pdf.setFontSize(9);
 
-                team.players.forEach((player, index) => {
+                for (let index = 0; index < team.players.length; index++) {
+                    const player = team.players[index];
+
+                    // Determine row height - use fixed image row height if photo exists, otherwise default
+                    const playerPhotoUrl = playerPhotoMap.get(player.name);
+                    const currentRowHeight = playerPhotoUrl ? imageRowHeight : playerRowHeight;
+
                     // Check if we need a new page
-                    if (yPosition > pageHeight - 30) {
+                    if (yPosition + currentRowHeight > pageHeight - 30) {
                         pdf.addPage();
                         yPosition = margin;
                     }
@@ -1291,12 +1320,102 @@ export default function AuctionClient() {
                     } else {
                         pdf.setFillColor(255, 255, 255);
                     }
-                    pdf.rect(playerTableStartX, yPosition, playerTableWidth, playerRowHeight, 'F');
+                    pdf.rect(playerTableStartX, yPosition, playerTableWidth, currentRowHeight, 'F');
 
-                    // S.No
-                    pdf.text(String(index + 1), playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
+                    // S.No - centered vertically in the row
+                    pdf.text(String(index + 1), playerTableStartX + sNoWidth / 2, yPosition + currentRowHeight / 2, { align: 'center' });
 
-                    // Player Name - truncate if too long
+                    // Player Photo - if available, use fixed size matching auction UI
+                    if (playerPhotoUrl) {
+                        try {
+                            const processedPhotoUrl = processImageUrl(playerPhotoUrl);
+                            if (processedPhotoUrl) {
+                                // Fetch and convert image to data URL
+                                const imageResponse = await fetch(processedPhotoUrl);
+                                const imageBlob = await imageResponse.blob();
+                                const imageReader = new FileReader();
+
+                                const imageDataUrl = await new Promise<string>((resolve, reject) => {
+                                    imageReader.onload = () => resolve(imageReader.result as string);
+                                    imageReader.onerror = reject;
+                                    imageReader.readAsDataURL(imageBlob);
+                                });
+
+                                // Load image to get dimensions for aspect ratio calculation
+                                const img = document.createElement('img');
+                                await new Promise<void>((resolve, reject) => {
+                                    img.onload = () => resolve();
+                                    img.onerror = reject;
+                                    img.src = imageDataUrl;
+                                });
+
+                                // Create a canvas to apply browser's EXIF rotation automatically
+                                // This ensures the PDF image matches what the browser displays
+                                const canvas = document.createElement('canvas');
+                                const ctx = canvas.getContext('2d');
+                                if (!ctx) {
+                                    throw new Error('Could not get canvas context');
+                                }
+
+                                // Set canvas size to match the displayed image (browser applies EXIF rotation)
+                                // The displayed dimensions reflect the browser's auto-rotation
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+
+                                // Draw the image on canvas - browser's EXIF rotation is automatically applied
+                                ctx.drawImage(img, 0, 0);
+
+                                // Get the correctly oriented image data from canvas
+                                const orientedImageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+                                // Use displayed dimensions (which include EXIF rotation) for aspect ratio
+                                const originalWidth = img.width; // Displayed width (after EXIF rotation)
+                                const originalHeight = img.height; // Displayed height (after EXIF rotation)
+                                const aspectRatio = originalWidth / originalHeight;
+
+                                // Calculate dimensions that fit within fixed size while maintaining aspect ratio
+                                // Use the fixed dimensions as maximum bounds
+                                const maxWidth = imageWidth - 2; // Leave 1mm padding on each side
+                                const maxHeight = imageHeight - 2; // Leave 1mm padding top and bottom
+
+                                let finalWidth, finalHeight;
+
+                                // For portrait images (height > width, aspectRatio < 1), fit to height first
+                                // For landscape images (width > height, aspectRatio > 1), fit to width first
+                                if (aspectRatio < 1) {
+                                    // Portrait: fit to height constraint first to preserve vertical orientation
+                                    finalHeight = maxHeight;
+                                    finalWidth = maxHeight * aspectRatio;
+                                    // If width exceeds max width, scale down based on width
+                                    if (finalWidth > maxWidth) {
+                                        finalWidth = maxWidth;
+                                        finalHeight = maxWidth / aspectRatio;
+                                    }
+                                } else {
+                                    // Landscape: fit to width constraint first
+                                    finalWidth = maxWidth;
+                                    finalHeight = maxWidth / aspectRatio;
+                                    // If height exceeds max height, scale down based on height
+                                    if (finalHeight > maxHeight) {
+                                        finalHeight = maxHeight;
+                                        finalWidth = maxHeight * aspectRatio;
+                                    }
+                                }
+
+                                // Center the image in the cell
+                                const imageX = playerTableStartX + sNoWidth + (imageWidth - finalWidth) / 2;
+                                const imageY = yPosition + (imageRowHeight - finalHeight) / 2;
+
+                                // Add image from canvas (which has EXIF rotation applied) to match browser display
+                                pdf.addImage(orientedImageDataUrl, 'JPEG', imageX, imageY, finalWidth, finalHeight);
+                            }
+                        } catch (imageError) {
+                            console.error(`Error loading image for ${player.name}:`, imageError);
+                            // Continue without image if it fails to load
+                        }
+                    }
+
+                    // Player Name - truncate if too long, centered vertically
                     const playerText = player.name;
                     const maxNameWidth = nameWidth - 4; // Leave padding
                     let displayName = playerText;
@@ -1309,9 +1428,9 @@ export default function AuctionClient() {
                         }
                         displayName = truncated + '...';
                     }
-                    pdf.text(displayName, playerTableStartX + sNoWidth + 2, yPosition + 5.5);
+                    pdf.text(displayName, playerTableStartX + sNoWidth + imageWidth + 2, yPosition + currentRowHeight / 2);
 
-                    // Bid Amount - right aligned within its column, ensure it fits
+                    // Bid Amount - right aligned within its column, centered vertically
                     const bidAmount = player.bidAmount || 0;
                     const bidText = formatNumber(bidAmount);
                     // Calculate max width for amount (leave 2mm padding on right)
@@ -1321,13 +1440,14 @@ export default function AuctionClient() {
                         // If amount is too long, use smaller font
                         pdf.setFontSize(8);
                     }
-                    const amountX = playerTableStartX + sNoWidth + nameWidth + amountWidth - 2;
-                    pdf.text(displayAmount, amountX, yPosition + 5.5, { align: 'right' });
+                    const amountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
+                    pdf.text(displayAmount, amountX, yPosition + currentRowHeight / 2, { align: 'right' });
                     // Reset font size
                     pdf.setFontSize(9);
 
-                    yPosition += playerRowHeight;
-                });
+                    // Increment position by row height
+                    yPosition += currentRowHeight;
+                }
 
                 // Total row
                 if (yPosition > pageHeight - 20) {
@@ -1339,7 +1459,7 @@ export default function AuctionClient() {
                 pdf.rect(playerTableStartX, yPosition, playerTableWidth, playerRowHeight, 'F');
                 pdf.setFont('helvetica', 'bold');
                 pdf.setFontSize(10);
-                pdf.text('Total', playerTableStartX + sNoWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Total', playerTableStartX + sNoWidth + imageWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
                 const totalBidAmount = team.players.reduce((sum, p) => sum + (p.bidAmount || 0), 0);
                 const totalAmountText = formatNumber(totalBidAmount);
                 // Ensure total amount fits
@@ -1347,7 +1467,7 @@ export default function AuctionClient() {
                 if (pdf.getTextWidth(totalAmountText) > maxTotalWidth) {
                     pdf.setFontSize(9);
                 }
-                const totalAmountX = playerTableStartX + sNoWidth + nameWidth + amountWidth - 2;
+                const totalAmountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
                 pdf.text(totalAmountText, totalAmountX, yPosition + 5.5, { align: 'right' });
             }
 
@@ -1356,6 +1476,9 @@ export default function AuctionClient() {
         } catch (error) {
             console.error('Error generating PDF:', error);
             alert('Failed to generate PDF. Please try again.');
+        } finally {
+            // Clear loading state
+            setPdfGeneratingTeamId(null);
         }
     };
 
@@ -1419,12 +1542,22 @@ export default function AuctionClient() {
                                 {/* Download PDF Button */}
                                 <button
                                     onClick={() => generateTeamPDF(team)}
-                                    className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                                    disabled={pdfGeneratingTeamId === team.id}
+                                    className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Download PDF
+                                    {pdfGeneratingTeamId === team.id ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                            Generating PDF...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Download PDF
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         ))}
