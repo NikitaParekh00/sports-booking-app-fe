@@ -119,7 +119,11 @@ interface DbPlayerPool {
     batting_hand?: string;
 }
 
-// Configure the allowed user for auction access
+// Flag to control public auction access
+// Set to true to allow everyone to view auctions, false to restrict to specific phone number
+const PUBLIC_AUCTION_ACCESS = false; // Change to true when auctions start for everyone
+
+// Configure the allowed user for auction access (when PUBLIC_AUCTION_ACCESS is false)
 // Use the EXACT format as stored in database: +91-XXXXXXXXXX
 const ALLOWED_AUCTION_USER: {
     user_id?: string | null;
@@ -143,6 +147,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const supabase = createClient();
     const [authLoading, setAuthLoading] = useState(true);
     const [canEdit, setCanEdit] = useState(false); // Can this user edit the auction?
+    const [canView, setCanView] = useState(false); // Can this user view the auction?
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState<string | null>(null); // Store session name to determine Men's/Women's
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
@@ -196,23 +201,43 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .eq('user_id', userData.user_id)
                     .single();
 
-                // Check if user can edit (matches allowed user)
+                // Check if user can view the auction
+                let canUserView = false;
                 let canUserEdit = false;
 
-                if (!ALLOWED_AUCTION_USER.phone && !ALLOWED_AUCTION_USER.user_id && !ALLOWED_AUCTION_USER.email) {
-                    // No restriction - all users can edit
-                    canUserEdit = true;
+                if (PUBLIC_AUCTION_ACCESS) {
+                    // Public access enabled - everyone can view
+                    canUserView = true;
+                    // Check if user can edit (matches allowed user)
+                    if (!ALLOWED_AUCTION_USER.phone && !ALLOWED_AUCTION_USER.user_id && !ALLOWED_AUCTION_USER.email) {
+                        // No restriction - all users can edit
+                        canUserEdit = true;
+                    } else {
+                        if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
+                            canUserEdit = true;
+                        } else if (ALLOWED_AUCTION_USER.phone && profile?.phone === ALLOWED_AUCTION_USER.phone) {
+                            // Simple exact match - phone must be in format: +91-XXXXXXXXXX
+                            canUserEdit = true;
+                        } else if (ALLOWED_AUCTION_USER.email && (userData.email === ALLOWED_AUCTION_USER.email || profile?.email === ALLOWED_AUCTION_USER.email)) {
+                            canUserEdit = true;
+                        }
+                    }
                 } else {
+                    // Restricted access - only allowed user can view
                     if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
+                        canUserView = true;
                         canUserEdit = true;
                     } else if (ALLOWED_AUCTION_USER.phone && profile?.phone === ALLOWED_AUCTION_USER.phone) {
                         // Simple exact match - phone must be in format: +91-XXXXXXXXXX
+                        canUserView = true;
                         canUserEdit = true;
                     } else if (ALLOWED_AUCTION_USER.email && (userData.email === ALLOWED_AUCTION_USER.email || profile?.email === ALLOWED_AUCTION_USER.email)) {
+                        canUserView = true;
                         canUserEdit = true;
                     }
                 }
 
+                setCanView(canUserView);
                 setCanEdit(canUserEdit);
             } catch (error) {
                 console.error('Error checking access:', error);
@@ -455,7 +480,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .filter((p: DbPlayer) => p.team_id === team.id)
                     .map((p: DbPlayer) => ({
                         name: p.player_name,
-                        bidAmount: p.bid_amount
+                        bidAmount: Number(p.bid_amount) || 0 // Ensure bid_amount is a number
                     }));
 
                 return {
@@ -1139,7 +1164,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             yPosition = headerStartY + maxHeaderHeight + 10;
 
             // Budget Information Table
-            const totalSpent = TOTAL_AMOUNT - team.budget;
+            // Calculate spent as sum of all player bid amounts (more accurate)
+            const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
+            const initialBudget = team.budget + totalSpent;
             const tableStartX = margin;
             const tableWidth = pageWidth - (2 * margin);
             const rowHeight = 8;
@@ -1164,7 +1191,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             pdf.setFontSize(10);
 
             const budgetData = [
-                ['Total Budget', formatNumber(TOTAL_AMOUNT)],
+                ['Total Budget', formatNumber(initialBudget)],
                 ['Amount Spent', formatNumber(totalSpent)],
                 ['Remaining Budget', formatNumber(team.budget)]
             ];
@@ -1428,7 +1455,40 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     };
 
     // Show loading state
-    if (authLoading || loadingState || !currentPlayer || players.length === 0) {
+    // Show loading only if user can view (or we're still checking access)
+    if (authLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Checking access...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show "Stay tuned" if user cannot view
+    if (!canView) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+                <div className="max-w-md w-full bg-white rounded-2xl shadow-lg p-8 text-center">
+                    <div className="text-6xl mb-4">⏰</div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-3">Stay Tuned!</h2>
+                    <p className="text-gray-600 mb-6">
+                        The auction is not yet open for public viewing. Please check back soon!
+                    </p>
+                    <button
+                        onClick={() => router.back()}
+                        className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+                    >
+                        Go Back
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    if (loadingState || !currentPlayer || players.length === 0) {
         return (
             <div className="min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="text-center">
@@ -1697,7 +1757,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 {/* Teams List */}
                                 <div className="space-y-3">
                                     {teams.map(team => {
-                                        const totalSpent = TOTAL_AMOUNT - team.budget;
+                                        // Calculate spent as sum of all player bid amounts (more accurate)
+                                        const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
+                                        const initialBudget = team.budget + totalSpent;
 
                                         return (
                                             <div key={team.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -1730,7 +1792,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     <div className="w-full bg-gray-200 rounded-full h-1.5">
                                                         <div
                                                             className="bg-red-600 h-1.5 rounded-full transition-all"
-                                                            style={{ width: `${Math.min((totalSpent / TOTAL_AMOUNT) * 100, 100)}%` }}
+                                                            style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
                                                         ></div>
                                                     </div>
                                                 </div>
@@ -2033,8 +2095,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     {/* Teams List */}
                     <div className="space-y-3">
                         {teams.map(team => {
-                            const totalSpent = TOTAL_AMOUNT - team.budget;
+                            // Calculate spent as sum of all player bid amounts (more accurate than using TOTAL_AMOUNT)
+                            const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
                             const avgPlayerCost = team.players.length > 0 ? totalSpent / team.players.length : 0;
+                            // Calculate initial budget: remaining + spent
+                            const initialBudget = team.budget + totalSpent;
 
                             return (
                                 <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-4">
@@ -2066,12 +2131,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="mb-3">
                                         <div className="flex justify-between text-xs text-gray-600 mb-1">
                                             <span>Spent: ₹{totalSpent.toLocaleString()}</span>
-                                            <span>{((totalSpent / TOTAL_AMOUNT) * 100).toFixed(1)}%</span>
+                                            <span>{initialBudget > 0 ? ((totalSpent / initialBudget) * 100).toFixed(1) : '0.0'}%</span>
                                         </div>
                                         <div className="w-full bg-gray-200 rounded-full h-2">
                                             <div
                                                 className="bg-red-600 h-2 rounded-full transition-all"
-                                                style={{ width: `${(totalSpent / TOTAL_AMOUNT) * 100}%` }}
+                                                style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
                                             ></div>
                                         </div>
                                     </div>

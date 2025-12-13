@@ -161,7 +161,7 @@ export default function Dashboard() {
                     <div className="text-2xl">🏏</div>
                     <div>
                       <div className="font-semibold text-sm">
-                        {isMen ? "Men's Auction" : "Women's Auction"}
+                        {isMen ? "MBBL Men's Auction" : "MBBL Women's Auction"}
                       </div>
                       <div className="text-xs opacity-90">
                         {isComplete ? "Auction Complete" : "Player bidding in progress"}
