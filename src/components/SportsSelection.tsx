@@ -3,8 +3,12 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { coachingItemsWithUrls } from '@/data/coachingData';
 import PointsDisplay from './PointsDisplay';
+
+// Feature flag: Set to true to show "Coming Soon" for all sports, false for normal behavior
+const SHOW_COMING_SOON = true;
 
 interface SportsSelectionProps {
   selectedLocation?: string;
@@ -81,6 +85,7 @@ const sports = [
 ];
 
 export default function SportsSelection({ selectedLocation = "Rajendra Nagar", onLocationChange, onRequestLocationChange, userName, userId }: SportsSelectionProps) {
+  const router = useRouter();
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const [showAllSports, setShowAllSports] = useState(false);
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
@@ -127,6 +132,14 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
 
   const toggleShowAllSports = () => {
     setShowAllSports(!showAllSports);
+  };
+
+  const handleSportClick = (sportId: string) => {
+    if (SHOW_COMING_SOON) {
+      alert('Coming Soon');
+    } else {
+      router.push(`/search?sport=${encodeURIComponent(sportId)}`);
+    }
   };
 
   // Show only first 8 sports initially (2 rows of 4), then all 12 with "See More"
@@ -222,10 +235,10 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
         </div>
         <div className="grid grid-cols-4 gap-3 mt-3">
           {displayedSports.map((sport) => (
-            <a
+            <button
               key={sport.id}
-              href={`/search?sport=${encodeURIComponent(sport.id)}`}
-              className="flex flex-col items-center p-3 bg-white border border-gray-200 rounded-xl hover:shadow-sm"
+              onClick={() => handleSportClick(sport.id)}
+              className="flex flex-col items-center p-3 bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow"
             >
               <div className="text-2xl mb-2 flex items-center justify-center h-8">
                 {sport.isImage ? (
@@ -241,7 +254,7 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
                 )}
               </div>
               <span className="text-xs text-gray-800 text-center leading-tight truncate w-full">{sport.name}</span>
-            </a>
+            </button>
           ))}
         </div>
         {sports.length > 8 && (
