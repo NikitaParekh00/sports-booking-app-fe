@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [selectedLocation, setSelectedLocation] = useState<string>("Rajendra Nagar");
   const [isLocationSheetOpen, setIsLocationSheetOpen] = useState<boolean>(false);
   const [showAuctionBanner, setShowAuctionBanner] = useState(true);
+  const [auctionSessions, setAuctionSessions] = useState<Array<{ id: string; session_name: string; is_complete: boolean }>>([]);
 
   const handleLocationChange = (location: string) => {
     console.log('Dashboard received location change:', location);
@@ -105,6 +106,35 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Fetch active auction sessions (Men's and Women's)
+  useEffect(() => {
+    async function fetchAuctionSessions() {
+      try {
+        const { data, error } = await supabase
+          .from('auction_sessions')
+          .select('id, session_name, is_complete')
+          .in('session_name', ['MBBL Season 4 - Men', 'MBBL Season 4 - Women'])
+          .order('session_name', { ascending: true });
+
+        if (error) {
+          console.error('Error fetching auction sessions:', error);
+          return;
+        }
+
+        if (data) {
+          console.log('Fetched auction sessions:', data);
+          setAuctionSessions(data);
+        } else {
+          console.log('No auction sessions found');
+        }
+      } catch (error) {
+        console.error('Error fetching auction sessions:', error);
+      }
+    }
+
+    fetchAuctionSessions();
+  }, [supabase]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -115,33 +145,59 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen">
-      {/* Auction Banner */}
-      {!selectedSport && showAuctionBanner && (
-        <div className="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-3 relative">
-          <div className="max-w-md mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="text-2xl">🏏</div>
-              <div>
-                <div className="font-semibold text-sm">Live Auction</div>
-                <div className="text-xs opacity-90">Player bidding in progress</div>
+      {/* Auction Banners - Show Men's and Women's auctions separately */}
+      {!selectedSport && showAuctionBanner && auctionSessions.length > 0 && (
+        <div className="space-y-2 px-4 py-2">
+          {auctionSessions.map((session) => {
+            const isMen = session.session_name.includes('Men');
+            const isComplete = session.is_complete;
+            return (
+              <div
+                key={session.id}
+                className="bg-gradient-to-r from-red-600 to-red-700 text-white px-4 py-3 rounded-lg relative"
+              >
+                <div className="max-w-md mx-auto flex items-center justify-between">
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="text-2xl">🏏</div>
+                    <div>
+                      <div className="font-semibold text-sm">
+                        {isMen ? "Men's Auction" : "Women's Auction"}
+                      </div>
+                      <div className="text-xs opacity-90">
+                        {isComplete ? "Auction Complete" : "Player bidding in progress"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => router.push(`/auction?session=${session.id}`)}
+                      className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
+                    >
+                      View
+                    </button>
+                    {auctionSessions.length === 1 && (
+                      <button
+                        onClick={() => setShowAuctionBanner(false)}
+                        className="text-white opacity-70 hover:opacity-100 p-1"
+                        aria-label="Close banner"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => router.push('/auction')}
-                className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
-              >
-                View
-              </button>
-              <button
-                onClick={() => setShowAuctionBanner(false)}
-                className="text-white opacity-70 hover:opacity-100 p-1"
-                aria-label="Close banner"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
+            );
+          })}
+          {auctionSessions.length > 1 && (
+            <button
+              onClick={() => setShowAuctionBanner(false)}
+              className="text-gray-500 text-xs px-4 py-1 hover:text-gray-700"
+              aria-label="Close banners"
+            >
+              Hide auctions
+            </button>
+          )}
         </div>
       )}
 

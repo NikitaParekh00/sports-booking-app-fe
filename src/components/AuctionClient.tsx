@@ -10,16 +10,8 @@ import { processImageUrl } from '@/lib/imageUrlHelper';
 
 interface Player {
     name: string;
-    payment: 'Y' | 'N';
     gender: 'M' | 'F';
     category: string;
-    runs: number;
-    strikeRate: number;
-    wickets: number;
-    average: number;
-    catch: number;
-    ro: number;
-    mvp: number;
     bidAmount?: number; // Optional for players in team (bought players have bid amount)
     photo?: string; // Player photo URL
     age?: number; // Player age
@@ -35,16 +27,8 @@ interface DbPlayerPool {
     session_id: string;
     player_order: number;
     name: string;
-    payment_status: string;
     gender: string;
     category: string;
-    runs: number;
-    strike_rate: number;
-    wickets: number;
-    average: number;
-    catch_count: number;
-    ro: number;
-    mvp: number;
     photo?: string;
     age?: number;
     played_s1?: string;
@@ -59,22 +43,8 @@ interface Team {
     name: string;
     budget: number;
     players: Player[];
-    categoryCount: {
-        A: number;
-        B: number;
-        C: number;
-    };
     ownerName?: string;
 }
-
-const initialPlayers: Player[] = [
-    { name: 'Tushar Bohra', payment: 'N', gender: 'M', category: 'A', runs: 45, strikeRate: 150, wickets: 2, average: 11, catch: 0, ro: 1, mvp: 8.186 },
-    { name: 'Amit Kasliwal', payment: 'Y', gender: 'M', category: 'A', runs: 9, strikeRate: 90, wickets: 4, average: 6, catch: 0, ro: 0, mvp: 5.768 },
-    { name: 'Parv Kasliwal', payment: 'Y', gender: 'M', category: 'A', runs: 122, strikeRate: 321.05, wickets: 0, average: 0, catch: 3, ro: 0, mvp: 13.442 },
-    { name: 'Vihaan Kasliwal', payment: 'Y', gender: 'M', category: 'A', runs: 42, strikeRate: 247.06, wickets: 3, average: 7.67, catch: 2, ro: 0, mvp: 8.466 },
-    { name: 'Alok Kasliwal', payment: 'Y', gender: 'M', category: 'A', runs: 25, strikeRate: 131.58, wickets: 2, average: 9.5, catch: 0, ro: 1, mvp: 6.304 },
-    { name: 'Ashish Gangwal', payment: 'N', gender: 'M', category: 'A', runs: 9, strikeRate: 60, wickets: 1, average: 25, catch: 1, ro: 0, mvp: 2.22 },
-];
 
 const TOTAL_AMOUNT = 111000;
 const MINIMUM_BID = 5000;
@@ -82,21 +52,46 @@ const BID_INCREASE = 5000;
 const TEAMS_COUNT = 8;
 const PLAYERS_PER_TEAM = 11; // Maximum 11 players per team
 
-// Team logos mapping
-const TEAM_LOGOS: { [key: number]: string } = {
+// Team logos mapping for Women's teams (first 4 logos)
+const WOMENS_TEAM_LOGOS: { [key: number]: string } = {
     1: '/team-logos/team1.jpeg',
     2: '/team-logos/team2.jpeg',
     3: '/team-logos/team3.jpeg',
     4: '/team-logos/team4.jpeg',
-    5: '/team-logos/team5.jpeg',
-    6: '/team-logos/team6.jpeg',
-    7: '/team-logos/team7.jpeg',
-    8: '/team-logos/team8.jpeg',
 };
 
-// Helper function to get team logo
-const getTeamLogo = (teamId: number): string => {
-    return TEAM_LOGOS[teamId] || '/logo.jpeg'; // Fallback to main logo if team logo not found
+// Team logos mapping for Men's teams (logos 5-14 for 10 teams)
+const MENS_TEAM_LOGOS: { [key: number]: string } = {
+    1: '/team-logos/team5.jpeg',
+    2: '/team-logos/team6.jpeg',
+    3: '/team-logos/team7.jpeg',
+    4: '/team-logos/team8.jpeg',
+    5: '/team-logos/team9.jpeg',
+    6: '/team-logos/team10.jpeg',
+    7: '/team-logos/team11.jpeg',
+    8: '/team-logos/team12.jpeg',
+    9: '/team-logos/team13.jpeg',
+    10: '/team-logos/team14.jpeg',
+};
+
+// Helper function to get team logo based on session type
+const getTeamLogo = (teamId: number, sessionName: string | null): string => {
+    // Default to Men's if session name is not available
+    if (!sessionName) {
+        return MENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
+    }
+
+    const sessionNameLower = sessionName.toLowerCase().trim();
+
+    // Explicitly check for Women's session
+    if (sessionNameLower.includes('women')) {
+        // Women's teams use first 4 logos (team1-4.jpeg)
+        return WOMENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
+    }
+
+    // For Men's session or any other case, use Men's logos (team5-14.jpeg)
+    // This includes sessions with "Men", "Mens", or any other name
+    return MENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
 };
 
 // Database types for auction
@@ -105,26 +100,15 @@ interface DbTeam {
     team_number: number;
     name: string;
     budget: number;
-    category_a_count: number;
-    category_b_count: number;
-    category_c_count: number;
     owner_name?: string;
 }
 
 interface DbPlayer {
     team_id: string;
     player_name: string;
-    payment_status: string;
     gender: string;
     player_category: string;
     bid_amount: number;
-    runs: number;
-    strike_rate: number;
-    wickets: number;
-    average: number;
-    catch_count: number;
-    ro: number;
-    mvp: number;
 }
 
 interface DbPlayerPool {
@@ -132,16 +116,8 @@ interface DbPlayerPool {
     session_id: string;
     player_order: number;
     name: string;
-    payment_status: string;
     gender: string;
     category: string;
-    runs: number;
-    strike_rate: number;
-    wickets: number;
-    average: number;
-    catch_count: number;
-    ro: number;
-    mvp: number;
     photo?: string;
     age?: number;
     played_s1?: string;
@@ -166,12 +142,17 @@ const ALLOWED_AUCTION_USER: {
     phone: '+91-7506256356', // Use exact format: +91-XXXXXXXXXX
 };
 
-export default function AuctionClient() {
+interface AuctionClientProps {
+    initialSessionId?: string;
+}
+
+export default function AuctionClient({ initialSessionId }: AuctionClientProps = {}) {
     const router = useRouter();
     const supabase = createClient();
     const [authLoading, setAuthLoading] = useState(true);
     const [canEdit, setCanEdit] = useState(false); // Can this user edit the auction?
     const [sessionId, setSessionId] = useState<string | null>(null);
+    const [sessionName, setSessionName] = useState<string | null>(null); // Store session name to determine Men's/Women's
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
     const imageRef = useRef<HTMLImageElement | null>(null);
@@ -181,7 +162,6 @@ export default function AuctionClient() {
             name: `Team ${i + 1}`,
             budget: TOTAL_AMOUNT,
             players: [],
-            categoryCount: { A: 0, B: 0, C: 0 },
             ownerName: undefined,
         }));
     });
@@ -263,81 +243,82 @@ export default function AuctionClient() {
                 // Get or create active auction session
                 let finalSession = null;
 
-                // Try to get most recent session (including completed ones)
-                const { data: session, error: sessionError } = await supabase
-                    .from('auction_sessions')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (session) {
-                    finalSession = session;
-                } else if (sessionError && sessionError.code !== 'PGRST116') {
-                    // Error other than "no rows" - might be table doesn't exist
-                    console.error('Error fetching session:', sessionError);
-                    throw new Error(`Database error: ${sessionError.message}. Please run the auction_schema.sql script first.`);
-                } else {
-                    // No session exists, create one
-                    const { data: newSession, error: createError } = await supabase
+                // If initialSessionId is provided, use that session
+                if (initialSessionId) {
+                    const { data: session, error: sessionError } = await supabase
                         .from('auction_sessions')
-                        .insert({
-                            session_name: 'Main Auction',
-                            current_player_index: 0,
-                            is_complete: false
-                        })
-                        .select()
-                        .single();
+                        .select('*')
+                        .eq('id', initialSessionId)
+                        .maybeSingle();
 
-                    if (createError) {
-                        console.error('Error creating session:', createError);
-                        throw new Error(`Failed to create session: ${createError.message}. Please ensure auction tables exist.`);
+                    if (session) {
+                        finalSession = session;
+                        setSessionName(session.session_name); // Store session name for logo mapping
+                    } else if (sessionError) {
+                        console.error('Error fetching specified session:', sessionError);
+                        alert(`Session not found. Please check the URL.`);
+                        router.push('/dashboard');
+                        return;
+                    } else {
+                        alert(`Session not found. Please check the URL.`);
+                        router.push('/dashboard');
+                        return;
                     }
+                } else {
+                    // Try to get most recent session (including completed ones)
+                    const { data: session, error: sessionError } = await supabase
+                        .from('auction_sessions')
+                        .select('*')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
 
-                    if (!newSession) {
-                        throw new Error('Session created but returned null');
-                    }
+                    if (session) {
+                        finalSession = session;
+                        setSessionName(session.session_name); // Store session name for logo mapping
+                    } else if (sessionError && sessionError.code !== 'PGRST116') {
+                        // Error other than "no rows" - might be table doesn't exist
+                        console.error('Error fetching session:', sessionError);
+                        throw new Error(`Database error: ${sessionError.message}. Please run the auction_schema.sql script first.`);
+                    } else {
+                        // No session exists, create one
+                        const { data: newSession, error: createError } = await supabase
+                            .from('auction_sessions')
+                            .insert({
+                                session_name: 'Main Auction',
+                                current_player_index: 0,
+                                is_complete: false
+                            })
+                            .select()
+                            .single();
 
-                    finalSession = newSession;
+                        if (createError) {
+                            console.error('Error creating session:', createError);
+                            throw new Error(`Failed to create session: ${createError.message}. Please ensure auction tables exist.`);
+                        }
 
-                    // Create initial teams
-                    const teamsData = Array.from({ length: TEAMS_COUNT }, (_, i) => ({
-                        session_id: finalSession!.id,
-                        team_number: i + 1,
-                        name: `Team ${i + 1}`,
-                        budget: TOTAL_AMOUNT,
-                        category_a_count: 0,
-                        category_b_count: 0,
-                        category_c_count: 0
-                    }));
+                        if (!newSession) {
+                            throw new Error('Session created but returned null');
+                        }
 
-                    const { error: teamsError } = await supabase.from('auction_teams').insert(teamsData);
-                    if (teamsError) {
-                        console.error('Error creating teams:', teamsError);
-                        throw new Error(`Failed to create teams: ${teamsError.message}`);
-                    }
+                        finalSession = newSession;
+                        setSessionName(newSession.session_name); // Store session name for logo mapping
 
-                    // Create initial player pool if session was just created
-                    const playerPoolData = initialPlayers.map((player, index) => ({
-                        session_id: finalSession!.id,
-                        player_order: index,
-                        name: player.name,
-                        payment_status: player.payment,
-                        gender: player.gender,
-                        category: player.category,
-                        runs: player.runs,
-                        strike_rate: player.strikeRate,
-                        wickets: player.wickets,
-                        average: player.average,
-                        catch_count: player.catch,
-                        ro: player.ro,
-                        mvp: player.mvp
-                    }));
+                        // Create initial teams
+                        const teamsData = Array.from({ length: TEAMS_COUNT }, (_, i) => ({
+                            session_id: finalSession!.id,
+                            team_number: i + 1,
+                            name: `Team ${i + 1}`,
+                            budget: TOTAL_AMOUNT
+                        }));
 
-                    const { error: poolError } = await supabase.from('auction_player_pool').insert(playerPoolData);
-                    if (poolError) {
-                        console.error('Error creating player pool:', poolError);
-                        throw new Error(`Failed to create player pool: ${poolError.message}`);
+                        const { error: teamsError } = await supabase.from('auction_teams').insert(teamsData);
+                        if (teamsError) {
+                            console.error('Error creating teams:', teamsError);
+                            throw new Error(`Failed to create teams: ${teamsError.message}`);
+                        }
+
+                        // Initial player pool will be created separately via database inserts
                     }
                 }
 
@@ -352,7 +333,7 @@ export default function AuctionClient() {
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, payment_status, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand, runs, wickets, mvp')
+                    .select('id, player_order, name, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand')
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
@@ -363,18 +344,10 @@ export default function AuctionClient() {
 
                 // Map database player pool to component players
                 // Safely handle missing fields (in case migration hasn't been run yet)
-                const mappedPlayers: Player[] = (playerPoolData || []).map((p: Partial<DbPlayerPool> & { name: string; payment_status: string; gender: string; category: string }) => ({
+                const mappedPlayers: Player[] = (playerPoolData || []).map((p: Partial<DbPlayerPool> & { name: string; gender: string; category: string }) => ({
                     name: p.name,
-                    payment: p.payment_status as 'Y' | 'N',
                     gender: p.gender as 'M' | 'F',
                     category: p.category || 'Non Marquee',
-                    runs: p.runs || 0,
-                    strikeRate: 0, // Not displayed, set to 0
-                    wickets: p.wickets || 0,
-                    average: 0, // Not displayed, set to 0
-                    catch: 0, // Not displayed, set to 0
-                    ro: 0, // Not displayed, set to 0
-                    mvp: p.mvp || 0,
                     photo: p.photo || undefined,
                     age: p.age || undefined,
                     played_s1: p.played_s1 || undefined,
@@ -409,16 +382,8 @@ export default function AuctionClient() {
                         .filter((p: DbPlayer) => p.team_id === team.id)
                         .map((p: DbPlayer) => ({
                             name: p.player_name,
-                            payment: p.payment_status as 'Y' | 'N',
                             gender: p.gender as 'M' | 'F',
                             category: p.player_category,
-                            runs: p.runs,
-                            strikeRate: p.strike_rate,
-                            wickets: p.wickets,
-                            average: p.average,
-                            catch: p.catch_count,
-                            ro: p.ro,
-                            mvp: p.mvp,
                             bidAmount: p.bid_amount
                         }));
 
@@ -427,11 +392,6 @@ export default function AuctionClient() {
                         name: team.name,
                         budget: Number(team.budget), // Ensure budget is a number
                         players: teamPlayers,
-                        categoryCount: {
-                            A: team.category_a_count,
-                            B: team.category_b_count,
-                            C: team.category_c_count
-                        },
                         ownerName: team.owner_name || undefined
                     };
                 });
@@ -485,7 +445,7 @@ export default function AuctionClient() {
         if (!authLoading) {
             loadAuctionState();
         }
-    }, [authLoading, supabase]);
+    }, [authLoading, supabase, initialSessionId, router]);
 
     // Helper function to reload teams (accessible throughout component)
     const reloadTeams = useCallback(async () => {
@@ -508,16 +468,8 @@ export default function AuctionClient() {
                     .filter((p: DbPlayer) => p.team_id === team.id)
                     .map((p: DbPlayer) => ({
                         name: p.player_name,
-                        payment: p.payment_status as 'Y' | 'N',
                         gender: p.gender as 'M' | 'F',
                         category: p.player_category,
-                        runs: p.runs,
-                        strikeRate: p.strike_rate,
-                        wickets: p.wickets,
-                        average: p.average,
-                        catch: p.catch_count,
-                        ro: p.ro,
-                        mvp: p.mvp,
                         bidAmount: p.bid_amount
                     }));
 
@@ -526,11 +478,6 @@ export default function AuctionClient() {
                     name: team.name,
                     budget: Number(team.budget), // Ensure budget is a number
                     players: teamPlayers,
-                    categoryCount: {
-                        A: team.category_a_count,
-                        B: team.category_b_count,
-                        C: team.category_c_count
-                    },
                     ownerName: team.owner_name
                 };
             });
@@ -607,24 +554,16 @@ export default function AuctionClient() {
                 // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, payment_status, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand, runs, wickets, mvp')
+                    .select('id, player_order, name, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand')
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
 
                 if (playerPoolData) {
                     // Safely handle missing fields (in case migration hasn't been run yet)
-                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string; payment_status: string; gender: string; category: string }) => ({
+                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string; gender: string; category: string }) => ({
                         name: p.name,
-                        payment: p.payment_status as 'Y' | 'N',
                         gender: p.gender as 'M' | 'F',
                         category: p.category || 'Non Marquee',
-                        runs: p.runs || 0,
-                        strikeRate: 0, // Not displayed, set to 0
-                        wickets: p.wickets || 0,
-                        average: 0, // Not displayed, set to 0
-                        catch: 0, // Not displayed, set to 0
-                        ro: 0, // Not displayed, set to 0
-                        mvp: p.mvp || 0,
                         photo: p.photo || undefined,
                         age: p.age || undefined,
                         played_s1: p.played_s1 || undefined,
@@ -827,15 +766,7 @@ export default function AuctionClient() {
                 player_name: currentPlayer.name,
                 player_category: currentPlayer.category,
                 bid_amount: currentBid,
-                payment_status: currentPlayer.payment,
-                gender: currentPlayer.gender,
-                runs: currentPlayer.runs,
-                strike_rate: currentPlayer.strikeRate,
-                wickets: currentPlayer.wickets,
-                average: currentPlayer.average,
-                catch_count: currentPlayer.catch,
-                ro: currentPlayer.ro,
-                mvp: currentPlayer.mvp
+                gender: currentPlayer.gender
             });
 
             // Update team budget
@@ -1145,7 +1076,7 @@ export default function AuctionClient() {
 
             // Load team logo
             try {
-                const teamLogoPath = getTeamLogo(team.id);
+                const teamLogoPath = getTeamLogo(team.id, sessionName);
                 const response = await fetch(teamLogoPath);
                 const blob = await response.blob();
                 const reader = new FileReader();
@@ -1534,10 +1465,12 @@ export default function AuctionClient() {
                                 <div className="flex justify-between items-center mb-3">
                                     <h2 className="text-xl font-semibold text-gray-900">{team.name}</h2>
                                     <Image
-                                        src={getTeamLogo(team.id)}
+                                        key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
+                                        src={getTeamLogo(team.id, sessionName)}
                                         alt={`${team.name} logo`}
                                         width={48}
                                         height={48}
+                                        unoptimized
                                         className="object-contain"
                                     />
                                 </div>
@@ -1590,9 +1523,6 @@ export default function AuctionClient() {
                                         <div className="text-sm font-semibold text-gray-900">{player.name}</div>
                                         <div className="text-xs text-gray-600 mt-1">
                                             {player.category} • {player.gender === 'M' ? 'Male' : 'Female'}
-                                        </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            Runs: {player.runs} • Wickets: {player.wickets} • MVP: {player.mvp}
                                         </div>
                                     </div>
                                 ))}
@@ -1713,7 +1643,10 @@ export default function AuctionClient() {
                         <span className="text-lg md:text-base">←</span>
                         <span className="hidden sm:inline">Back</span>
                     </button>
-                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex-shrink-0">Auction</h1>
+                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex-shrink-0">
+                        <span className="md:hidden">Auction</span>
+                        <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
+                    </h1>
                     <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
                         <button
                             onClick={() => setIsTopPlayersSheetOpen(true)}
@@ -1777,10 +1710,12 @@ export default function AuctionClient() {
                                                 <div className="flex justify-between items-start mb-2">
                                                     <div className="flex items-center gap-2">
                                                         <Image
-                                                            src={getTeamLogo(team.id)}
+                                                            key={`team-budget-${team.id}-${sessionName || 'default'}`}
+                                                            src={getTeamLogo(team.id, sessionName)}
                                                             alt={`${team.name} logo`}
                                                             width={32}
                                                             height={32}
+                                                            unoptimized
                                                             className="object-contain flex-shrink-0"
                                                         />
                                                         <div className="min-w-0 flex-1">
@@ -1944,6 +1879,14 @@ export default function AuctionClient() {
 
                                     {/* Player Details Grid */}
                                     <div className="space-y-4">
+                                        {/* Played S1 - Only for Men's auction */}
+                                        {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
+                                            <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-4 md:p-5 border border-orange-200">
+                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Played S1</div>
+                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.played_s1}</div>
+                                            </div>
+                                        )}
+
                                         {/* Experience */}
                                         {currentPlayer.experience && (
                                             <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 md:p-5 border border-gray-200">
@@ -2037,11 +1980,13 @@ export default function AuctionClient() {
                                         >
                                             <div className="flex items-center gap-3 mb-2">
                                                 <Image
-                                                    src={getTeamLogo(team.id)}
+                                                    key={`team-${team.id}-${sessionName || 'default'}`}
+                                                    src={getTeamLogo(team.id, sessionName)}
                                                     alt={`${team.name} logo`}
                                                     width={40}
                                                     height={40}
                                                     className="object-contain flex-shrink-0"
+                                                    unoptimized
                                                 />
                                                 <div className="font-semibold text-gray-900 text-sm md:text-base break-normal min-w-0 flex-1 leading-tight">{team.name}</div>
                                             </div>
@@ -2102,11 +2047,13 @@ export default function AuctionClient() {
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex items-center gap-3">
                                             <Image
-                                                src={getTeamLogo(team.id)}
+                                                key={`team-top-${team.id}-${sessionName || 'default'}`}
+                                                src={getTeamLogo(team.id, sessionName)}
                                                 alt={`${team.name} logo`}
                                                 width={40}
                                                 height={40}
                                                 className="object-contain flex-shrink-0"
+                                                unoptimized
                                             />
                                             <div className="min-w-0 flex-1">
                                                 <h3 className="text-base md:text-lg font-semibold text-gray-900 break-normal leading-tight">{team.name}</h3>
@@ -2265,7 +2212,7 @@ export default function AuctionClient() {
                                                 </div>
                                                 <div className="flex items-center gap-2 text-sm text-gray-600 ml-11">
                                                     <Image
-                                                        src={getTeamLogo(player.teamId)}
+                                                        src={getTeamLogo(player.teamId, sessionName)}
                                                         alt={`${player.teamName} logo`}
                                                         width={20}
                                                         height={20}
@@ -2336,20 +2283,6 @@ export default function AuctionClient() {
                                                     Tap to auction again
                                                 </div>
                                             )}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2 mt-3">
-                                        <div className="text-center">
-                                            <div className="text-xs text-gray-500">Runs</div>
-                                            <div className="text-sm font-semibold text-gray-900">{player.runs}</div>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-xs text-gray-500">Wickets</div>
-                                            <div className="text-sm font-semibold text-gray-900">{player.wickets}</div>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-xs text-gray-500">MVP</div>
-                                            <div className="text-sm font-semibold text-gray-900">{player.mvp}</div>
                                         </div>
                                     </div>
                                 </div>
