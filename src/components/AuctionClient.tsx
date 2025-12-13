@@ -729,12 +729,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             if (!dbTeam) throw new Error('Team not found');
 
             // Insert player into database
-            await supabase.from('auction_players').insert({
+            const { error: insertError } = await supabase.from('auction_players').insert({
                 session_id: sessionId,
                 team_id: dbTeam.id,
                 player_name: currentPlayer.name,
                 bid_amount: currentBid
             });
+
+            if (insertError) {
+                console.error('Error inserting player:', insertError);
+                throw insertError;
+            }
+
+            // Immediately update boughtPlayerNames to prevent player from appearing in skipped list
+            setBoughtPlayerNames(prev => new Set([...prev, currentPlayer.name]));
 
             // Update team budget
             const newBudget = Number(team.budget) - Number(currentBid);
