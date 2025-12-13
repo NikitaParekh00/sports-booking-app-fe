@@ -10,8 +10,6 @@ import { processImageUrl } from '@/lib/imageUrlHelper';
 
 interface Player {
     name: string;
-    gender: 'M' | 'F';
-    category: string;
     bidAmount?: number; // Optional for players in team (bought players have bid amount)
     photo?: string; // Player photo URL
     age?: number; // Player age
@@ -20,22 +18,6 @@ interface Player {
     active_sport?: string; // Active sport practiced
     skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
     batting_hand?: string; // Right/Left
-}
-
-interface DbPlayerPool {
-    id: string;
-    session_id: string;
-    player_order: number;
-    name: string;
-    gender: string;
-    category: string;
-    photo?: string;
-    age?: number;
-    played_s1?: string;
-    experience?: string;
-    active_sport?: string;
-    skill?: string;
-    batting_hand?: string;
 }
 
 interface Team {
@@ -106,8 +88,6 @@ interface DbTeam {
 interface DbPlayer {
     team_id: string;
     player_name: string;
-    gender: string;
-    player_category: string;
     bid_amount: number;
 }
 
@@ -116,8 +96,6 @@ interface DbPlayerPool {
     session_id: string;
     player_order: number;
     name: string;
-    gender: string;
-    category: string;
     photo?: string;
     age?: number;
     played_s1?: string;
@@ -179,7 +157,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
     const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
-    const [topPlayersGenderFilter, setTopPlayersGenderFilter] = useState<'all' | 'M' | 'F'>('all');
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
 
     // Check authentication and edit permissions
@@ -333,7 +310,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
@@ -344,10 +321,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                 // Map database player pool to component players
                 // Safely handle missing fields (in case migration hasn't been run yet)
-                const mappedPlayers: Player[] = (playerPoolData || []).map((p: Partial<DbPlayerPool> & { name: string; gender: string; category: string }) => ({
+                const mappedPlayers: Player[] = (playerPoolData || []).map((p: Partial<DbPlayerPool> & { name: string }) => ({
                     name: p.name,
-                    gender: p.gender as 'M' | 'F',
-                    category: p.category || 'Non Marquee',
                     photo: p.photo || undefined,
                     age: p.age || undefined,
                     played_s1: p.played_s1 || undefined,
@@ -382,8 +357,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         .filter((p: DbPlayer) => p.team_id === team.id)
                         .map((p: DbPlayer) => ({
                             name: p.player_name,
-                            gender: p.gender as 'M' | 'F',
-                            category: p.player_category,
                             bidAmount: p.bid_amount
                         }));
 
@@ -468,8 +441,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .filter((p: DbPlayer) => p.team_id === team.id)
                     .map((p: DbPlayer) => ({
                         name: p.player_name,
-                        gender: p.gender as 'M' | 'F',
-                        category: p.player_category,
                         bidAmount: p.bid_amount
                     }));
 
@@ -554,16 +525,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, gender, category, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
 
                 if (playerPoolData) {
                     // Safely handle missing fields (in case migration hasn't been run yet)
-                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string; gender: string; category: string }) => ({
+                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
                         name: p.name,
-                        gender: p.gender as 'M' | 'F',
-                        category: p.category || 'Non Marquee',
                         photo: p.photo || undefined,
                         age: p.age || undefined,
                         played_s1: p.played_s1 || undefined,
@@ -764,9 +733,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 session_id: sessionId,
                 team_id: dbTeam.id,
                 player_name: currentPlayer.name,
-                player_category: currentPlayer.category,
-                bid_amount: currentBid,
-                gender: currentPlayer.gender
+                bid_amount: currentBid
             });
 
             // Update team budget
@@ -1521,9 +1488,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 {skippedPlayers.map((player, idx) => (
                                     <div key={idx} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                                         <div className="text-sm font-semibold text-gray-900">{player.name}</div>
-                                        <div className="text-xs text-gray-600 mt-1">
-                                            {player.category} • {player.gender === 'M' ? 'Male' : 'Female'}
-                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -2143,13 +2107,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 }))
                         );
 
-                        // Filter by gender if needed
-                        const filteredPlayers = topPlayersGenderFilter === 'all'
-                            ? allBoughtPlayers
-                            : allBoughtPlayers.filter(player => player.gender === topPlayersGenderFilter);
-
                         // Sort by bid amount (highest first) and take top 5
-                        const top5Players = filteredPlayers
+                        const top5Players = allBoughtPlayers
                             .sort((a, b) => (b.bidAmount || 0) - (a.bidAmount || 0))
                             .slice(0, 5);
 
@@ -2163,37 +2122,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                         return (
                             <>
-                                {/* Gender Filter Buttons */}
-                                <div className="flex gap-2 mb-4">
-                                    <button
-                                        onClick={() => setTopPlayersGenderFilter('all')}
-                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'all'
-                                            ? 'bg-red-600 text-white'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        All
-                                    </button>
-                                    <button
-                                        onClick={() => setTopPlayersGenderFilter('M')}
-                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'M'
-                                            ? 'bg-red-600 text-white'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Male
-                                    </button>
-                                    <button
-                                        onClick={() => setTopPlayersGenderFilter('F')}
-                                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${topPlayersGenderFilter === 'F'
-                                            ? 'bg-red-600 text-white'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                    >
-                                        Female
-                                    </button>
-                                </div>
-
                                 {top5Players.length > 0 ? (
                                     <div className="space-y-3">
                                         {top5Players.map((player, idx) => (
@@ -2219,15 +2147,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         className="object-contain"
                                                     />
                                                     <span>{player.teamName}</span>
-                                                    <span>•</span>
-                                                    <span>{player.category}</span>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
                                 ) : (
                                     <div className="text-center py-8 text-gray-500">
-                                        No {topPlayersGenderFilter === 'all' ? '' : topPlayersGenderFilter === 'M' ? 'male ' : 'female '}players found
+                                        No players found
                                     </div>
                                 )}
                             </>
@@ -2275,9 +2201,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="flex justify-between items-start mb-2">
                                         <div>
                                             <div className="text-base font-semibold text-gray-900">{player.name}</div>
-                                            <div className="text-xs text-gray-600 mt-1">
-                                                {player.category} • {player.gender === 'M' ? 'Male' : 'Female'}
-                                            </div>
                                             {canEdit && (
                                                 <div className="text-xs text-red-600 mt-1 font-medium">
                                                     Tap to auction again
