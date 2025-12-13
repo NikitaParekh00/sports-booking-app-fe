@@ -30,9 +30,23 @@ interface Team {
 
 const TOTAL_AMOUNT = 111000;
 const MINIMUM_BID = 5000;
-const BID_INCREASE = 5000;
 const TEAMS_COUNT = 8;
 const PLAYERS_PER_TEAM = 11; // Maximum 11 players per team
+
+// Dynamic bid increment based on current bid amount
+const getBidIncrement = (currentBid: number): number => {
+    if (currentBid >= 700000) {
+        return 50000; // After 7 lacs: increase by 50,000
+    } else if (currentBid >= 400000) {
+        return 30000; // After 4 lacs: increase by 30,000
+    } else if (currentBid >= 200000) {
+        return 20000; // After 2 lacs: increase by 20,000
+    } else if (currentBid >= 100000) {
+        return 10000; // After 1 lac: increase by 10,000
+    } else {
+        return 5000; // Default: increase by 5,000
+    }
+};
 
 // Team logos mapping for Women's teams (first 4 logos)
 const WOMENS_TEAM_LOGOS: { [key: number]: string } = {
@@ -602,12 +616,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     }, [currentPlayerIndex, currentPlayer]);
 
     const handleBidIncrease = () => {
-        setCurrentBid(prev => prev + BID_INCREASE);
+        setCurrentBid(prev => {
+            const increment = getBidIncrement(prev);
+            return prev + increment;
+        });
     };
 
     const handleBidDecrease = () => {
         if (currentBid > currentMinimumBid) {
-            setCurrentBid(prev => Math.max(currentMinimumBid, prev - BID_INCREASE));
+            setCurrentBid(prev => {
+                // Calculate increment based on the amount we're decreasing FROM
+                // This ensures we decrease by the same amount we would have increased
+                const increment = getBidIncrement(prev);
+                return Math.max(currentMinimumBid, prev - increment);
+            });
         }
     };
 
@@ -1922,7 +1944,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </div>
 
                             <div className="text-sm text-gray-500 text-center">
-                                Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{BID_INCREASE.toLocaleString()}
+                                Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
                             </div>
                         </div>
 
