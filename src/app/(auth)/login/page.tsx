@@ -8,28 +8,26 @@ import PhoneInput from '@/components/PhoneInput';
 export default function LoginPage() {
 	const router = useRouter();
 	const supabase = createClient();
-	const [loading, setLoading] = useState(false);
 	const [mobileNumber, setMobileNumber] = useState('');
 	const [isPhoneValid, setIsPhoneValid] = useState(false);
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
-		setLoading(true);
+
+		// Validate mobile number format
+		if (!isPhoneValid) {
+			alert('Please enter a valid 10-digit mobile number');
+			return;
+		}
+
+		// Clean mobile number (remove any non-digits)
+		const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
+		const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
+
+		// For development: Skip actual OTP sending and go directly to verification
+		// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
 
 		try {
-			// Validate mobile number format
-			if (!isPhoneValid) {
-				alert('Please enter a valid 10-digit mobile number');
-				return;
-			}
-
-			// Clean mobile number (remove any non-digits)
-			const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
-			const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
-
-			// For development: Skip actual OTP sending and go directly to verification
-			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
-
 			// Check if user exists in profiles table
 			const { data: existingUsers, error: checkError } = await supabase
 				.from('profiles')
@@ -55,8 +53,6 @@ export default function LoginPage() {
 		} catch (error) {
 			console.error('Unexpected error:', error);
 			alert('An unexpected error occurred. Please try again.');
-		} finally {
-			setLoading(false);
 		}
 	};
 
@@ -93,10 +89,10 @@ export default function LoginPage() {
 				{/* Login Button */}
 				<button
 					type="submit"
-					disabled={loading || !isPhoneValid}
+					disabled={!isPhoneValid}
 					className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					{loading ? 'Sending OTP...' : 'LOGIN'}
+					LOGIN
 				</button>
 
 				{/* Signup Link */}
