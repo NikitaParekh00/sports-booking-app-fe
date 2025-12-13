@@ -1071,6 +1071,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             let teamLogoHeight = 0;
             let appLogoDataUrl = '';
             let teamLogoDataUrl = '';
+            let logo2DataUrl = '';
+            let logo2Height = 0;
 
             // Load app logo
             try {
@@ -1121,47 +1123,84 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 console.error('Error loading team logo:', teamLogoError);
             }
 
-            // Add app logo (left side) - same Y position as team logo
+            // Load logo2.png
+            try {
+                const response = await fetch('/logo2.png');
+                const blob = await response.blob();
+                const reader = new FileReader();
+
+                await new Promise<void>((resolve) => {
+                    reader.onload = () => {
+                        logo2DataUrl = reader.result as string;
+                        const logoImg = document.createElement('img');
+                        logoImg.onload = () => {
+                            logo2Height = (logoImg.height / logoImg.width) * logoWidth;
+                            resolve();
+                        };
+                        logoImg.onerror = () => resolve(); // Continue if logo2 fails
+                        logoImg.src = logo2DataUrl;
+                    };
+                    reader.onerror = () => resolve(); // Continue if logo2 fails
+                    reader.readAsDataURL(blob);
+                });
+            } catch (logo2Error) {
+                console.error('Error loading logo2:', logo2Error);
+            }
+
+            // Add app logo (left side)
             if (appLogoDataUrl) {
                 pdf.addImage(appLogoDataUrl, 'JPEG', margin, logoY, logoWidth, appLogoHeight);
                 maxHeaderHeight = Math.max(maxHeaderHeight, appLogoHeight);
             }
 
-            // Add team logo (right side) - same Y position as app logo
-            if (teamLogoDataUrl) {
-                const teamLogoX = pageWidth - margin - logoWidth; // Right aligned
-                pdf.addImage(teamLogoDataUrl, 'JPEG', teamLogoX, logoY, logoWidth, teamLogoHeight);
-                maxHeaderHeight = Math.max(maxHeaderHeight, teamLogoHeight);
+            // Add logo2.png (right side) - same Y position as app logo (bigger size)
+            if (logo2DataUrl) {
+                const logo2Width = logoWidth * 1.3; // 30% bigger than app logo
+                const logo2HeightBigger = (logo2Height / logoWidth) * logo2Width; // Maintain aspect ratio
+                const logo2X = pageWidth - margin - logo2Width; // Right aligned
+                pdf.addImage(logo2DataUrl, 'PNG', logo2X, logoY, logo2Width, logo2HeightBigger);
+                maxHeaderHeight = Math.max(maxHeaderHeight, logo2HeightBigger);
             }
 
             // "Team Report" text below app logo (left aligned)
             pdf.setFontSize(22);
             pdf.setTextColor(0, 0, 0);
             pdf.setFont('helvetica', 'bold');
-            pdf.text('Team Report', margin, logoY + (appLogoHeight || 15) + 8);
-            maxHeaderHeight = Math.max(maxHeaderHeight, (appLogoHeight || 15) + 15);
+            const teamReportY = logoY + (appLogoHeight || 15) + 8;
+            pdf.text('Team Report', margin, teamReportY);
 
-            // Team Name below team logo (right aligned, same X as logo)
+            // Add team logo below "Team Report" (left aligned, larger size)
+            let teamLogoBelowY = teamReportY + 6; // Small gap below "Team Report" text
+            if (teamLogoDataUrl) {
+                const teamLogoBelowWidth = 50; // Increased width for logo below Team Report (was 30)
+                const teamLogoBelowHeight = (teamLogoHeight / logoWidth) * teamLogoBelowWidth;
+                pdf.addImage(teamLogoDataUrl, 'JPEG', margin, teamLogoBelowY, teamLogoBelowWidth, teamLogoBelowHeight);
+                teamLogoBelowY += teamLogoBelowHeight + 8; // Increased gap to 8mm between logo and text
+            } else {
+                teamLogoBelowY += 8;
+            }
+
+            // Team Name below team logo (left aligned)
             pdf.setFontSize(18);
             pdf.setTextColor(220, 38, 38); // Red color
             pdf.setFont('helvetica', 'bold');
-            const teamLogoRightX = pageWidth - margin; // Right edge of team logo
-            const teamNameY = logoY + (teamLogoHeight || 15) + 8;
-            pdf.text(team.name, teamLogoRightX, teamNameY, { align: 'right' });
-            maxHeaderHeight = Math.max(maxHeaderHeight, (teamLogoHeight || 15) + 15);
+            pdf.text(team.name, margin, teamLogoBelowY);
+            let leftSideY = teamLogoBelowY + 6; // Gap between team name and owner name
 
-            // Owner Name below team name (right aligned, same X as logo and name)
+            // Owner Name below team name (left aligned)
             if (team.ownerName) {
                 pdf.setFontSize(12);
-                pdf.setTextColor(0, 0, 0);
+                pdf.setTextColor(0, 0, 0); // Black color
                 pdf.setFont('helvetica', 'normal');
-                const ownerY = teamNameY + 8;
-                pdf.text(`Owner: ${team.ownerName}`, teamLogoRightX, ownerY, { align: 'right' });
-                maxHeaderHeight = Math.max(maxHeaderHeight, ownerY - headerStartY + 8);
+                pdf.text(`Owner: ${team.ownerName}`, margin, leftSideY);
+                leftSideY += 4;
             }
 
-            // Move to next section
-            yPosition = headerStartY + maxHeaderHeight + 10;
+            // Update maxHeaderHeight to include left side content
+            maxHeaderHeight = Math.max(maxHeaderHeight, leftSideY);
+
+            // Move to next section (reduced gap)
+            yPosition = headerStartY + maxHeaderHeight + 5; // Reduced from 10 to 5
 
             // Budget Information Table
             // Calculate spent as sum of all player bid amounts (more accurate)
@@ -1235,8 +1274,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Adjusted column widths: S.No (5mm), Photo (fixed size matching auction UI), Name (flexible), Amount (35mm fixed)
                 const sNoWidth = 5; // Reduced from 10mm
                 // Fixed image size matching auction UI: w-72 (288px ≈ 76mm) h-96 (384px ≈ 102mm)
-                const imageWidth = 76; // Fixed width matching auction UI
-                const imageHeight = 102; // Fixed height matching auction UI
+                const imageWidth = 40; // Reduced width for player images
+                const imageHeight = 54; // Reduced height for player images (maintains 3:4 aspect ratio)
                 const imageRowHeight = imageHeight + 4; // Image height + 2mm padding top and bottom
                 const amountWidth = 35;
                 const nameWidth = playerTableWidth - sNoWidth - imageWidth - amountWidth - 2; // Extra 2mm for spacing

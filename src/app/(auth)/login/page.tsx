@@ -14,18 +14,18 @@ export default function LoginPage() {
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
 
-		// Validate mobile number format
-		if (!isPhoneValid) {
-			alert('Please enter a valid 10-digit mobile number');
-			return;
-		}
+			// Validate mobile number format
+			if (!isPhoneValid) {
+				alert('Please enter a valid 10-digit mobile number');
+				return;
+			}
 
-		// Clean mobile number (remove any non-digits)
-		const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
-		const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
+			// Clean mobile number (remove any non-digits)
+			const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
+			const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
 
-		// For development: Skip actual OTP sending and go directly to verification
-		// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
+			// For development: Skip actual OTP sending and go directly to verification
+			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
 
 		try {
 			// Check if user exists in profiles table
