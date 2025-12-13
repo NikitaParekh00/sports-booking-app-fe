@@ -1475,7 +1475,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     <div className="text-6xl mb-4">⏰</div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-3">Stay Tuned!</h2>
                     <p className="text-gray-600 mb-6">
-                        The auction is not yet open for public viewing. Please check back soon!
+                        The auction is not yet live. Please check back soon!
                     </p>
                     <button
                         onClick={() => router.back()}
