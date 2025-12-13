@@ -1974,10 +1974,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                                     {/* Player Details Grid */}
                                     <div className="space-y-4">
-                                        {/* Played S1 - Only for Men's auction */}
+                                        {/* Played Previous MBBL Season - Only for Men's auction */}
                                         {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
                                             <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-4 md:p-5 border border-orange-200">
-                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Played S1</div>
+                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Played Previous MBBL Season</div>
                                                 <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.played_s1}</div>
                                             </div>
                                         )}
