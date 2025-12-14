@@ -121,7 +121,7 @@ interface DbPlayerPool {
 
 // Flag to control public auction access
 // Set to true to allow everyone to view auctions, false to restrict to specific phone number
-const PUBLIC_AUCTION_ACCESS = false; // Change to true when auctions start for everyone
+const PUBLIC_AUCTION_ACCESS = true; // Change to true when auctions start for everyone
 
 // Configure the allowed user for auction access (when PUBLIC_AUCTION_ACCESS is false)
 // Use the EXACT format as stored in database: +91-XXXXXXXXXX
