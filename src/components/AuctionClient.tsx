@@ -177,6 +177,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
     const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
+    const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<string | null>(null); // Track which top players PDF is generating ('male' or 'female')
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -1493,6 +1494,344 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
     };
 
+    const generateTopBiddedPlayersPDF = async (gender: 'M' | 'F') => {
+        // Set loading state
+        setPdfGeneratingTopPlayers(gender);
+        try {
+            // Use the correct session ID based on gender
+            // Men's session: ebd10b54-366d-4986-bdea-fa4cd35fe000
+            // Women's session: d4dbe601-381a-4dcf-b131-8919cbbc9f17
+            const targetSessionId = gender === 'M'
+                ? 'ebd10b54-366d-4986-bdea-fa4cd35fe000'
+                : 'd4dbe601-381a-4dcf-b131-8919cbbc9f17';
+
+            // Fetch top 5 bidded players for the specified session
+            // Note: We don't filter by gender since session_id already determines gender
+            // (Men's session = M, Women's session = F)
+            const { data: topPlayers, error: fetchError } = await supabase
+                .from('auction_players')
+                .select(`
+                    player_name,
+                    bid_amount,
+                    photo,
+                    age
+                `)
+                .eq('session_id', targetSessionId)
+                .order('bid_amount', { ascending: false })
+                .limit(5);
+
+            if (fetchError) {
+                console.error('Error fetching top players:', fetchError);
+                throw fetchError;
+            }
+
+            if (!topPlayers || topPlayers.length === 0) {
+                console.log('No players found for session:', targetSessionId, 'gender:', gender);
+                // Try to get count of all players in this session for debugging
+                const { count } = await supabase
+                    .from('auction_players')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('session_id', targetSessionId);
+                console.log('Total players in session:', count);
+                alert(`No ${gender === 'M' ? 'male' : 'female'} players have been bid on yet in this session.`);
+                return;
+            }
+
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const margin = 15;
+            let yPosition = margin;
+
+            // Header section
+            const headerStartY = yPosition;
+            let maxHeaderHeight = 0;
+            const logoWidth = 50;
+            const logoY = headerStartY;
+
+            // Load logos
+            let appLogoHeight = 0;
+            let logo2DataUrl = '';
+            let logo2Height = 0;
+
+            // Load app logo
+            try {
+                const response = await fetch('/logo.jpeg');
+                const blob = await response.blob();
+                const reader = new FileReader();
+
+                await new Promise<void>((resolve, reject) => {
+                    reader.onload = () => {
+                        const appLogoDataUrl = reader.result as string;
+                        const logoImg = document.createElement('img');
+                        logoImg.onload = () => {
+                            appLogoHeight = (logoImg.height / logoImg.width) * logoWidth;
+                            resolve();
+                        };
+                        logoImg.onerror = reject;
+                        logoImg.src = appLogoDataUrl;
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (logoError) {
+                console.error('Error loading logo:', logoError);
+            }
+
+            // Load logo2.png
+            try {
+                const response = await fetch('/logo2.png');
+                const blob = await response.blob();
+                const reader = new FileReader();
+
+                await new Promise<void>((resolve) => {
+                    reader.onload = () => {
+                        logo2DataUrl = reader.result as string;
+                        const logoImg = document.createElement('img');
+                        logoImg.onload = () => {
+                            logo2Height = (logoImg.height / logoImg.width) * logoWidth;
+                            resolve();
+                        };
+                        logoImg.onerror = () => resolve();
+                        logoImg.src = logo2DataUrl;
+                    };
+                    reader.onerror = () => resolve();
+                    reader.readAsDataURL(blob);
+                });
+            } catch (logo2Error) {
+                console.error('Error loading logo2:', logo2Error);
+            }
+
+            // Add app logo (left side)
+            if (appLogoHeight > 0) {
+                const response = await fetch('/logo.jpeg');
+                const blob = await response.blob();
+                const reader = new FileReader();
+                await new Promise<void>((resolve) => {
+                    reader.onload = () => {
+                        pdf.addImage(reader.result as string, 'JPEG', margin, logoY, logoWidth, appLogoHeight);
+                        resolve();
+                    };
+                    reader.onerror = () => resolve();
+                    reader.readAsDataURL(blob);
+                });
+                maxHeaderHeight = Math.max(maxHeaderHeight, appLogoHeight);
+            }
+
+            // Add logo2.png (right side)
+            let logo2HeightBigger = 0;
+            if (logo2DataUrl) {
+                const logo2Width = logoWidth * 1.3;
+                logo2HeightBigger = (logo2Height / logoWidth) * logo2Width;
+                const logo2X = pageWidth - margin - logo2Width;
+                pdf.addImage(logo2DataUrl, 'PNG', logo2X, logoY, logo2Width, logo2HeightBigger);
+                maxHeaderHeight = Math.max(maxHeaderHeight, logo2HeightBigger);
+            }
+
+            // Title - moved down to avoid overlap with right logo
+            pdf.setFontSize(22);
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont('helvetica', 'bold');
+            // Calculate max header height including logo2
+            const maxLogoHeight = Math.max(appLogoHeight || 15, logo2HeightBigger || 0);
+            const titleY = logoY + maxLogoHeight + 12; // Increased gap to avoid overlap
+            const titleText = `Top 5 Bidded ${gender === 'M' ? 'Male' : 'Female'} Players`;
+            pdf.text(titleText, margin, titleY);
+            yPosition = titleY + 12;
+
+            // Players Table
+            const tableStartX = margin;
+            const tableWidth = pageWidth - (2 * margin);
+            const rowHeight = 8;
+            const sNoWidth = 5;
+            const imageWidth = 40;
+            const imageHeight = 54;
+            const imageRowHeight = imageHeight + 4;
+            const amountWidth = 35;
+            const nameWidth = tableWidth - sNoWidth - imageWidth - amountWidth - 2;
+
+            // Table Header
+            pdf.setFillColor(220, 38, 38);
+            pdf.rect(tableStartX, yPosition, tableWidth, rowHeight, 'F');
+            pdf.setTextColor(255, 255, 255);
+            pdf.setFontSize(10);
+            pdf.setFont('helvetica', 'bold');
+            pdf.text('No', tableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
+            pdf.text('Photo', tableStartX + sNoWidth + imageWidth / 2, yPosition + 5.5, { align: 'center' });
+            pdf.text('Player Name', tableStartX + sNoWidth + imageWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+            pdf.text('Bid Amount', tableStartX + sNoWidth + imageWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
+            yPosition += rowHeight;
+
+            // Fetch player photos from player pool using the correct session ID
+            const { data: playerPoolData } = await supabase
+                .from('auction_player_pool')
+                .select('name, photo')
+                .eq('session_id', targetSessionId);
+
+            const playerPhotoMap = new Map<string, string>();
+            if (playerPoolData) {
+                for (const poolPlayer of playerPoolData) {
+                    if (poolPlayer.photo) {
+                        playerPhotoMap.set(poolPlayer.name, poolPlayer.photo);
+                    }
+                }
+            }
+
+            // Helper function to format numbers
+            const formatNumber = (num: number) => {
+                return num.toLocaleString('en-US');
+            };
+
+            // Player Rows
+            pdf.setTextColor(0, 0, 0);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(9);
+
+            for (let index = 0; index < topPlayers.length; index++) {
+                const player = topPlayers[index];
+                const playerPhotoUrl = player.photo || playerPhotoMap.get(player.player_name);
+                const currentRowHeight = playerPhotoUrl ? imageRowHeight : rowHeight;
+
+                // Check if we need a new page
+                if (yPosition + currentRowHeight > pageHeight - 30) {
+                    pdf.addPage();
+                    yPosition = margin;
+                }
+
+                // Alternate row colors
+                if (index % 2 === 0) {
+                    pdf.setFillColor(250, 250, 250);
+                } else {
+                    pdf.setFillColor(255, 255, 255);
+                }
+                pdf.rect(tableStartX, yPosition, tableWidth, currentRowHeight, 'F');
+
+                // S.No
+                pdf.text(String(index + 1), tableStartX + sNoWidth / 2, yPosition + currentRowHeight / 2, { align: 'center' });
+
+                // Player Photo
+                if (playerPhotoUrl) {
+                    try {
+                        const processedPhotoUrl = processImageUrl(playerPhotoUrl);
+                        if (processedPhotoUrl) {
+                            const imageResponse = await fetch(processedPhotoUrl);
+                            const imageBlob = await imageResponse.blob();
+                            const imageReader = new FileReader();
+
+                            const imageDataUrl = await new Promise<string>((resolve, reject) => {
+                                imageReader.onload = () => resolve(imageReader.result as string);
+                                imageReader.onerror = reject;
+                                imageReader.readAsDataURL(imageBlob);
+                            });
+
+                            const img = document.createElement('img');
+                            await new Promise<void>((resolve, reject) => {
+                                img.onload = () => resolve();
+                                img.onerror = reject;
+                                img.src = imageDataUrl;
+                            });
+
+                            const canvas = document.createElement('canvas');
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                                canvas.width = img.width;
+                                canvas.height = img.height;
+                                ctx.drawImage(img, 0, 0);
+                                const orientedImageDataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+                                const originalWidth = img.width;
+                                const originalHeight = img.height;
+                                const aspectRatio = originalWidth / originalHeight;
+
+                                const maxWidth = imageWidth - 2;
+                                const maxHeight = imageHeight - 2;
+
+                                let finalWidth, finalHeight;
+                                if (aspectRatio < 1) {
+                                    finalHeight = maxHeight;
+                                    finalWidth = maxHeight * aspectRatio;
+                                    if (finalWidth > maxWidth) {
+                                        finalWidth = maxWidth;
+                                        finalHeight = maxWidth / aspectRatio;
+                                    }
+                                } else {
+                                    finalWidth = maxWidth;
+                                    finalHeight = maxWidth / aspectRatio;
+                                    if (finalHeight > maxHeight) {
+                                        finalHeight = maxHeight;
+                                        finalWidth = maxHeight * aspectRatio;
+                                    }
+                                }
+
+                                const imageX = tableStartX + sNoWidth + (imageWidth - finalWidth) / 2;
+                                const imageY = yPosition + (imageRowHeight - finalHeight) / 2;
+
+                                pdf.addImage(orientedImageDataUrl, 'JPEG', imageX, imageY, finalWidth, finalHeight);
+                            }
+                        }
+                    } catch (imageError) {
+                        console.error(`Error loading image for ${player.player_name}:`, imageError);
+                    }
+                }
+
+                // Player Name
+                const playerText = player.player_name;
+                const maxNameWidth = nameWidth - 4;
+                let displayName = playerText;
+                const textWidth = pdf.getTextWidth(playerText);
+                if (textWidth > maxNameWidth) {
+                    let truncated = playerText;
+                    while (pdf.getTextWidth(truncated + '...') > maxNameWidth && truncated.length > 0) {
+                        truncated = truncated.slice(0, -1);
+                    }
+                    displayName = truncated + '...';
+                }
+                pdf.text(displayName, tableStartX + sNoWidth + imageWidth + 2, yPosition + currentRowHeight / 2);
+
+                // Bid Amount
+                const bidAmount = Number(player.bid_amount) || 0;
+                const bidText = formatNumber(bidAmount);
+                const maxAmountWidth = amountWidth - 4;
+                if (pdf.getTextWidth(bidText) > maxAmountWidth) {
+                    pdf.setFontSize(8);
+                }
+                const amountX = tableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
+                pdf.text(bidText, amountX, yPosition + currentRowHeight / 2, { align: 'right' });
+                pdf.setFontSize(9);
+
+                yPosition += currentRowHeight;
+            }
+
+            // Total row
+            if (yPosition > pageHeight - 20) {
+                pdf.addPage();
+                yPosition = margin;
+            }
+
+            pdf.setFillColor(240, 240, 240);
+            pdf.rect(tableStartX, yPosition, tableWidth, rowHeight, 'F');
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(10);
+            pdf.text('Total', tableStartX + sNoWidth + imageWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
+            const totalBidAmount = topPlayers.reduce((sum, p) => sum + (Number(p.bid_amount) || 0), 0);
+            const totalAmountText = formatNumber(totalBidAmount);
+            if (pdf.getTextWidth(totalAmountText) > amountWidth - 4) {
+                pdf.setFontSize(9);
+            }
+            const totalAmountX = tableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
+            pdf.text(totalAmountText, totalAmountX, yPosition + 5.5, { align: 'right' });
+
+            // Save PDF
+            const genderLabel = gender === 'M' ? 'Male' : 'Female';
+            pdf.save(`Top_5_Bidded_${genderLabel}_Players.pdf`);
+        } catch (error) {
+            console.error('Error generating PDF:', error);
+            alert('Failed to generate PDF. Please try again.');
+        } finally {
+            setPdfGeneratingTopPlayers(null);
+        }
+    };
+
     // Show loading state
     // Show loading only if user can view (or we're still checking access)
     if (authLoading) {
@@ -1607,6 +1946,51 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 </button>
                             </div>
                         ))}
+                    </div>
+
+                    {/* Top 5 Bidded Players PDF Downloads */}
+                    <div className="mt-8 bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
+                        <h2 className="text-2xl font-semibold text-gray-900 mb-4">Top 5 Bidded Players Reports</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button
+                                onClick={() => generateTopBiddedPlayersPDF('M')}
+                                disabled={pdfGeneratingTopPlayers === 'M'}
+                                className="w-full px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {pdfGeneratingTopPlayers === 'M' ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                        Generating PDF...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Download Top 5 Male Players PDF
+                                    </>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => generateTopBiddedPlayersPDF('F')}
+                                disabled={pdfGeneratingTopPlayers === 'F'}
+                                className="w-full px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {pdfGeneratingTopPlayers === 'F' ? (
+                                    <>
+                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                        Generating PDF...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Download Top 5 Female Players PDF
+                                    </>
+                                )}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Skipped Players Section */}
@@ -2290,6 +2674,49 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         No players found
                                     </div>
                                 )}
+
+                                {/* PDF Download Buttons */}
+                                <div className="mt-6 space-y-3 pt-4 border-t border-gray-200">
+                                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Download Top 5 Reports</h3>
+                                    <button
+                                        onClick={() => generateTopBiddedPlayersPDF('M')}
+                                        disabled={pdfGeneratingTopPlayers === 'M'}
+                                        className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {pdfGeneratingTopPlayers === 'M' ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                Generating PDF...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Top 5 Male Players PDF
+                                            </>
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={() => generateTopBiddedPlayersPDF('F')}
+                                        disabled={pdfGeneratingTopPlayers === 'F'}
+                                        className="w-full px-4 py-2.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {pdfGeneratingTopPlayers === 'F' ? (
+                                            <>
+                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                                Generating PDF...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                Top 5 Female Players PDF
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                             </>
                         );
                     })()}
