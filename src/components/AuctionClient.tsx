@@ -165,10 +165,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
     const [currentBid, setCurrentBid] = useState(MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
-    const [isTeamsSheetOpen, setIsTeamsSheetOpen] = useState(false);
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
     const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
     const [isTopPlayersSheetOpen, setIsTopPlayersSheetOpen] = useState(false);
+    const [isTeamDynamicsSheetOpen, setIsTeamDynamicsSheetOpen] = useState(false);
+    const [isPlayerListSheetOpen, setIsPlayerListSheetOpen] = useState(false);
+    const [playerListFilter, setPlayerListFilter] = useState<'All' | 'Sold' | 'Unsold'>('All');
+    const [selectedTeamFilters, setSelectedTeamFilters] = useState<Set<number>>(new Set()); // Empty set means "All" selected
     const [loadingState, setLoadingState] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
@@ -176,6 +179,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
     const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
+    const [originalPlayerPool, setOriginalPlayerPool] = useState<Player[]>([]); // Store original player pool for switching back
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
     const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<string | null>(null); // Track which top players PDF is generating ('male' or 'female')
 
@@ -373,6 +377,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 }));
 
                 setPlayers(mappedPlayers);
+                setOriginalPlayerPool(mappedPlayers); // Store original player pool
 
                 // Load teams
                 const { data: teamsData, error: teamsError } = await supabase
@@ -417,33 +422,55 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 );
                 setBoughtPlayerNames(boughtNames);
 
-                // Calculate skipped players (players in pool that were never bought)
-                if (finalSession.is_complete && mappedPlayers.length > 0) {
-                    const skipped = mappedPlayers.filter(
-                        player => !boughtNames.has(player.name)
-                    );
-                    setSkippedPlayers(skipped);
+                // Load skipped players from the dedicated table
+                const { data: skippedPlayersData, error: skippedError } = await supabase
+                    .from('auction_skipped_players')
+                    .select('player_pool_id, player_name, player_order')
+                    .eq('session_id', finalSession.id)
+                    .order('player_order', { ascending: true });
 
-                    // Only show skipped players if auction is complete AND there are skipped players
-                    // This means we've finished the main auction and are now auctioning skipped players
-                    if (skipped.length > 0) {
-                        setPlayers(skipped);
-                        setIsSkippedPlayersMode(true);
-                        // Reset current player index to 0 since we're starting skipped players auction
-                        setCurrentPlayerIndex(0);
-                        // Update session to reflect we're starting from index 0 for skipped players
-                        await supabase
-                            .from('auction_sessions')
-                            .update({ current_player_index: 0 })
-                            .eq('id', finalSession.id);
-                    } else {
-                        // No skipped players, show all players (auction is complete with all players bought)
-                        setPlayers(mappedPlayers);
-                        setIsSkippedPlayersMode(false);
-                    }
+                if (skippedError) {
+                    // Table might not exist yet, log but don't fail
+                    console.warn('Error fetching skipped players (table may not exist yet):', skippedError);
+                }
+
+                // Create a map of player pool IDs to player data for quick lookup
+                const playerPoolMap = new Map(
+                    (playerPoolData || []).map((p: Partial<DbPlayerPool> & { id: string; name: string }) => [p.id, p])
+                );
+
+                // Map skipped players from the table
+                const skippedFromTable: Player[] = (skippedPlayersData || [])
+                    .map((sp: { player_pool_id: string; player_name: string }) => {
+                        const poolPlayer = playerPoolMap.get(sp.player_pool_id);
+                        if (!poolPlayer) return null;
+                        return {
+                            name: poolPlayer.name,
+                            photo: poolPlayer.photo || undefined,
+                            age: poolPlayer.age || undefined,
+                            played_s1: poolPlayer.played_s1 || undefined,
+                            experience: poolPlayer.experience || undefined,
+                            active_sport: poolPlayer.active_sport || undefined,
+                            skill: poolPlayer.skill || undefined,
+                            batting_hand: poolPlayer.batting_hand || undefined
+                        } as Player;
+                    })
+                    .filter((p): p is Player => p !== null);
+
+                setSkippedPlayers(skippedFromTable);
+
+                // If auction is complete and we have skipped players, show them
+                if (finalSession.is_complete && skippedFromTable.length > 0) {
+                    setPlayers(skippedFromTable);
+                    setIsSkippedPlayersMode(true);
+                    setCurrentPlayerIndex(0);
+                    // Update session to reflect we're starting from index 0 for skipped players
+                    await supabase
+                        .from('auction_sessions')
+                        .update({ current_player_index: 0 })
+                        .eq('id', finalSession.id);
                 } else {
-                    // Auction is not complete, show all players normally
-                    setSkippedPlayers([]);
+                    // Show all players normally
                     setPlayers(mappedPlayers);
                     setIsSkippedPlayersMode(false);
                 }
@@ -599,19 +626,107 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
 
 
-    // Get current skipped players
+    // Get current skipped players - now simply returns from state (loaded from table)
     const getCurrentSkippedPlayers = useCallback(() => {
-        // If auction is complete, return all players that were never bought
-        if (auctionComplete) {
-            return players.filter(player => !boughtPlayerNames.has(player.name));
+        return skippedPlayers;
+    }, [skippedPlayers]);
+
+    // Get all unbidded players (players that were never bought, regardless of whether they were skipped)
+    const getAllUnbiddedPlayers = useCallback(() => {
+        if (originalPlayerPool.length === 0) return [];
+        return originalPlayerPool.filter(player => !boughtPlayerNames.has(player.name));
+    }, [originalPlayerPool, boughtPlayerNames]);
+
+    // Switch to unbidded players mode
+    const handleSwitchToUnbiddedPlayers = async () => {
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
         }
 
-        // If auction is in progress, only return players that have been processed (index < currentPlayerIndex) but not bought
-        // This gives the list of players that were skipped during the auction so far
-        return players
-            .slice(0, currentPlayerIndex)
-            .filter(player => !boughtPlayerNames.has(player.name));
-    }, [players, boughtPlayerNames, auctionComplete, currentPlayerIndex]);
+        try {
+            const unbiddedList = getAllUnbiddedPlayers();
+            if (unbiddedList.length === 0) {
+                alert('No unbidded players available.');
+                return;
+            }
+
+            setPlayers(unbiddedList);
+            setIsSkippedPlayersMode(false);
+            setCurrentPlayerIndex(0);
+
+            await supabase
+                .from('auction_sessions')
+                .update({ current_player_index: 0 })
+                .eq('id', sessionId);
+
+            const newMinimum = MINIMUM_BID;
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
+        } catch (error) {
+            console.error('Error switching to unbidded players:', error);
+            alert('Failed to switch to unbidded players. Please try again.');
+        }
+    };
+
+    // Switch to skipped players mode
+    const handleSwitchToSkippedPlayers = async () => {
+        if (!sessionId) {
+            alert('Auction session not loaded. Please refresh the page.');
+            return;
+        }
+
+        try {
+            const skippedList = skippedPlayers.length > 0
+                ? skippedPlayers
+                : getCurrentSkippedPlayers();
+
+            if (skippedList.length === 0) {
+                alert('No skipped players available.');
+                return;
+            }
+
+            setPlayers(skippedList);
+            setIsSkippedPlayersMode(true);
+            setCurrentPlayerIndex(0);
+
+            await supabase
+                .from('auction_sessions')
+                .update({ current_player_index: 0 })
+                .eq('id', sessionId);
+
+            const newMinimum = MINIMUM_BID;
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
+        } catch (error) {
+            console.error('Error switching to skipped players:', error);
+            alert('Failed to switch to skipped players. Please try again.');
+        }
+    };
+
+    // Get players list based on filter (All, Sold, Unsold) in random order
+    const getFilteredPlayersList = useCallback(() => {
+        if (originalPlayerPool.length === 0) return [];
+
+        let filtered: Player[] = [];
+
+        if (playerListFilter === 'All') {
+            filtered = [...originalPlayerPool];
+        } else if (playerListFilter === 'Sold') {
+            filtered = originalPlayerPool.filter(player => boughtPlayerNames.has(player.name));
+        } else if (playerListFilter === 'Unsold') {
+            filtered = originalPlayerPool.filter(player => !boughtPlayerNames.has(player.name));
+        }
+
+        // Shuffle array randomly
+        const shuffled = [...filtered];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+
+        return shuffled;
+    }, [originalPlayerPool, boughtPlayerNames, playerListFilter]);
 
     // Freeze skipped players list when sheet opens
     useEffect(() => {
@@ -792,6 +907,25 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             // Immediately update boughtPlayerNames to prevent player from appearing in skipped list
             setBoughtPlayerNames(prev => new Set([...prev, currentPlayer.name]));
 
+            // Remove from skipped_players table if player was previously skipped
+            const { data: playerPoolData } = await supabase
+                .from('auction_player_pool')
+                .select('id')
+                .eq('session_id', sessionId)
+                .eq('name', currentPlayer.name)
+                .single();
+
+            if (playerPoolData) {
+                await supabase
+                    .from('auction_skipped_players')
+                    .delete()
+                    .eq('session_id', sessionId)
+                    .eq('player_pool_id', playerPoolData.id);
+
+                // Update local skipped players state
+                setSkippedPlayers(prev => prev.filter(p => p.name !== currentPlayer.name));
+            }
+
             // Update team budget
             const newBudget = Number(team.budget) - Number(currentBid);
 
@@ -853,87 +987,120 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
 
         try {
+            const currentPlayer = players[currentPlayerIndex];
+            if (!currentPlayer) {
+                alert('No player to skip.');
+                return;
+            }
+
+            // Get the player pool ID for the current player
+            const { data: playerPoolData } = await supabase
+                .from('auction_player_pool')
+                .select('id, player_order')
+                .eq('session_id', sessionId)
+                .eq('name', currentPlayer.name)
+                .single();
+
+            if (playerPoolData) {
+                // Insert into skipped_players table
+                const { error: skipError } = await supabase
+                    .from('auction_skipped_players')
+                    .insert({
+                        session_id: sessionId,
+                        player_pool_id: playerPoolData.id,
+                        player_name: currentPlayer.name,
+                        player_order: playerPoolData.player_order
+                    });
+
+                if (skipError) {
+                    // If it's a unique constraint error, player is already in the table (ignore)
+                    if (skipError.code !== '23505') {
+                        console.error('Error inserting skipped player:', skipError);
+                        throw skipError;
+                    }
+                } else {
+                    // Add to local state
+                    setSkippedPlayers(prev => [...prev, currentPlayer]);
+                }
+            }
+
             // Check if this is the last player
             const isLastPlayer = currentPlayerIndex >= players.length - 1;
 
             if (isLastPlayer) {
-                // When skipping the last player, check for skipped players
-                // Get all bought players to calculate skipped ones
-                const { data: boughtPlayersData } = await supabase
-                    .from('auction_players')
-                    .select('player_name')
-                    .eq('session_id', sessionId);
+                // Mark auction as complete
+                setAuctionComplete(true);
+                await supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_player_index: currentPlayerIndex,
+                        is_complete: true
+                    })
+                    .eq('id', sessionId);
 
-                const boughtPlayerNames = new Set(
-                    (boughtPlayersData || []).map((p: { player_name: string }) => p.player_name)
-                );
+                // Reload skipped players from table to get final list
+                const { data: skippedData } = await supabase
+                    .from('auction_skipped_players')
+                    .select('player_pool_id, player_name, player_order')
+                    .eq('session_id', sessionId)
+                    .order('player_order', { ascending: true });
 
-                // Calculate skipped players (all players that were not bought)
-                const skippedPlayersList = players.filter(
-                    player => !boughtPlayerNames.has(player.name)
-                );
+                if (skippedData && skippedData.length > 0) {
+                    // Get player pool data to map skipped players
+                    const { data: allPoolData } = await supabase
+                        .from('auction_player_pool')
+                        .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                        .eq('session_id', sessionId);
 
-                if (skippedPlayersList.length > 0) {
-                    // Switch to skipped players mode
-                    if (!isSkippedPlayersMode && allPlayers.length === 0) {
-                        setAllPlayers([...players]);
+                    const poolMap = new Map(
+                        (allPoolData || []).map((p: any) => [p.id, p])
+                    );
+
+                    const skippedList: Player[] = skippedData
+                        .map((sp: any) => {
+                            const poolPlayer = poolMap.get(sp.player_pool_id);
+                            if (!poolPlayer) return null;
+                            return {
+                                name: poolPlayer.name,
+                                photo: poolPlayer.photo || undefined,
+                                age: poolPlayer.age || undefined,
+                                played_s1: poolPlayer.played_s1 || undefined,
+                                experience: poolPlayer.experience || undefined,
+                                active_sport: poolPlayer.active_sport || undefined,
+                                skill: poolPlayer.skill || undefined,
+                                batting_hand: poolPlayer.batting_hand || undefined
+                            } as Player;
+                        })
+                        .filter((p): p is Player => p !== null);
+
+                    if (skippedList.length > 0) {
+                        setPlayers(skippedList);
+                        setSkippedPlayers(skippedList);
+                        setIsSkippedPlayersMode(true);
+                        setCurrentPlayerIndex(0);
+                        await supabase
+                            .from('auction_sessions')
+                            .update({ current_player_index: 0 })
+                            .eq('id', sessionId);
                     }
-                    setPlayers(skippedPlayersList);
-                    setCurrentPlayerIndex(0);
-                    setSkippedPlayers(skippedPlayersList);
-                    setIsSkippedPlayersMode(true);
-
-                    // Update database to start from index 0 for skipped players
-                    await supabase
-                        .from('auction_sessions')
-                        .update({
-                            current_player_index: 0
-                        })
-                        .eq('id', sessionId);
-
-                    // Reset UI state for first skipped player
-                    const newMinimum = MINIMUM_BID;
-                    setCurrentBid(newMinimum);
-                    setSelectedTeamId(null);
-                } else {
-                    // No skipped players, mark auction as complete
-                    const finalIndex = players.length - 1;
-                    setCurrentPlayerIndex(finalIndex);
-                    setAuctionComplete(true);
-
-                    await supabase
-                        .from('auction_sessions')
-                        .update({
-                            current_player_index: finalIndex,
-                            is_complete: true
-                        })
-                        .eq('id', sessionId);
                 }
             } else {
                 // Move to next player
                 const nextIndex = currentPlayerIndex + 1;
-
-                // Update local state immediately for instant UI update
                 setCurrentPlayerIndex(nextIndex);
-
-                // Update database
                 await supabase
                     .from('auction_sessions')
-                    .update({
-                        current_player_index: nextIndex
-                    })
+                    .update({ current_player_index: nextIndex })
                     .eq('id', sessionId);
-
-                // Reset UI state
-                const newMinimum = MINIMUM_BID;
-                setCurrentBid(newMinimum);
-                setSelectedTeamId(null);
             }
+
+            // Reset UI state
+            const newMinimum = MINIMUM_BID;
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
         } catch (error) {
             console.error('Error skipping player:', error);
             alert('Failed to save auction state. Please try again.');
-            // Revert local state on error
-            // The real-time subscription will sync the correct state
         }
     };
 
@@ -1028,19 +1195,45 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 })
                 .eq('id', sessionId);
 
-            // Calculate skipped players
-            const { data: boughtPlayersData } = await supabase
-                .from('auction_players')
-                .select('player_name')
-                .eq('session_id', sessionId);
+            // Load skipped players from table
+            const { data: skippedData } = await supabase
+                .from('auction_skipped_players')
+                .select('player_pool_id, player_name, player_order')
+                .eq('session_id', sessionId)
+                .order('player_order', { ascending: true });
 
-            const boughtPlayerNames = new Set(
-                (boughtPlayersData || []).map((p: { player_name: string }) => p.player_name)
-            );
-            const skipped = players.filter(
-                player => !boughtPlayerNames.has(player.name)
-            );
-            setSkippedPlayers(skipped);
+            if (skippedData && skippedData.length > 0) {
+                // Get player pool data to map skipped players
+                const { data: allPoolData } = await supabase
+                    .from('auction_player_pool')
+                    .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                    .eq('session_id', sessionId);
+
+                const poolMap = new Map(
+                    (allPoolData || []).map((p: any) => [p.id, p])
+                );
+
+                const skippedList: Player[] = skippedData
+                    .map((sp: any) => {
+                        const poolPlayer = poolMap.get(sp.player_pool_id);
+                        if (!poolPlayer) return null;
+                        return {
+                            name: poolPlayer.name,
+                            photo: poolPlayer.photo || undefined,
+                            age: poolPlayer.age || undefined,
+                            played_s1: poolPlayer.played_s1 || undefined,
+                            experience: poolPlayer.experience || undefined,
+                            active_sport: poolPlayer.active_sport || undefined,
+                            skill: poolPlayer.skill || undefined,
+                            batting_hand: poolPlayer.batting_hand || undefined
+                        } as Player;
+                    })
+                    .filter((p): p is Player => p !== null);
+
+                setSkippedPlayers(skippedList);
+            } else {
+                setSkippedPlayers([]);
+            }
 
             setAuctionComplete(true);
             alert('Auction ended successfully!');
@@ -2136,6 +2329,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             <span className="hidden sm:inline">Top 5</span>
                         </button>
                         <button
+                            onClick={() => setIsTeamDynamicsSheetOpen(true)}
+                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
+                            title="Team Dynamics"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            <span className="hidden sm:inline">Team Dynamics</span>
+                        </button>
+                        <button
                             onClick={() => setIsSkippedPlayersSheetOpen(true)}
                             className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
                             title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
@@ -2146,11 +2349,43 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
                             <span className="sm:hidden">({getCurrentSkippedPlayers().length})</span>
                         </button>
+                        {/* Mode switcher buttons - show when auction is complete */}
+                        {auctionComplete && canEdit && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleSwitchToUnbiddedPlayers}
+                                    className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${!isSkippedPlayersMode
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    title="Switch to All Unbidded Players"
+                                >
+                                    <span className="hidden sm:inline">All Unbidded</span>
+                                    <span className="sm:hidden">All</span>
+                                </button>
+                                <button
+                                    onClick={handleSwitchToSkippedPlayers}
+                                    className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${isSkippedPlayersMode
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                    title="Switch to Skipped Players Only"
+                                >
+                                    <span className="hidden sm:inline">Skipped Only</span>
+                                    <span className="sm:hidden">Skipped</span>
+                                </button>
+                            </div>
+                        )}
                         <button
-                            onClick={() => setIsTeamsSheetOpen(true)}
-                            className="md:hidden text-red-600 hover:text-red-700 font-medium text-xs md:text-sm"
+                            onClick={() => setIsPlayerListSheetOpen(true)}
+                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
+                            title="View All Players"
                         >
-                            Teams
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            <span className="hidden sm:inline">Players List</span>
+                            <span className="sm:hidden">List</span>
                         </button>
                         {canEdit && !auctionComplete && (
                             <button
@@ -2170,87 +2405,58 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
             <div className="w-full px-2 md:px-3 py-4">
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 items-start">
-                    {/* Left Sidebar - Teams Overview (Desktop) */}
+                    {/* Left Sidebar - Team Selection (Desktop) */}
                     <div className="hidden lg:block lg:col-span-1">
                         <div className="bg-white rounded-xl border-2 border-gray-200 p-4 md:p-5 space-y-4">
-                            {/* Team Dynamics Section */}
+                            {/* Select Team Section */}
                             <div>
-                                <h2 className="text-xl font-bold text-gray-900 mb-4">Team Dynamics</h2>
-
-                                {/* Teams List */}
-                                <div className="space-y-3">
+                                <h2 className="text-xl font-bold text-gray-900 mb-4">Select Team</h2>
+                                <div className="grid grid-cols-2 gap-3">
                                     {teams.map(team => {
-                                        // Calculate spent as sum of all player bid amounts (more accurate)
-                                        const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
-                                        const initialBudget = team.budget + totalSpent;
+                                        const canAfford = team.budget >= currentBid;
+                                        const hasSpace = team.players.length < PLAYERS_PER_TEAM;
+                                        const isDisabled = !canAfford || !hasSpace;
+
+                                        const isViewOnly = !canEdit;
+                                        const finalDisabled = isDisabled || isViewOnly;
 
                                         return (
-                                            <div key={team.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div className="flex items-center gap-2">
-                                                        <Image
-                                                            key={`team-budget-${team.id}-${sessionName || 'default'}`}
-                                                            src={getTeamLogo(team.id, sessionName)}
-                                                            alt={`${team.name} logo`}
-                                                            width={32}
-                                                            height={32}
-                                                            unoptimized
-                                                            className="object-contain flex-shrink-0"
-                                                        />
-                                                        <div className="min-w-0 flex-1">
-                                                            <h3 className="font-semibold text-gray-900 text-sm break-normal leading-tight">{team.name}</h3>
-                                                            <div className="text-xs text-gray-500 mt-0.5">
-                                                                {team.players.length}/{PLAYERS_PER_TEAM} players
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-xs font-medium text-gray-600">Remaining</div>
-                                                        <div className="text-sm font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
-                                                    </div>
+                                            <button
+                                                key={team.id}
+                                                onClick={() => !finalDisabled && setSelectedTeamId(team.id)}
+                                                disabled={finalDisabled}
+                                                className={`p-3 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
+                                                    ? 'border-red-600 bg-red-50 shadow-md'
+                                                    : finalDisabled
+                                                        ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <Image
+                                                        key={`team-${team.id}-${sessionName || 'default'}`}
+                                                        src={getTeamLogo(team.id, sessionName)}
+                                                        alt={`${team.name} logo`}
+                                                        width={32}
+                                                        height={32}
+                                                        className="object-contain flex-shrink-0"
+                                                        unoptimized
+                                                    />
+                                                    <div className="font-semibold text-gray-900 text-sm break-normal min-w-0 flex-1 leading-tight">{team.name}</div>
                                                 </div>
-
-                                                {/* Budget Progress */}
-                                                <div className="mb-2">
-                                                    <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                                        <div
-                                                            className="bg-red-600 h-1.5 rounded-full transition-all"
-                                                            style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
-                                                        ></div>
-                                                    </div>
+                                                <div className="text-xs text-gray-600 mb-1">
+                                                    Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
-
-                                                {/* Owner Name */}
-                                                {team.ownerName && (
-                                                    <div className="mb-2">
-                                                        <div className="flex-1 rounded p-1.5 text-center bg-white border border-gray-200">
-                                                            <div className="text-xs text-gray-600">Owner</div>
-                                                            <div className="text-xs font-semibold text-gray-900">{team.ownerName}</div>
-                                                        </div>
-                                                    </div>
+                                                <div className="text-xs text-gray-600 mb-1">
+                                                    Players: {team.players.length}/{PLAYERS_PER_TEAM}
+                                                </div>
+                                                {!canAfford && (
+                                                    <div className="text-xs text-red-600 mt-1">Insufficient budget</div>
                                                 )}
-
-                                                {/* Players List */}
-                                                {team.players.length > 0 ? (
-                                                    <div className="border-t border-gray-200 pt-2 mt-2">
-                                                        <div className="text-xs font-semibold text-gray-600 mb-1.5">Players:</div>
-                                                        <div className="space-y-1 max-h-32 overflow-y-auto">
-                                                            {team.players.map((player, idx) => (
-                                                                <div key={idx} className="flex justify-between items-center text-xs py-0.5">
-                                                                    <span className="text-gray-700">
-                                                                        {player.name}
-                                                                    </span>
-                                                                    <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <div className="text-xs text-gray-400 text-center py-1 border-t border-gray-200 mt-2 pt-2">
-                                                        No players yet
-                                                    </div>
+                                                {!hasSpace && (
+                                                    <div className="text-xs text-red-600 mt-1">Team full</div>
                                                 )}
-                                            </div>
+                                            </button>
                                         );
                                     })}
                                 </div>
@@ -2386,80 +2592,145 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
 
                         {/* Bid Amount */}
-                        <div className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
-                            <div className="text-lg font-semibold text-gray-900 mb-4">Bid Amount</div>
+                        <div className="bg-white border-2 border-gray-200 rounded-xl p-4 md:p-6 shadow-sm">
                             {!canEdit && (
-                                <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
+                                <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
                                     View-only mode - You can watch the auction live
                                 </div>
                             )}
-                            <div className="flex items-center justify-center gap-6 mb-4">
-                                <button
-                                    onClick={handleBidDecrease}
-                                    disabled={!canEdit || currentBid <= currentMinimumBid}
-                                    className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
-                                >
-                                    −
-                                </button>
-                                <div className="text-5xl font-bold text-gray-900">₹{currentBid.toLocaleString()}</div>
-                                <button
-                                    onClick={handleBidIncrease}
-                                    disabled={!canEdit}
-                                    className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
-                                >
-                                    +
-                                </button>
-                            </div>
+                            <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                                {/* Left side - Bid Amount controls */}
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-center gap-6 mb-3">
+                                        <button
+                                            onClick={handleBidDecrease}
+                                            disabled={!canEdit || currentBid <= currentMinimumBid}
+                                            className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
+                                        >
+                                            −
+                                        </button>
+                                        <div className="text-5xl font-bold text-gray-900">₹{currentBid.toLocaleString()}</div>
+                                        <button
+                                            onClick={handleBidIncrease}
+                                            disabled={!canEdit}
+                                            className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
 
-                            {/* Custom Bid Input */}
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Enter Custom Bid Amount</label>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-gray-500">₹</span>
-                                    <input
-                                        type="text"
-                                        value={bidInputValue}
-                                        onChange={handleBidInputChange}
-                                        onBlur={handleBidInputBlur}
+                                    {/* Custom Bid Input */}
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Enter Custom Bid Amount</label>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-gray-500">₹</span>
+                                            <input
+                                                type="text"
+                                                value={bidInputValue}
+                                                onChange={handleBidInputChange}
+                                                onBlur={handleBidInputBlur}
+                                                disabled={!canEdit}
+                                                className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg text-lg font-semibold text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                placeholder="Enter amount"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="text-sm text-gray-500 text-center">
+                                        Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
+                                    </div>
+                                </div>
+
+                                {/* Right side - Action Buttons */}
+                                <div className="flex flex-col gap-3 md:gap-4 justify-start md:min-w-[200px]">
+                                    <button
+                                        onClick={handleSkip}
                                         disabled={!canEdit}
-                                        className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg text-lg font-semibold text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        placeholder="Enter amount"
-                                    />
+                                        className="w-full py-3 md:py-4 px-4 md:px-6 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                    >
+                                        Skip Player
+                                    </button>
+                                    <button
+                                        onClick={handleBuyPlayer}
+                                        disabled={!canEdit || !selectedTeamId}
+                                        className="w-full py-3 md:py-4 px-4 md:px-6 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                    >
+                                        Buy Player
+                                    </button>
                                 </div>
                             </div>
-
-                            <div className="text-sm text-gray-500 text-center">
-                                Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
-                            </div>
                         </div>
+                    </div>
+                </div>
+            </div>
 
-                        {/* Team Selection */}
-                        <div className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
-                            <div className="text-lg font-semibold text-gray-900 mb-4">Select Team</div>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {teams.map(team => {
-                                    const canAfford = team.budget >= currentBid;
-                                    const hasSpace = team.players.length < PLAYERS_PER_TEAM;
-                                    const isDisabled = !canAfford || !hasSpace;
+            {/* Team Dynamics Bottom Sheet */}
+            <BottomSheet
+                isOpen={isTeamDynamicsSheetOpen}
+                onClose={() => {
+                    setIsTeamDynamicsSheetOpen(false);
+                    setSelectedTeamFilters(new Set()); // Reset filters when closing
+                }}
+                title="Team Dynamics"
+            >
+                <div className="space-y-4">
+                    {/* Team Filter */}
+                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div className="text-xs font-semibold text-gray-700 mb-2">Filter Teams:</div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => setSelectedTeamFilters(new Set())}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
+                                    ? 'bg-red-600 text-white'
+                                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                    }`}
+                            >
+                                All
+                            </button>
+                            {teams.map(team => (
+                                <button
+                                    key={team.id}
+                                    onClick={() => {
+                                        const newFilters = new Set(selectedTeamFilters);
+                                        if (newFilters.has(team.id)) {
+                                            newFilters.delete(team.id);
+                                        } else {
+                                            newFilters.add(team.id);
+                                        }
+                                        setSelectedTeamFilters(newFilters);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedTeamFilters.has(team.id)}
+                                        onChange={() => { }} // Handled by button onClick
+                                        className="w-3 h-3"
+                                    />
+                                    <span className="truncate max-w-[80px]">{team.name}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
 
-                                    const isViewOnly = !canEdit;
-                                    const finalDisabled = isDisabled || isViewOnly;
+                    {/* Teams List */}
+                    <div className="space-y-3">
+                        {teams
+                            .filter(team => selectedTeamFilters.size === 0 || selectedTeamFilters.has(team.id))
+                            .map(team => {
+                                // Calculate spent as sum of all player bid amounts (more accurate)
+                                const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
+                                const initialBudget = team.budget + totalSpent;
 
-                                    return (
-                                        <button
-                                            key={team.id}
-                                            onClick={() => !finalDisabled && setSelectedTeamId(team.id)}
-                                            disabled={finalDisabled}
-                                            className={`p-4 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
-                                                ? 'border-red-600 bg-red-50 shadow-md'
-                                                : finalDisabled
-                                                    ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                                                    : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-                                                }`}
-                                        >
-                                            <div className="flex items-center gap-3 mb-2">
+                                return (
+                                    <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div className="flex items-center gap-3">
                                                 <Image
-                                                    key={`team-${team.id}-${sessionName || 'default'}`}
+                                                    key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
                                                     src={getTeamLogo(team.id, sessionName)}
                                                     alt={`${team.name} logo`}
                                                     width={40}
@@ -2467,144 +2738,66 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     className="object-contain flex-shrink-0"
                                                     unoptimized
                                                 />
-                                                <div className="font-semibold text-gray-900 text-sm md:text-base break-normal min-w-0 flex-1 leading-tight">{team.name}</div>
-                                            </div>
-                                            <div className="text-sm text-gray-600 mb-1">
-                                                Budget: ₹{team.budget.toLocaleString()}
-                                            </div>
-                                            <div className="text-sm text-gray-600 mb-2">
-                                                Players: {team.players.length}/{PLAYERS_PER_TEAM}
-                                            </div>
-                                            {!canAfford && (
-                                                <div className="text-xs text-red-600 mt-1">Insufficient budget</div>
-                                            )}
-                                            {!hasSpace && (
-                                                <div className="text-xs text-red-600 mt-1">Team full</div>
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 md:static md:border-0 md:bg-transparent md:p-0 flex gap-4 md:gap-6 z-10 md:z-auto md:left-auto md:right-auto">
-                            <button
-                                onClick={handleSkip}
-                                disabled={!canEdit}
-                                className="flex-1 py-3 md:py-4 px-4 md:px-6 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
-                            >
-                                Skip Player
-                            </button>
-                            <button
-                                onClick={handleBuyPlayer}
-                                disabled={!canEdit || !selectedTeamId}
-                                className="flex-1 py-3 md:py-4 px-4 md:px-6 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
-                            >
-                                Buy Player
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Teams Overview Bottom Sheet */}
-            <BottomSheet
-                isOpen={isTeamsSheetOpen}
-                onClose={() => setIsTeamsSheetOpen(false)}
-                title="Team Dynamics"
-            >
-                <div className="space-y-4">
-                    {/* Teams List */}
-                    <div className="space-y-3">
-                        {teams.map(team => {
-                            // Calculate spent as sum of all player bid amounts (more accurate than using TOTAL_AMOUNT)
-                            const totalSpent = team.players.reduce((sum, player) => sum + (player.bidAmount || 0), 0);
-                            const avgPlayerCost = team.players.length > 0 ? totalSpent / team.players.length : 0;
-                            // Calculate initial budget: remaining + spent
-                            const initialBudget = team.budget + totalSpent;
-
-                            return (
-                                <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-4">
-                                    <div className="flex justify-between items-start mb-3">
-                                        <div className="flex items-center gap-3">
-                                            <Image
-                                                key={`team-top-${team.id}-${sessionName || 'default'}`}
-                                                src={getTeamLogo(team.id, sessionName)}
-                                                alt={`${team.name} logo`}
-                                                width={40}
-                                                height={40}
-                                                className="object-contain flex-shrink-0"
-                                                unoptimized
-                                            />
-                                            <div className="min-w-0 flex-1">
-                                                <h3 className="text-base md:text-lg font-semibold text-gray-900 break-normal leading-tight">{team.name}</h3>
-                                                <div className="text-xs text-gray-500 mt-1">
-                                                    {team.players.length} / {PLAYERS_PER_TEAM} players
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-sm font-medium text-gray-600">Remaining</div>
-                                            <div className="text-lg font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
-                                        </div>
-                                    </div>
-
-                                    {/* Budget Progress */}
-                                    <div className="mb-3">
-                                        <div className="flex justify-between text-xs text-gray-600 mb-1">
-                                            <span>Spent: ₹{totalSpent.toLocaleString()}</span>
-                                            <span>{initialBudget > 0 ? ((totalSpent / initialBudget) * 100).toFixed(1) : '0.0'}%</span>
-                                        </div>
-                                        <div className="w-full bg-gray-200 rounded-full h-2">
-                                            <div
-                                                className="bg-red-600 h-2 rounded-full transition-all"
-                                                style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-
-                                    {/* Owner Name */}
-                                    {team.ownerName && (
-                                        <div className="mb-3">
-                                            <div className="flex-1 rounded-lg p-2 text-center bg-gray-100 border border-gray-200">
-                                                <div className="text-xs text-gray-600">Owner</div>
-                                                <div className="text-sm font-semibold text-gray-900">{team.ownerName}</div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Players List */}
-                                    {team.players.length > 0 ? (
-                                        <div className="border-t border-gray-200 pt-3">
-                                            <div className="text-xs font-semibold text-gray-600 mb-2">Players:</div>
-                                            <div className="space-y-1 max-h-32 overflow-y-auto">
-                                                {team.players.map((player, idx) => (
-                                                    <div key={idx} className="flex justify-between items-center text-sm py-1">
-                                                        <span className="text-gray-700">
-                                                            {player.name}
-                                                        </span>
-                                                        <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                <div className="min-w-0 flex-1">
+                                                    <h3 className="text-base md:text-lg font-semibold text-gray-900 break-normal leading-tight">{team.name}</h3>
+                                                    <div className="text-xs text-gray-500 mt-1">
+                                                        {team.players.length} / {PLAYERS_PER_TEAM} players
                                                     </div>
-                                                ))}
-                                            </div>
-                                            {avgPlayerCost > 0 && (
-                                                <div className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100">
-                                                    Avg. Cost: ₹{Math.round(avgPlayerCost).toLocaleString()}
                                                 </div>
-                                            )}
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-sm font-medium text-gray-600">Remaining</div>
+                                                <div className="text-lg font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
+                                            </div>
                                         </div>
-                                    ) : (
-                                        <div className="text-sm text-gray-400 text-center py-2 border-t border-gray-200 pt-3">
-                                            No players yet
+
+                                        {/* Budget Progress */}
+                                        <div className="mb-3">
+                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                                <div
+                                                    className="bg-red-600 h-2 rounded-full transition-all"
+                                                    style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
+                                                ></div>
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+
+                                        {/* Owner Name */}
+                                        {team.ownerName && (
+                                            <div className="mb-3">
+                                                <div className="flex-1 rounded-lg p-2 text-center bg-gray-100 border border-gray-200">
+                                                    <div className="text-xs text-gray-600">Owner</div>
+                                                    <div className="text-sm font-semibold text-gray-900">{team.ownerName}</div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Players List */}
+                                        {team.players.length > 0 ? (
+                                            <div className="border-t border-gray-200 pt-3">
+                                                <div className="text-xs font-semibold text-gray-600 mb-2">Players:</div>
+                                                <div className="space-y-1 max-h-32 overflow-y-auto">
+                                                    {team.players.map((player, idx) => (
+                                                        <div key={idx} className="flex justify-between items-center text-sm py-1">
+                                                            <span className="text-gray-700">
+                                                                {player.name}
+                                                            </span>
+                                                            <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="text-sm text-gray-400 text-center py-2 border-t border-gray-200 pt-3">
+                                                No players yet
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                     </div>
                 </div>
             </BottomSheet>
+
 
             {/* Top 5 Bidded Players Bottom Sheet */}
             <BottomSheet
@@ -2831,6 +3024,85 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 </button>
                             </div>
                         ) : null;
+                    })()}
+                </div>
+            </BottomSheet>
+
+            {/* Players List Bottom Sheet */}
+            <BottomSheet
+                isOpen={isPlayerListSheetOpen}
+                onClose={() => setIsPlayerListSheetOpen(false)}
+                title="Players List"
+            >
+                <div className="pb-6">
+                    {/* Filter Buttons */}
+                    <div className="mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div className="text-xs font-semibold text-gray-700 mb-2">Filter:</div>
+                        <div className="flex flex-wrap gap-2">
+                            {(['All', 'Sold', 'Unsold'] as const).map((filter) => (
+                                <button
+                                    key={filter}
+                                    onClick={() => setPlayerListFilter(filter)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${playerListFilter === filter
+                                        ? 'bg-red-600 text-white'
+                                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                        }`}
+                                >
+                                    {filter}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Players List */}
+                    {(() => {
+                        const filteredPlayers = getFilteredPlayersList();
+                        return filteredPlayers.length > 0 ? (
+                            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                                {filteredPlayers.map((player, idx) => {
+                                    const isSold = boughtPlayerNames.has(player.name);
+                                    // Get team info for sold players
+                                    const playerTeam = isSold
+                                        ? teams.find(team => team.players.some(p => p.name === player.name))
+                                        : null;
+                                    const bidAmount = playerTeam?.players.find(p => p.name === player.name)?.bidAmount;
+
+                                    return (
+                                        <div
+                                            key={`${player.name}-${idx}`}
+                                            className={`border rounded-lg p-3 ${isSold
+                                                ? 'bg-green-50 border-green-200'
+                                                : 'bg-gray-50 border-gray-200'
+                                                }`}
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="font-semibold text-gray-900">{player.name}</div>
+                                                    {isSold && playerTeam && (
+                                                        <div className="text-xs text-gray-600 mt-1">
+                                                            Sold to {playerTeam.name} for ₹{bidAmount?.toLocaleString() || '0'}
+                                                        </div>
+                                                    )}
+                                                    {!isSold && (
+                                                        <div className="text-xs text-gray-500 mt-1">Unsold</div>
+                                                    )}
+                                                </div>
+                                                <div className={`px-2 py-1 rounded text-xs font-medium ${isSold
+                                                    ? 'bg-green-100 text-green-700'
+                                                    : 'bg-gray-100 text-gray-600'
+                                                    }`}>
+                                                    {isSold ? 'Sold' : 'Unsold'}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-gray-500">
+                                No players found
+                            </div>
+                        );
                     })()}
                 </div>
             </BottomSheet>
