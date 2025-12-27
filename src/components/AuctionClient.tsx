@@ -352,6 +352,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 setCurrentPlayerIndex(finalSession.current_player_index);
                 setAuctionComplete(finalSession.is_complete);
 
+                // Load current bid amount and selected team from database
+                const sessionBidAmount = (finalSession as any).current_bid_amount;
+                const sessionBidTeamId = (finalSession as any).current_bid_team_id;
+                if (sessionBidAmount !== undefined && sessionBidAmount !== null) {
+                    setCurrentBid(Number(sessionBidAmount));
+                }
+                if (sessionBidTeamId !== undefined && sessionBidTeamId !== null) {
+                    setSelectedTeamId(Number(sessionBidTeamId));
+                }
+
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
@@ -545,9 +555,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 filter: `id=eq.${sessionId}`
             }, (payload) => {
                 if (payload.new) {
-                    const session = payload.new as { current_player_index: number; is_complete: boolean };
+                    const session = payload.new as { current_player_index: number; is_complete: boolean; current_bid_amount?: number; current_bid_team_id?: number };
                     setCurrentPlayerIndex(session.current_player_index);
                     setAuctionComplete(session.is_complete);
+                    // Update bid amount if it changed (only if different to avoid loops)
+                    if (session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
+                        const newBidAmount = Number(session.current_bid_amount);
+                        if (newBidAmount !== currentBid) {
+                            setCurrentBid(newBidAmount);
+                        }
+                    }
+                    // Update selected team if it changed
+                    if (session.current_bid_team_id !== undefined) {
+                        const newTeamId = session.current_bid_team_id === null ? null : Number(session.current_bid_team_id);
+                        if (newTeamId !== selectedTeamId) {
+                            setSelectedTeamId(newTeamId);
+                        }
+                    }
                 }
             })
             .subscribe();
@@ -751,12 +775,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
     // Update bid when player changes
     useEffect(() => {
-        if (currentPlayer) {
+        if (currentPlayer && sessionId) {
             const newMinimum = MINIMUM_BID;
             setCurrentBid(newMinimum);
             setPlayerBids(new Map()); // Clear bids for new player
+            setSelectedTeamId(null); // Clear selected team
+
+            // Update database to reset bid for new player
+            supabase
+                .from('auction_sessions')
+                .update({
+                    current_bid_amount: newMinimum,
+                    current_bid_team_id: null
+                })
+                .eq('id', sessionId);
         }
-    }, [currentPlayerIndex, currentPlayer]);
+    }, [currentPlayerIndex, currentPlayer, sessionId, supabase]);
 
     // Track bid when team is selected and bid amount changes
     useEffect(() => {
@@ -777,8 +811,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     }, [currentBid, selectedTeamId, teams]);
 
     // Helper function to handle team selection with bid increase
-    const handleTeamSelection = (teamId: number) => {
-        if (!canEdit) return;
+    const handleTeamSelection = async (teamId: number) => {
+        if (!canEdit || !sessionId) return;
 
         const team = teams.find(t => t.id === teamId);
         if (!team) return;
@@ -807,24 +841,48 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             });
             return newBids;
         });
+
+        // Update database for real-time sync
+        await supabase
+            .from('auction_sessions')
+            .update({
+                current_bid_amount: newBid,
+                current_bid_team_id: teamId
+            })
+            .eq('id', sessionId);
     };
 
-    const handleBidIncrease = () => {
-        setCurrentBid(prev => {
-            const increment = getBidIncrement(prev);
-            return prev + increment;
-        });
+    const handleBidIncrease = async () => {
+        if (!sessionId) return;
+
+        const increment = getBidIncrement(currentBid);
+        const newBid = currentBid + increment;
+
+        // Update local state immediately
+        setCurrentBid(newBid);
+
+        // Update database for real-time sync
+        await supabase
+            .from('auction_sessions')
+            .update({ current_bid_amount: newBid })
+            .eq('id', sessionId);
     };
 
-    const handleBidDecrease = () => {
-        if (currentBid > currentMinimumBid) {
-            setCurrentBid(prev => {
-                // Calculate increment based on the amount we're decreasing FROM
-                // This ensures we decrease by the same amount we would have increased
-                const increment = getBidIncrement(prev);
-                return Math.max(currentMinimumBid, prev - increment);
-            });
-        }
+    const handleBidDecrease = async () => {
+        if (!sessionId || currentBid <= currentMinimumBid) return;
+
+        // Calculate increment based on the amount we're decreasing FROM
+        const increment = getBidIncrement(currentBid);
+        const newBid = Math.max(currentMinimumBid, currentBid - increment);
+
+        // Update local state immediately
+        setCurrentBid(newBid);
+
+        // Update database for real-time sync
+        await supabase
+            .from('auction_sessions')
+            .update({ current_bid_amount: newBid })
+            .eq('id', sessionId);
     };
 
     const [bidInputValue, setBidInputValue] = useState<string>('');
@@ -851,13 +909,24 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
     };
 
-    const handleBidInputBlur = () => {
+    const handleBidInputBlur = async () => {
+        if (!sessionId) return;
+
         // Ensure bid is at least minimum when input loses focus
+        let finalBid = currentBid;
         if (currentBid < currentMinimumBid) {
-            setCurrentBid(currentMinimumBid);
+            finalBid = currentMinimumBid;
+            setCurrentBid(finalBid);
         }
+
         // Sync input value with current bid (in case it was adjusted)
-        setBidInputValue(currentBid.toString());
+        setBidInputValue(finalBid.toString());
+
+        // Update database for real-time sync
+        await supabase
+            .from('auction_sessions')
+            .update({ current_bid_amount: finalBid })
+            .eq('id', sessionId);
     };
 
     const handleBuyPlayer = async () => {
@@ -2665,18 +2734,47 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         <button
                                             onClick={handleBidDecrease}
                                             disabled={!canEdit || currentBid <= currentMinimumBid}
-                                            className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
+                                            className="w-12 h-12 rounded-lg border-2 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed text-2xl font-semibold transition-colors"
+                                            style={{
+                                                backgroundColor: '#1F2937',
+                                                borderColor: '#1F2937',
+                                                color: '#E5E7EB'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (canEdit && currentBid > currentMinimumBid) {
+                                                    e.currentTarget.style.borderColor = '#E11D48';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (canEdit && currentBid > currentMinimumBid) {
+                                                    e.currentTarget.style.borderColor = '#1F2937';
+                                                }
+                                            }}
                                         >
                                             −
                                         </button>
-                                        <div className="flex flex-col items-center gap-1">
+                                        <div className="flex flex-col items-center gap-2">
                                             <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{currentBid.toLocaleString()}</div>
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
+                                                    const team = teams.find(t => t.id === bidInfo.teamId);
                                                     return (
-                                                        <div className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: '#1F2937', color: '#E5E7EB' }}>
-                                                            Bid by: {bidInfo.teamName}
+                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#1F2937' }}>
+                                                            {team && (
+                                                                <Image
+                                                                    key={`bid-team-${bidInfo.teamId}-${sessionName || 'default'}`}
+                                                                    src={getTeamLogo(bidInfo.teamId, sessionName)}
+                                                                    alt={`${bidInfo.teamName} logo`}
+                                                                    width={24}
+                                                                    height={24}
+                                                                    className="object-contain flex-shrink-0"
+                                                                    unoptimized
+                                                                />
+                                                            )}
+                                                            <span className="text-sm font-semibold" style={{ color: '#E5E7EB' }}>
+                                                                Bid by: {bidInfo.teamName}
+                                                            </span>
                                                         </div>
                                                     );
                                                 }
@@ -2686,7 +2784,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         <button
                                             onClick={handleBidIncrease}
                                             disabled={!canEdit}
-                                            className="w-12 h-12 rounded-lg border-2 border-gray-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 text-2xl font-semibold"
+                                            className="w-12 h-12 rounded-lg border-2 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed text-2xl font-semibold transition-colors"
+                                            style={{
+                                                backgroundColor: '#1F2937',
+                                                borderColor: '#1F2937',
+                                                color: '#E5E7EB'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (canEdit) {
+                                                    e.currentTarget.style.borderColor = '#E11D48';
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                if (canEdit) {
+                                                    e.currentTarget.style.borderColor = '#1F2937';
+                                                }
+                                            }}
                                         >
                                             +
                                         </button>
@@ -2696,14 +2809,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="mb-3">
                                         <label className="block text-sm font-medium mb-1.5" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-gray-500">₹</span>
+                                            <span style={{ color: '#E5E7EB' }}>₹</span>
                                             <input
                                                 type="text"
                                                 value={bidInputValue}
                                                 onChange={handleBidInputChange}
-                                                onBlur={handleBidInputBlur}
+                                                onBlur={(e) => {
+                                                    e.currentTarget.style.borderColor = '#1F2937';
+                                                    handleBidInputBlur();
+                                                }}
                                                 disabled={!canEdit}
-                                                className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg text-lg font-semibold text-gray-900 focus:ring-2 focus:ring-red-500 focus:border-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="flex-1 px-4 py-2 border-2 rounded-lg text-lg font-semibold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                style={{
+                                                    backgroundColor: '#111827',
+                                                    borderColor: '#1F2937',
+                                                    color: '#E5E7EB'
+                                                }}
+                                                onFocus={(e) => {
+                                                    e.currentTarget.style.borderColor = '#E11D48';
+                                                    e.currentTarget.style.outline = 'none';
+                                                }}
                                                 placeholder="Enter amount"
                                             />
                                         </div>
@@ -2712,22 +2837,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="text-sm text-center mb-2" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
                                     </div>
-                                    {/* Show all bids for this player */}
-                                    {playerBids.size > 0 && (
-                                        <div className="mt-3 pt-3 border-t" style={{ borderColor: '#1F2937' }}>
-                                            <div className="text-xs font-semibold mb-2" style={{ color: '#9CA3AF' }}>Bidding History:</div>
-                                            <div className="space-y-1 max-h-24 overflow-y-auto">
-                                                {Array.from(playerBids.entries())
-                                                    .sort(([a], [b]) => b - a) // Sort by amount descending
-                                                    .map(([amount, bidInfo]) => (
-                                                        <div key={amount} className="flex justify-between items-center text-xs py-1 px-2 rounded" style={{ backgroundColor: amount === currentBid ? '#1F2937' : 'transparent' }}>
-                                                            <span style={{ color: '#E5E7EB' }}>{bidInfo.teamName}</span>
-                                                            <span style={{ color: '#22C55E' }}>₹{amount.toLocaleString()}</span>
-                                                        </div>
-                                                    ))}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
 
                                 {/* Right side - Action Buttons */}
@@ -2770,15 +2879,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             >
                 <div className="space-y-4">
                     {/* Team Filter */}
-                    <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                        <div className="text-xs font-semibold text-gray-700 mb-2">Filter Teams:</div>
+                    <div className="rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter Teams:</div>
                         <div className="flex flex-wrap gap-2">
                             <button
                                 onClick={() => setSelectedTeamFilters(new Set())}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
-                                    ? 'bg-red-600 text-white'
-                                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                    ? 'text-white'
+                                    : 'border'
                                     }`}
+                                style={selectedTeamFilters.size === 0
+                                    ? { backgroundColor: '#E11D48' }
+                                    : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
+                                }
                             >
                                 All
                             </button>
@@ -2795,9 +2908,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         setSelectedTeamFilters(newFilters);
                                     }}
                                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                        ? 'text-white'
+                                        : 'border'
                                         }`}
+                                    style={selectedTeamFilters.has(team.id)
+                                        ? { backgroundColor: '#E11D48' }
+                                        : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
+                                    }
                                 >
                                     <input
                                         type="checkbox"
@@ -2821,7 +2938,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 const initialBudget = team.budget + totalSpent;
 
                                 return (
-                                    <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-4">
+                                    <div key={team.id} className="rounded-xl p-4 border-2" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex items-center gap-3">
                                                 <Image
@@ -2834,24 +2951,27 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     unoptimized
                                                 />
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="text-base md:text-lg font-semibold text-gray-900 break-normal leading-tight">{team.name}</h3>
-                                                    <div className="text-xs text-gray-500 mt-1">
+                                                    <h3 className="text-base md:text-lg font-semibold break-normal leading-tight" style={{ color: '#E5E7EB' }}>{team.name}</h3>
+                                                    <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
                                                         {team.players.length} / {PLAYERS_PER_TEAM} players
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">
-                                                <div className="text-sm font-medium text-gray-600">Remaining</div>
-                                                <div className="text-lg font-bold text-gray-900">₹{team.budget.toLocaleString()}</div>
+                                                <div className="text-sm font-medium" style={{ color: '#9CA3AF' }}>Remaining</div>
+                                                <div className="text-lg font-bold" style={{ color: '#E5E7EB' }}>₹{team.budget.toLocaleString()}</div>
                                             </div>
                                         </div>
 
                                         {/* Budget Progress */}
                                         <div className="mb-3">
-                                            <div className="w-full bg-gray-200 rounded-full h-2">
+                                            <div className="w-full rounded-full h-2" style={{ backgroundColor: '#1F2937' }}>
                                                 <div
-                                                    className="bg-red-600 h-2 rounded-full transition-all"
-                                                    style={{ width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%` }}
+                                                    className="h-2 rounded-full transition-all"
+                                                    style={{
+                                                        width: `${initialBudget > 0 ? Math.min((totalSpent / initialBudget) * 100, 100) : 0}%`,
+                                                        backgroundColor: '#22C55E'
+                                                    }}
                                                 ></div>
                                             </div>
                                         </div>
@@ -2859,30 +2979,30 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         {/* Owner Name */}
                                         {team.ownerName && (
                                             <div className="mb-3">
-                                                <div className="flex-1 rounded-lg p-2 text-center bg-gray-100 border border-gray-200">
-                                                    <div className="text-xs text-gray-600">Owner</div>
-                                                    <div className="text-sm font-semibold text-gray-900">{team.ownerName}</div>
+                                                <div className="flex-1 rounded-lg p-2 text-center border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                    <div className="text-xs" style={{ color: '#9CA3AF' }}>Owner</div>
+                                                    <div className="text-sm font-semibold" style={{ color: '#E5E7EB' }}>{team.ownerName}</div>
                                                 </div>
                                             </div>
                                         )}
 
                                         {/* Players List */}
                                         {team.players.length > 0 ? (
-                                            <div className="border-t border-gray-200 pt-3">
-                                                <div className="text-xs font-semibold text-gray-600 mb-2">Players:</div>
+                                            <div className="border-t pt-3" style={{ borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold mb-2" style={{ color: '#9CA3AF' }}>Players:</div>
                                                 <div className="space-y-1 max-h-32 overflow-y-auto">
                                                     {team.players.map((player, idx) => (
                                                         <div key={idx} className="flex justify-between items-center text-sm py-1">
-                                                            <span className="text-gray-700">
+                                                            <span style={{ color: '#E5E7EB' }}>
                                                                 {player.name}
                                                             </span>
-                                                            <span className="text-gray-500 text-xs">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                            <span className="text-xs" style={{ color: '#9CA3AF' }}>₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                         </div>
                                                     ))}
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="text-sm text-gray-400 text-center py-2 border-t border-gray-200 pt-3">
+                                            <div className="text-sm text-center py-2 border-t pt-3" style={{ color: '#9CA3AF', borderColor: '#1F2937' }}>
                                                 No players yet
                                             </div>
                                         )}
@@ -2920,7 +3040,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                         if (allBoughtPlayers.length === 0) {
                             return (
-                                <div className="text-center py-8 text-gray-500">
+                                <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
                                     No players have been bought yet
                                 </div>
                             );
@@ -2933,18 +3053,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         {top5Players.map((player, idx) => (
                                             <div
                                                 key={`${player.name}-${idx}`}
-                                                className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg p-4"
+                                                className="border rounded-lg p-4"
+                                                style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-red-600 text-white text-sm font-bold flex items-center justify-center flex-shrink-0">
+                                                        <div className="w-8 h-8 rounded-full text-white text-sm font-bold flex items-center justify-center flex-shrink-0" style={{ backgroundColor: '#E11D48' }}>
                                                             {idx + 1}
                                                         </div>
-                                                        <span className="font-semibold text-gray-900 text-base">{player.name}</span>
+                                                        <span className="font-semibold text-base" style={{ color: '#E5E7EB' }}>{player.name}</span>
                                                     </div>
-                                                    <span className="text-base font-bold text-red-600">₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                    <span className="text-base font-bold" style={{ color: '#22C55E' }}>₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                 </div>
-                                                <div className="flex items-center gap-2 text-sm text-gray-600 ml-11">
+                                                <div className="flex items-center gap-2 text-sm ml-11" style={{ color: '#9CA3AF' }}>
                                                     <Image
                                                         src={getTeamLogo(player.teamId, sessionName)}
                                                         alt={`${player.teamName} logo`}
@@ -2958,14 +3079,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         ))}
                                     </div>
                                 ) : (
-                                    <div className="text-center py-8 text-gray-500">
+                                    <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
                                         No players found
                                     </div>
                                 )}
 
                                 {/* PDF Download Buttons */}
-                                <div className="mt-6 space-y-3 pt-4 border-t border-gray-200">
-                                    <h3 className="text-sm font-semibold text-gray-700 mb-3">Download Top 5 Reports</h3>
+                                <div className="mt-6 space-y-3 pt-4 border-t" style={{ borderColor: '#1F2937' }}>
+                                    <h3 className="text-sm font-semibold mb-3" style={{ color: '#E5E7EB' }}>Download Top 5 Reports</h3>
                                     <button
                                         onClick={() => generateTopBiddedPlayersPDF('M')}
                                         disabled={pdfGeneratingTopPlayers === 'M'}
@@ -3042,16 +3163,36 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 <div
                                     key={idx}
                                     onClick={() => canEdit && handleJumpToSkippedPlayer(player.name)}
-                                    className={`bg-gray-50 border border-gray-200 rounded-lg p-4 ${canEdit
-                                        ? 'cursor-pointer hover:bg-gray-100 hover:border-red-300 transition-colors'
+                                    className={`border rounded-lg p-4 transition-colors ${canEdit
+                                        ? 'cursor-pointer'
                                         : 'cursor-default'
                                         }`}
+                                    style={canEdit
+                                        ? {
+                                            backgroundColor: '#111827',
+                                            borderColor: '#1F2937'
+                                        }
+                                        : {
+                                            backgroundColor: '#111827',
+                                            borderColor: '#1F2937'
+                                        }
+                                    }
+                                    onMouseEnter={(e) => {
+                                        if (canEdit) {
+                                            e.currentTarget.style.borderColor = '#E11D48';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (canEdit) {
+                                            e.currentTarget.style.borderColor = '#1F2937';
+                                        }
+                                    }}
                                 >
                                     <div className="flex justify-between items-start mb-2">
                                         <div>
-                                            <div className="text-base font-semibold text-gray-900">{player.name}</div>
+                                            <div className="text-base font-semibold" style={{ color: '#E5E7EB' }}>{player.name}</div>
                                             {canEdit && (
-                                                <div className="text-xs text-red-600 mt-1 font-medium">
+                                                <div className="text-xs mt-1 font-medium" style={{ color: '#E11D48' }}>
                                                     Tap to auction again
                                                 </div>
                                             )}
@@ -3061,7 +3202,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             ))}
                         </div>
                     ) : (
-                        <div className="text-center py-8 text-gray-500">
+                        <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
                             No skipped players yet
                         </div>
                     )}
@@ -3074,7 +3215,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 ? skippedPlayers
                                 : getCurrentSkippedPlayers());
                         return skippedList.length > 0 && !isSkippedPlayersMode ? (
-                            <div className="mt-6 pt-6 border-t border-gray-200">
+                            <div className="mt-6 pt-6 border-t" style={{ borderColor: '#1F2937' }}>
                                 <button
                                     onClick={async () => {
                                         try {
@@ -3113,7 +3254,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                             alert('Failed to start skipped players auction. Please try again.');
                                         }
                                     }}
-                                    className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+                                    className="w-full text-white py-3 px-4 rounded-lg font-semibold transition-colors"
+                                    style={{ backgroundColor: '#E11D48' }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#C81E3D'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#E11D48'}
                                 >
                                     Start Auction with Skipped Players
                                 </button>
@@ -3131,17 +3275,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             >
                 <div className="pb-6">
                     {/* Filter Buttons */}
-                    <div className="mb-4 bg-gray-50 rounded-lg p-3 border border-gray-200">
-                        <div className="text-xs font-semibold text-gray-700 mb-2">Filter:</div>
+                    <div className="mb-4 rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter:</div>
                         <div className="flex flex-wrap gap-2">
                             {(['All', 'Sold', 'Unsold'] as const).map((filter) => (
                                 <button
                                     key={filter}
                                     onClick={() => setPlayerListFilter(filter)}
                                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${playerListFilter === filter
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                        ? 'text-white'
+                                        : 'border'
                                         }`}
+                                    style={playerListFilter === filter
+                                        ? { backgroundColor: '#E11D48' }
+                                        : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
+                                    }
                                 >
                                     {filter}
                                 </button>
@@ -3165,27 +3313,28 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     return (
                                         <div
                                             key={`${player.name}-${idx}`}
-                                            className={`border rounded-lg p-3 ${isSold
-                                                ? 'bg-green-50 border-green-200'
-                                                : 'bg-gray-50 border-gray-200'
-                                                }`}
+                                            className="border rounded-lg p-3"
+                                            style={isSold
+                                                ? { backgroundColor: '#111827', borderColor: '#22C55E' }
+                                                : { backgroundColor: '#111827', borderColor: '#1F2937' }
+                                            }
                                         >
                                             <div className="flex justify-between items-start">
                                                 <div className="flex-1">
-                                                    <div className="font-semibold text-gray-900">{player.name}</div>
+                                                    <div className="font-semibold" style={{ color: '#E5E7EB' }}>{player.name}</div>
                                                     {isSold && playerTeam && (
-                                                        <div className="text-xs text-gray-600 mt-1">
+                                                        <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
                                                             Sold to {playerTeam.name} for ₹{bidAmount?.toLocaleString() || '0'}
                                                         </div>
                                                     )}
                                                     {!isSold && (
-                                                        <div className="text-xs text-gray-500 mt-1">Unsold</div>
+                                                        <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>Unsold</div>
                                                     )}
                                                 </div>
-                                                <div className={`px-2 py-1 rounded text-xs font-medium ${isSold
-                                                    ? 'bg-green-100 text-green-700'
-                                                    : 'bg-gray-100 text-gray-600'
-                                                    }`}>
+                                                <div className="px-2 py-1 rounded text-xs font-medium" style={isSold
+                                                    ? { backgroundColor: '#22C55E', color: '#0F172A' }
+                                                    : { backgroundColor: '#1F2937', color: '#9CA3AF' }
+                                                }>
                                                     {isSold ? 'Sold' : 'Unsold'}
                                                 </div>
                                             </div>
@@ -3194,7 +3343,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 })}
                             </div>
                         ) : (
-                            <div className="text-center py-8 text-gray-500">
+                            <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
                                 No players found
                             </div>
                         );

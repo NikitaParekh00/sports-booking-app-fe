@@ -34,14 +34,15 @@ export default function BottomSheet({ isOpen, onClose, title, children }: Bottom
 
             {/* Sheet */}
             <div
-                className={`absolute left-0 right-0 bottom-0 bg-white rounded-t-2xl shadow-2xl border-t border-gray-200 transform transition-transform duration-300 ${isOpen ? "translate-y-0" : "translate-y-full"}`}
+                className={`absolute left-0 right-0 bottom-0 rounded-t-2xl shadow-2xl border-t transform transition-transform duration-300 ${isOpen ? "translate-y-0" : "translate-y-full"}`}
+                style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
             >
                 <div className="flex justify-center py-2">
-                    <div className="h-1.5 w-14 rounded-full bg-gray-300" />
+                    <div className="h-1.5 w-14 rounded-full" style={{ backgroundColor: '#1F2937' }} />
                 </div>
                 {title && (
                     <div className="px-4 pb-2">
-                        <h3 className="text-base font-semibold text-gray-900">{title}</h3>
+                        <h3 className="text-base font-semibold" style={{ color: '#E5E7EB' }}>{title}</h3>
                     </div>
                 )}
                 <div className="px-4 pb-6 pt-2 max-h-[70vh] overflow-y-auto">
