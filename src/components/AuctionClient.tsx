@@ -2214,7 +2214,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen" style={{ backgroundColor: '#0F172A' }}>
             {/* Success Modal */}
             {showSuccessModal && successMessage && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2304,16 +2304,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             )}
 
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-2 md:px-3 py-3 sticky top-0 z-10 shadow-sm">
+            <div className="border-b px-2 md:px-3 py-3 sticky top-0 z-10 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                 <div className="w-full flex items-center justify-between gap-2">
                     <button
                         onClick={() => router.back()}
-                        className="text-gray-600 hover:text-gray-900 flex items-center gap-1 md:gap-2 flex-shrink-0"
+                        className="flex items-center gap-1 md:gap-2 flex-shrink-0" style={{ color: '#E5E7EB' }}
                     >
                         <span className="text-lg md:text-base">←</span>
                         <span className="hidden sm:inline">Back</span>
                     </button>
-                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-900 flex-shrink-0">
+                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
                         <span className="md:hidden">Auction</span>
                         <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
                     </h1>
@@ -2407,10 +2407,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 items-start">
                     {/* Left Sidebar - Team Selection (Desktop) */}
                     <div className="hidden lg:block lg:col-span-1">
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-4 md:p-5 space-y-4">
+                        <div className="rounded-xl border-2 p-4 md:p-5 space-y-4" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {/* Select Team Section */}
                             <div>
-                                <h2 className="text-xl font-bold text-gray-900 mb-4">Select Team</h2>
+                                <h2 className="text-xl font-bold mb-4" style={{ color: '#E5E7EB' }}>Select Team</h2>
                                 <div className="grid grid-cols-2 gap-3">
                                     {teams.map(team => {
                                         const canAfford = team.budget >= currentBid;
@@ -2426,10 +2426,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 onClick={() => !finalDisabled && setSelectedTeamId(team.id)}
                                                 disabled={finalDisabled}
                                                 className={`p-3 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
-                                                    ? 'border-red-600 bg-red-50 shadow-md'
+                                                    ? 'shadow-md' // Active - will add custom style
                                                     : finalDisabled
-                                                        ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
-                                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                                                        ? 'opacity-50 cursor-not-allowed'
+                                                        : ''
                                                     }`}
                                             >
                                                 <div className="flex items-center gap-2 mb-2">
@@ -2442,19 +2442,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         className="object-contain flex-shrink-0"
                                                         unoptimized
                                                     />
-                                                    <div className="font-semibold text-gray-900 text-sm break-normal min-w-0 flex-1 leading-tight">{team.name}</div>
+                                                    <div className="font-semibold text-sm break-normal min-w-0 flex-1 leading-tight" style={{ color: '#E5E7EB' }}>{team.name}</div>
                                                 </div>
-                                                <div className="text-xs text-gray-600 mb-1">
+                                                <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
-                                                <div className="text-xs text-gray-600 mb-1">
+                                                <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                                                     Players: {team.players.length}/{PLAYERS_PER_TEAM}
                                                 </div>
                                                 {!canAfford && (
-                                                    <div className="text-xs text-red-600 mt-1">Insufficient budget</div>
+                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Insufficient budget</div>
                                                 )}
                                                 {!hasSpace && (
-                                                    <div className="text-xs text-red-600 mt-1">Team full</div>
+                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Team full</div>
                                                 )}
                                             </button>
                                         );
@@ -2467,21 +2467,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     {/* Main Content Area */}
                     <div className="lg:col-span-2 space-y-4 pb-32 md:pb-4">
                         {/* Progress */}
-                        <div className="bg-white rounded-xl border-2 border-gray-200 p-3 md:p-4 lg:mt-0">
-                            <div className="flex justify-between text-sm text-gray-600 mb-2">
+                        <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
                                 <span>Player {currentPlayerIndex + 1} of {players.length}</span>
                                 <span>{remainingPlayers} remaining</span>
                             </div>
-                            <div className="w-full bg-gray-200 rounded-full h-3">
+                            <div className="w-full rounded-full h-3" style={{ backgroundColor: '#1F2937' }}>
                                 <div
-                                    className="bg-red-600 h-3 rounded-full transition-all duration-300"
-                                    style={{ width: `${((currentPlayerIndex + 1) / players.length) * 100}%` }}
+                                    className="h-3 rounded-full transition-all duration-300"
+                                    style={{ backgroundColor: '#22C55E', width: `${((currentPlayerIndex + 1) / players.length) * 100}%` }}
                                 ></div>
                             </div>
                         </div>
 
                         {/* Current Player Card */}
-                        <div className={`${cardStyle.bg} ${cardStyle.border} rounded-xl p-5 md:p-7 ${cardStyle.shadow}`}>
+                        <div className="rounded-xl p-5 md:p-7 border-2 shadow-lg" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-6">
                                 {/* Player Photo - Top on mobile, Left on desktop */}
                                 <div className="flex-shrink-0 flex justify-center md:justify-start">
@@ -2531,7 +2531,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 <div className="flex-1 flex flex-col">
                                     {/* Header: Name and Logo */}
                                     <div className="flex items-center justify-center md:justify-between gap-3 md:gap-4 mb-3">
-                                        <h2 className="text-3xl md:text-4xl font-bold text-gray-900">{currentPlayer.name}</h2>
+                                        <h2 className="text-3xl md:text-4xl font-bold" style={{ color: '#E5E7EB' }}>{currentPlayer.name}</h2>
                                         <div className="flex-shrink-0">
                                             <Image
                                                 src="/logo.jpeg"
@@ -2546,17 +2546,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     {/* Basic Info Badges - Right below name */}
                                     <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
                                         {currentPlayer.age && (
-                                            <span className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg font-medium border border-blue-200">
+                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 Age: {currentPlayer.age}
                                             </span>
                                         )}
                                         {currentPlayer.batting_hand && (
-                                            <span className="bg-purple-50 text-purple-700 px-4 py-2 rounded-lg font-medium border border-purple-200">
+                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 {currentPlayer.batting_hand} Handed
                                             </span>
                                         )}
                                         {currentPlayer.skill && (
-                                            <span className="bg-green-50 text-green-700 px-4 py-2 rounded-lg font-medium border border-green-200">
+                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 {currentPlayer.skill}
                                             </span>
                                         )}
@@ -2566,24 +2566,24 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="space-y-4">
                                         {/* Played Previous MBBL Season - Only for Men's auction */}
                                         {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                            <div className="bg-gradient-to-r from-orange-50 to-orange-100 rounded-lg p-4 md:p-5 border border-orange-200">
-                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Played Previous MBBL Season</div>
-                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.played_s1}</div>
+                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Played Previous MBBL Season</div>
+                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
                                             </div>
                                         )}
 
                                         {/* Experience */}
                                         {currentPlayer.experience && (
-                                            <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-4 md:p-5 border border-gray-200">
-                                                <div className="text-sm md:text-base font-semibold text-gray-500 uppercase tracking-wide mb-2">Experience</div>
-                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.experience}</div>
+                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Experience</div>
+                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
                                             </div>
                                         )}
 
                                         {/* Active Sport - Below Experience */}
                                         {currentPlayer.active_sport && (
-                                            <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg p-4 md:p-5 border border-blue-200">
-                                                <div className="text-lg md:text-xl text-gray-900 font-medium">{currentPlayer.active_sport}</div>
+                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                             </div>
                                         )}
                                     </div>
@@ -2592,7 +2592,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
 
                         {/* Bid Amount */}
-                        <div className="bg-white border-2 border-gray-200 rounded-xl p-4 md:p-6 shadow-sm">
+                        <div className="border-2 rounded-xl p-4 md:p-6 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {!canEdit && (
                                 <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
                                     View-only mode - You can watch the auction live
@@ -2609,7 +2609,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         >
                                             −
                                         </button>
-                                        <div className="text-5xl font-bold text-gray-900">₹{currentBid.toLocaleString()}</div>
+                                        <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{currentBid.toLocaleString()}</div>
                                         <button
                                             onClick={handleBidIncrease}
                                             disabled={!canEdit}
@@ -2621,7 +2621,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                                     {/* Custom Bid Input */}
                                     <div className="mb-3">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Enter Custom Bid Amount</label>
+                                        <label className="block text-sm font-medium mb-1.5" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
                                         <div className="flex items-center gap-2">
                                             <span className="text-gray-500">₹</span>
                                             <input
@@ -2636,7 +2636,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         </div>
                                     </div>
 
-                                    <div className="text-sm text-gray-500 text-center">
+                                    <div className="text-sm text-center" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
                                     </div>
                                 </div>
@@ -2646,14 +2646,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <button
                                         onClick={handleSkip}
                                         disabled={!canEdit}
-                                        className="w-full py-3 md:py-4 px-4 md:px-6 bg-gray-100 text-gray-700 rounded-lg font-semibold hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
+                                        onMouseEnter={(e) => !canEdit || (e.currentTarget.style.backgroundColor = '#374151')}
+                                        onMouseLeave={(e) => !canEdit || (e.currentTarget.style.backgroundColor = '#1F2937')}
                                     >
                                         Skip Player
                                     </button>
                                     <button
                                         onClick={handleBuyPlayer}
                                         disabled={!canEdit || !selectedTeamId}
-                                        className="w-full py-3 md:py-4 px-4 md:px-6 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                                        onMouseEnter={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
+                                        onMouseLeave={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
                                     >
                                         Buy Player
                                     </button>
