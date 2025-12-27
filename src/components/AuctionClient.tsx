@@ -165,6 +165,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
     const [currentBid, setCurrentBid] = useState(MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
+    const [playerBids, setPlayerBids] = useState<Map<number, { teamId: number; teamName: string; amount: number }>>(new Map()); // Track bids: amount -> team info
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
     const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
     const [isTopPlayersSheetOpen, setIsTopPlayersSheetOpen] = useState(false);
@@ -753,8 +754,60 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         if (currentPlayer) {
             const newMinimum = MINIMUM_BID;
             setCurrentBid(newMinimum);
+            setPlayerBids(new Map()); // Clear bids for new player
         }
     }, [currentPlayerIndex, currentPlayer]);
+
+    // Track bid when team is selected and bid amount changes
+    useEffect(() => {
+        if (selectedTeamId && currentBid >= MINIMUM_BID) {
+            const team = teams.find(t => t.id === selectedTeamId);
+            if (team) {
+                setPlayerBids(prev => {
+                    const newBids = new Map(prev);
+                    newBids.set(currentBid, {
+                        teamId: selectedTeamId,
+                        teamName: team.name,
+                        amount: currentBid
+                    });
+                    return newBids;
+                });
+            }
+        }
+    }, [currentBid, selectedTeamId, teams]);
+
+    // Helper function to handle team selection with bid increase
+    const handleTeamSelection = (teamId: number) => {
+        if (!canEdit) return;
+
+        const team = teams.find(t => t.id === teamId);
+        if (!team) return;
+
+        // Calculate new bid amount first
+        const increment = getBidIncrement(currentBid);
+        const newBid = currentBid + increment;
+
+        // Check if team can afford the NEW bid amount
+        const canAfford = team.budget >= newBid;
+        const hasSpace = team.players.length < PLAYERS_PER_TEAM;
+
+        if (!canAfford || !hasSpace) return;
+
+        // Set the new bid amount and selected team
+        setCurrentBid(newBid);
+        setSelectedTeamId(teamId);
+
+        // Record the bid immediately
+        setPlayerBids(prev => {
+            const newBids = new Map(prev);
+            newBids.set(newBid, {
+                teamId: teamId,
+                teamName: team.name,
+                amount: newBid
+            });
+            return newBids;
+        });
+    };
 
     const handleBidIncrease = () => {
         setCurrentBid(prev => {
@@ -2413,7 +2466,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 <h2 className="text-xl font-bold mb-4" style={{ color: '#E5E7EB' }}>Select Team</h2>
                                 <div className="grid grid-cols-2 gap-3">
                                     {teams.map(team => {
-                                        const canAfford = team.budget >= currentBid;
+                                        // Calculate what the new bid would be if this team is selected
+                                        const increment = getBidIncrement(currentBid);
+                                        const newBid = currentBid + increment;
+                                        const canAfford = team.budget >= newBid;
                                         const hasSpace = team.players.length < PLAYERS_PER_TEAM;
                                         const isDisabled = !canAfford || !hasSpace;
 
@@ -2423,7 +2479,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         return (
                                             <button
                                                 key={team.id}
-                                                onClick={() => !finalDisabled && setSelectedTeamId(team.id)}
+                                                onClick={() => {
+                                                    if (!finalDisabled) {
+                                                        handleTeamSelection(team.id);
+                                                    }
+                                                }}
                                                 disabled={finalDisabled}
                                                 className={`p-3 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
                                                     ? 'shadow-md' // Active - will add custom style
@@ -2609,7 +2669,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         >
                                             −
                                         </button>
-                                        <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{currentBid.toLocaleString()}</div>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{currentBid.toLocaleString()}</div>
+                                            {(() => {
+                                                const bidInfo = playerBids.get(currentBid);
+                                                if (bidInfo) {
+                                                    return (
+                                                        <div className="text-xs font-medium px-2 py-1 rounded" style={{ backgroundColor: '#1F2937', color: '#E5E7EB' }}>
+                                                            Bid by: {bidInfo.teamName}
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
                                         <button
                                             onClick={handleBidIncrease}
                                             disabled={!canEdit}
@@ -2636,9 +2709,25 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         </div>
                                     </div>
 
-                                    <div className="text-sm text-center" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-sm text-center mb-2" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
                                     </div>
+                                    {/* Show all bids for this player */}
+                                    {playerBids.size > 0 && (
+                                        <div className="mt-3 pt-3 border-t" style={{ borderColor: '#1F2937' }}>
+                                            <div className="text-xs font-semibold mb-2" style={{ color: '#9CA3AF' }}>Bidding History:</div>
+                                            <div className="space-y-1 max-h-24 overflow-y-auto">
+                                                {Array.from(playerBids.entries())
+                                                    .sort(([a], [b]) => b - a) // Sort by amount descending
+                                                    .map(([amount, bidInfo]) => (
+                                                        <div key={amount} className="flex justify-between items-center text-xs py-1 px-2 rounded" style={{ backgroundColor: amount === currentBid ? '#1F2937' : 'transparent' }}>
+                                                            <span style={{ color: '#E5E7EB' }}>{bidInfo.teamName}</span>
+                                                            <span style={{ color: '#22C55E' }}>₹{amount.toLocaleString()}</span>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Right side - Action Buttons */}
