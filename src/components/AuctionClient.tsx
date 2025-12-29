@@ -817,15 +817,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         const team = teams.find(t => t.id === teamId);
         if (!team) return;
 
+        // Calculate maximum bid this team can make for current player
+        // They need to reserve MINIMUM_BID for each remaining player slot
+        const remainingSlots = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because buying current player
+        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * MINIMUM_BID : 0;
+        const maxBid = team.budget - minimumRequiredForRemaining;
+
         // Calculate new bid amount first
         const increment = getBidIncrement(currentBid);
         const newBid = currentBid + increment;
 
-        // Check if team can afford the NEW bid amount
+        // Check if team can afford the NEW bid amount and if it's within their max bid
         const canAfford = team.budget >= newBid;
+        const withinMaxBid = newBid <= maxBid;
         const hasSpace = team.players.length < PLAYERS_PER_TEAM;
 
-        if (!canAfford || !hasSpace) return;
+        if (!canAfford || !hasSpace || !withinMaxBid || maxBid < MINIMUM_BID) return;
 
         // Set the new bid amount and selected team
         setCurrentBid(newBid);
@@ -2535,12 +2542,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 <h2 className="text-xl font-bold mb-4" style={{ color: '#E5E7EB' }}>Select Team</h2>
                                 <div className="grid grid-cols-2 gap-3">
                                     {teams.map(team => {
+                                        // Calculate maximum bid this team can make for current player
+                                        // They need to reserve MINIMUM_BID for each remaining player slot
+                                        const remainingSlots = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because buying current player
+                                        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * MINIMUM_BID : 0;
+                                        const maxBid = team.budget - minimumRequiredForRemaining;
+
                                         // Calculate what the new bid would be if this team is selected
                                         const increment = getBidIncrement(currentBid);
                                         const newBid = currentBid + increment;
+
+                                        // Check if team can afford the new bid and if it's within their max bid
                                         const canAfford = team.budget >= newBid;
+                                        const withinMaxBid = newBid <= maxBid;
                                         const hasSpace = team.players.length < PLAYERS_PER_TEAM;
-                                        const isDisabled = !canAfford || !hasSpace;
+                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < MINIMUM_BID;
 
                                         const isViewOnly = !canEdit;
                                         const finalDisabled = isDisabled || isViewOnly;
@@ -2560,6 +2576,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         ? 'opacity-50 cursor-not-allowed'
                                                         : ''
                                                     }`}
+                                                style={selectedTeamId === team.id
+                                                    ? { backgroundColor: '#111827', borderColor: '#E11D48' }
+                                                    : { backgroundColor: '#111827', borderColor: '#1F2937' }
+                                                }
                                             >
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <Image
@@ -2579,11 +2599,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                                                     Players: {team.players.length}/{PLAYERS_PER_TEAM}
                                                 </div>
-                                                {!canAfford && (
-                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Insufficient budget</div>
+                                                {maxBid >= MINIMUM_BID && (
+                                                    <div className="text-xs mb-1 font-medium" style={{ color: '#22C55E' }}>
+                                                        Max Bid: ₹{maxBid.toLocaleString()}
+                                                    </div>
                                                 )}
                                                 {!hasSpace && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Team full</div>
+                                                )}
+                                                {hasSpace && maxBid < MINIMUM_BID && (
+                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Cannot afford minimum</div>
+                                                )}
+                                                {hasSpace && maxBid >= MINIMUM_BID && !withinMaxBid && (
+                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Exceeds max bid</div>
                                                 )}
                                             </button>
                                         );
