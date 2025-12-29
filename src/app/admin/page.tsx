@@ -115,7 +115,16 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-2xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin - Fix User Profiles</h1>
+        <div className="flex justify-between items-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
+          <button
+            onClick={() => router.push('/admin/auction')}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold"
+          >
+            Auction Management →
+          </button>
+        </div>
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Fix User Profiles</h2>
 
         <div className="bg-white p-6 rounded-lg shadow-sm border">
           <h2 className="text-lg font-semibold mb-4">Fix User Profile Role</h2>
