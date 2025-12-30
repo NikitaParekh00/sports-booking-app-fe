@@ -72,6 +72,7 @@ export default function AuctionAdminPage() {
     name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: ''
   });
   const [uploadingPlayers, setUploadingPlayers] = useState(false);
+  const [uploadingTeams, setUploadingTeams] = useState(false);
 
   // Settings state
   const [selectedSessionForSettings, setSelectedSessionForSettings] = useState<string>('');
@@ -448,6 +449,109 @@ export default function AuctionAdminPage() {
     } catch (error: any) {
       console.error('Error deleting player:', error);
       alert(`Error deleting player: ${error.message}`);
+    }
+  };
+
+  const handleTeamFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedSessionForTeams) {
+      alert('Please select a session first');
+      event.target.value = ''; // Reset file input
+      return;
+    }
+
+    if (!file.name.endsWith('.csv')) {
+      alert('Please upload a CSV file');
+      event.target.value = ''; // Reset file input
+      return;
+    }
+
+    setUploadingTeams(true);
+
+    try {
+      const text = await file.text();
+      const teams = parseCSV(text);
+
+      if (teams.length === 0) {
+        alert('No teams found in the CSV file');
+        setUploadingTeams(false);
+        event.target.value = ''; // Reset file input
+        return;
+      }
+
+      // Get all existing team_number values for this session to avoid duplicates
+      const { data: existingTeams } = await supabase
+        .from('auction_teams')
+        .select('team_number')
+        .eq('session_id', selectedSessionForTeams);
+
+      const existingNumbers = new Set(
+        (existingTeams || []).map(t => t.team_number).filter(n => n != null)
+      );
+
+      // Find the maximum team_number to start from
+      const maxNumber = existingNumbers.size > 0 
+        ? Math.max(...Array.from(existingNumbers))
+        : 0;
+
+      let nextAvailableNumber = maxNumber + 1;
+
+      // Prepare teams for insertion
+      const teamsToInsert = teams.map((team) => {
+        let teamNumber: number;
+        
+        // Auto-assign team number sequentially
+        while (existingNumbers.has(nextAvailableNumber)) {
+          nextAvailableNumber++;
+        }
+        teamNumber = nextAvailableNumber;
+        existingNumbers.add(nextAvailableNumber);
+        nextAvailableNumber++;
+
+        return {
+          session_id: selectedSessionForTeams,
+          name: team.name || '',
+          owner_name: team.owner_name || null,
+          budget: team.budget ? parseFloat(team.budget) : 111000,
+          team_number: teamNumber,
+          logo_url: team.logo_url || null
+        };
+      });
+
+      // Insert teams in batches
+      const batchSize = 50;
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < teamsToInsert.length; i += batchSize) {
+        const batch = teamsToInsert.slice(i, i + batchSize);
+        const { error } = await supabase
+          .from('auction_teams')
+          .insert(batch);
+
+        if (error) {
+          console.error('Error inserting batch:', error);
+          errorCount += batch.length;
+        } else {
+          successCount += batch.length;
+        }
+      }
+
+      if (errorCount > 0) {
+        alert(`Uploaded ${successCount} teams. ${errorCount} teams failed to upload.`);
+      } else {
+        alert(`Successfully uploaded ${successCount} teams!`);
+      }
+
+      loadTeams(selectedSessionForTeams);
+    } catch (error: any) {
+      console.error('Error uploading teams:', error);
+      alert(`Error uploading teams: ${error.message}`);
+    } finally {
+      setUploadingTeams(false);
+      event.target.value = ''; // Reset file input
     }
   };
 
@@ -880,17 +984,40 @@ export default function AuctionAdminPage() {
               <>
                 <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
                   <h2 className="text-xl md:text-2xl lg:text-3xl font-bold" style={{ color: '#E5E7EB' }}>Teams</h2>
-                  <button
-                    onClick={() => {
-                      setEditingTeam(null);
-                      setTeamFormData({ name: '', owner_name: '', budget: '1000000', logo_url: '' });
-                      setShowTeamForm(true);
-                    }}
-                    className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
-                    style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
-                  >
-                    + Add Team
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                    <a
+                      href="/team_upload_template.csv"
+                      download="team_upload_template.csv"
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
+                      style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
+                    >
+                      📥 Download Template
+                    </a>
+                    <label
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto cursor-pointer"
+                      style={{ backgroundColor: '#22C55E', color: '#E5E7EB' }}
+                    >
+                      {uploadingTeams ? '⏳ Uploading...' : '📤 Upload CSV'}
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleTeamFileUpload}
+                        disabled={uploadingTeams}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        setEditingTeam(null);
+                        setTeamFormData({ name: '', owner_name: '', budget: '1000000', logo_url: '' });
+                        setShowTeamForm(true);
+                      }}
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                      style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                    >
+                      + Add Team
+                    </button>
+                  </div>
                 </div>
 
                 {showTeamForm && (
