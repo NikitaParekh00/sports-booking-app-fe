@@ -1,0 +1,12 @@
+name,photo,age,skill,batting_hand,bowling_hand,wing,flat_no,phone,category,played_s1,experience,active_sport,player_order
+Rohit Sharma,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,35,Batsman,Right,Right,A Wing,101,+91-9876543210,Marquee,Yes,15 years,Cricket,1
+Virat Kohli,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,33,Batsman,Right,Right,B Wing,202,+91-9876543211,Marquee,Yes,12 years,Cricket,2
+Jasprit Bumrah,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,29,Bowler,Right,Right,A Wing,103,+91-9876543212,Regular,Yes,8 years,Cricket,3
+Ravindra Jadeja,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,34,All Rounder,Left,Left,B Wing,204,+91-9876543213,Marquee,Yes,14 years,Cricket,4
+KL Rahul,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,31,Batsman,Right,Right,A Wing,105,+91-9876543214,Regular,Yes,10 years,Cricket,5
+Mohammed Shami,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,32,Bowler,Right,Right,B Wing,206,+91-9876543215,Regular,Yes,11 years,Cricket,6
+Hardik Pandya,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,30,All Rounder,Right,Right,A Wing,107,+91-9876543216,Marquee,Yes,9 years,Cricket,7
+Rishabh Pant,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,26,Batsman,Left,Left,B Wing,208,+91-9876543217,Regular,Yes,6 years,Cricket,8
+Shubman Gill,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,24,Batsman,Right,Right,A Wing,109,+91-9876543218,Regular,No,4 years,Cricket,9
+Yuzvendra Chahal,https://drive.google.com/open?id=YOUR_FILE_ID_HERE,33,Bowler,Right,Right,B Wing,210,+91-9876543219,Regular,Yes,12 years,Cricket,10
+

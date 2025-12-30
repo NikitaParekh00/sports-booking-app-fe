@@ -106,15 +106,15 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Fetch active auction sessions (Men's and Women's)
+  // Fetch all active auction sessions
   useEffect(() => {
     async function fetchAuctionSessions() {
       try {
         const { data, error } = await supabase
           .from('auction_sessions')
           .select('id, session_name, is_complete')
-          .in('session_name', ['MBBL Season 4 - Men', 'MBBL Season 4 - Women'])
-          .order('session_name', { ascending: true });
+          .eq('is_complete', false) // Only show active (incomplete) sessions
+          .order('created_at', { ascending: false }); // Show newest first
 
         if (error) {
           console.error('Error fetching auction sessions:', error);
@@ -125,7 +125,7 @@ export default function Dashboard() {
           console.log('Fetched auction sessions:', data);
           setAuctionSessions(data);
         } else {
-          console.log('No auction sessions found');
+          console.log('No active auction sessions found');
         }
       } catch (error) {
         console.error('Error fetching auction sessions:', error);
@@ -149,8 +149,16 @@ export default function Dashboard() {
       {!selectedSport && showAuctionBanner && auctionSessions.length > 0 && (
         <div className="space-y-2 px-4 py-2">
           {auctionSessions.map((session) => {
-            const isMen = session.session_name.includes('Men');
+            const isMen = session.session_name.toLowerCase().includes('men');
+            const isWomen = session.session_name.toLowerCase().includes('women');
             const isComplete = session.is_complete;
+
+            // Format session name for display (remove "MBBL" prefix if already in name, or add it)
+            let displayName = session.session_name;
+            if (!displayName.includes('MBBL')) {
+              displayName = `MBBL ${displayName}`;
+            }
+
             return (
               <div
                 key={session.id}
@@ -161,7 +169,7 @@ export default function Dashboard() {
                     <div className="text-2xl">🏏</div>
                     <div>
                       <div className="font-semibold text-sm">
-                        {isMen ? "MBBL Men's Auction" : "MBBL Women's Auction"}
+                        {displayName}
                       </div>
                       <div className="text-xs opacity-90">
                         {isComplete ? "Auction Complete" : "Player bidding in progress"}

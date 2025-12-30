@@ -31,6 +31,11 @@ interface Player {
   age?: number;
   skill?: string;
   batting_hand?: string;
+  bowling_hand?: string;
+  wing?: string;
+  flat_no?: string;
+  phone?: string;
+  category?: string;
   played_s1?: string;
   experience?: string;
   active_sport?: string;
@@ -64,7 +69,25 @@ export default function AuctionAdminPage() {
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [playerFormData, setPlayerFormData] = useState({
-    name: '', photo: '', age: '', skill: '', batting_hand: '', played_s1: '', experience: '', active_sport: '', player_order: ''
+    name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: ''
+  });
+  const [uploadingPlayers, setUploadingPlayers] = useState(false);
+
+  // Settings state
+  const [selectedSessionForSettings, setSelectedSessionForSettings] = useState<string>('');
+  const [settings, setSettings] = useState<any>(null);
+  const [settingsFormData, setSettingsFormData] = useState({
+    minimum_bid: '5000',
+    players_per_team: '11',
+    default_bid_increment: '5000',
+    bid_increment_1_threshold: '100000',
+    bid_increment_1_amount: '10000',
+    bid_increment_2_threshold: '200000',
+    bid_increment_2_amount: '20000',
+    bid_increment_3_threshold: '400000',
+    bid_increment_3_amount: '30000',
+    bid_increment_4_threshold: '700000',
+    bid_increment_4_amount: '50000'
   });
 
   // Check authentication
@@ -125,6 +148,13 @@ export default function AuctionAdminPage() {
     }
   }, [selectedSessionForPlayers, isAdmin]);
 
+  // Load settings when session is selected
+  useEffect(() => {
+    if (selectedSessionForSettings && isAdmin) {
+      loadSettings(selectedSessionForSettings);
+    }
+  }, [selectedSessionForSettings, isAdmin]);
+
   const loadSessions = async () => {
     try {
       const { data, error } = await supabase
@@ -171,6 +201,7 @@ export default function AuctionAdminPage() {
       alert('Error loading players');
     }
   };
+
 
   const handleCreateSession = async () => {
     try {
@@ -349,6 +380,11 @@ export default function AuctionAdminPage() {
           age: playerFormData.age ? parseInt(playerFormData.age) : null,
           skill: playerFormData.skill || null,
           batting_hand: playerFormData.batting_hand || null,
+          bowling_hand: playerFormData.bowling_hand || null,
+          wing: playerFormData.wing || null,
+          flat_no: playerFormData.flat_no || null,
+          phone: playerFormData.phone || null,
+          category: playerFormData.category || null,
           played_s1: playerFormData.played_s1 || null,
           experience: playerFormData.experience || null,
           active_sport: playerFormData.active_sport || null,
@@ -358,7 +394,7 @@ export default function AuctionAdminPage() {
       if (error) throw error;
       alert('Player created successfully!');
       setShowPlayerForm(false);
-      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
       loadPlayers(selectedSessionForPlayers);
     } catch (error: any) {
       console.error('Error creating player:', error);
@@ -389,7 +425,7 @@ export default function AuctionAdminPage() {
       alert('Player updated successfully!');
       setEditingPlayer(null);
       setShowPlayerForm(false);
-      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
       loadPlayers(selectedSessionForPlayers);
     } catch (error: any) {
       console.error('Error updating player:', error);
@@ -412,6 +448,256 @@ export default function AuctionAdminPage() {
     } catch (error: any) {
       console.error('Error deleting player:', error);
       alert(`Error deleting player: ${error.message}`);
+    }
+  };
+
+  const parseCSV = (csvText: string): any[] => {
+    const lines = csvText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    const players: any[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      if (values.length === 0 || !values[0]) continue; // Skip empty rows
+
+      const player: any = {};
+      headers.forEach((header, index) => {
+        player[header] = values[index] || '';
+      });
+      players.push(player);
+    }
+
+    return players;
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!selectedSessionForPlayers) {
+      alert('Please select a session first');
+      event.target.value = ''; // Reset file input
+      return;
+    }
+
+    if (!file.name.endsWith('.csv')) {
+      alert('Please upload a CSV file');
+      event.target.value = ''; // Reset file input
+      return;
+    }
+
+    setUploadingPlayers(true);
+
+    try {
+      const text = await file.text();
+      const players = parseCSV(text);
+
+      if (players.length === 0) {
+        alert('No players found in the CSV file');
+        setUploadingPlayers(false);
+        event.target.value = ''; // Reset file input
+        return;
+      }
+
+      // Get all existing player_order values for this session to avoid duplicates
+      const { data: existingPlayers } = await supabase
+        .from('auction_player_pool')
+        .select('player_order')
+        .eq('session_id', selectedSessionForPlayers);
+
+      const existingOrders = new Set(
+        (existingPlayers || []).map(p => p.player_order).filter(o => o != null)
+      );
+
+      // Find the maximum player_order to start from
+      const maxOrder = existingOrders.size > 0 
+        ? Math.max(...Array.from(existingOrders))
+        : 0;
+
+      let nextAvailableOrder = maxOrder + 1;
+
+      // Prepare players for insertion
+      const playersToInsert = players.map((player) => {
+        let playerOrder: number;
+        
+        // If player_order is provided in CSV, try to use it
+        if (player.player_order && player.player_order.trim() !== '') {
+          const requestedOrder = parseInt(player.player_order);
+          // Check if this order is already taken
+          if (!existingOrders.has(requestedOrder) && requestedOrder > 0) {
+            playerOrder = requestedOrder;
+            existingOrders.add(requestedOrder); // Mark as used
+          } else {
+            // Order is taken, find next available
+            while (existingOrders.has(nextAvailableOrder)) {
+              nextAvailableOrder++;
+            }
+            playerOrder = nextAvailableOrder;
+            existingOrders.add(nextAvailableOrder);
+            nextAvailableOrder++;
+          }
+        } else {
+          // No order specified, find next available
+          while (existingOrders.has(nextAvailableOrder)) {
+            nextAvailableOrder++;
+          }
+          playerOrder = nextAvailableOrder;
+          existingOrders.add(nextAvailableOrder);
+          nextAvailableOrder++;
+        }
+
+        return {
+          session_id: selectedSessionForPlayers,
+          name: player.name || '',
+          photo: player.photo || null,
+          age: player.age ? parseInt(player.age) : null,
+          skill: player.skill || null,
+          batting_hand: player.batting_hand || null,
+          bowling_hand: player.bowling_hand || null,
+          wing: player.wing || null,
+          flat_no: player.flat_no || null,
+          phone: player.phone || null,
+          category: player.category || null,
+          played_s1: player.played_s1 || null,
+          experience: player.experience || null,
+          active_sport: player.active_sport || null,
+          player_order: playerOrder
+        };
+      });
+
+      // Insert players in batches to avoid overwhelming the database
+      const batchSize = 50;
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < playersToInsert.length; i += batchSize) {
+        const batch = playersToInsert.slice(i, i + batchSize);
+        const { error } = await supabase
+          .from('auction_player_pool')
+          .insert(batch);
+
+        if (error) {
+          console.error('Error inserting batch:', error);
+          errorCount += batch.length;
+        } else {
+          successCount += batch.length;
+        }
+      }
+
+      if (errorCount > 0) {
+        alert(`Uploaded ${successCount} players. ${errorCount} players failed to upload.`);
+      } else {
+        alert(`Successfully uploaded ${successCount} players!`);
+      }
+
+      loadPlayers(selectedSessionForPlayers);
+    } catch (error: any) {
+      console.error('Error uploading players:', error);
+      alert(`Error uploading players: ${error.message}`);
+    } finally {
+      setUploadingPlayers(false);
+      event.target.value = ''; // Reset file input
+    }
+  };
+
+  const loadSettings = async (sessionId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('auction_settings')
+        .select('*')
+        .eq('session_id', sessionId)
+        .single();
+      
+      if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+        throw error;
+      }
+
+      if (data) {
+        setSettings(data);
+        setSettingsFormData({
+          minimum_bid: data.minimum_bid?.toString() || '5000',
+          players_per_team: data.players_per_team?.toString() || '11',
+          default_bid_increment: data.default_bid_increment?.toString() || '5000',
+          bid_increment_1_threshold: data.bid_increment_1_threshold?.toString() || '100000',
+          bid_increment_1_amount: data.bid_increment_1_amount?.toString() || '10000',
+          bid_increment_2_threshold: data.bid_increment_2_threshold?.toString() || '200000',
+          bid_increment_2_amount: data.bid_increment_2_amount?.toString() || '20000',
+          bid_increment_3_threshold: data.bid_increment_3_threshold?.toString() || '400000',
+          bid_increment_3_amount: data.bid_increment_3_amount?.toString() || '30000',
+          bid_increment_4_threshold: data.bid_increment_4_threshold?.toString() || '700000',
+          bid_increment_4_amount: data.bid_increment_4_amount?.toString() || '50000'
+        });
+      } else {
+        // No settings found, use defaults
+        setSettings(null);
+        setSettingsFormData({
+          minimum_bid: '5000',
+          players_per_team: '11',
+          default_bid_increment: '5000',
+          bid_increment_1_threshold: '100000',
+          bid_increment_1_amount: '10000',
+          bid_increment_2_threshold: '200000',
+          bid_increment_2_amount: '20000',
+          bid_increment_3_threshold: '400000',
+          bid_increment_3_amount: '30000',
+          bid_increment_4_threshold: '700000',
+          bid_increment_4_amount: '50000'
+        });
+      }
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      alert('Error loading settings');
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!selectedSessionForSettings) {
+      alert('Please select a session first');
+      return;
+    }
+
+    try {
+      const settingsData = {
+        session_id: selectedSessionForSettings,
+        minimum_bid: parseFloat(settingsFormData.minimum_bid) || 5000,
+        players_per_team: parseInt(settingsFormData.players_per_team) || 11,
+        default_bid_increment: parseFloat(settingsFormData.default_bid_increment) || 5000,
+        bid_increment_1_threshold: parseFloat(settingsFormData.bid_increment_1_threshold) || 100000,
+        bid_increment_1_amount: parseFloat(settingsFormData.bid_increment_1_amount) || 10000,
+        bid_increment_2_threshold: parseFloat(settingsFormData.bid_increment_2_threshold) || 200000,
+        bid_increment_2_amount: parseFloat(settingsFormData.bid_increment_2_amount) || 20000,
+        bid_increment_3_threshold: parseFloat(settingsFormData.bid_increment_3_threshold) || 400000,
+        bid_increment_3_amount: parseFloat(settingsFormData.bid_increment_3_amount) || 30000,
+        bid_increment_4_threshold: parseFloat(settingsFormData.bid_increment_4_threshold) || 700000,
+        bid_increment_4_amount: parseFloat(settingsFormData.bid_increment_4_amount) || 50000,
+        updated_at: new Date().toISOString()
+      };
+
+      if (settings) {
+        // Update existing settings
+        const { error } = await supabase
+          .from('auction_settings')
+          .update(settingsData)
+          .eq('session_id', selectedSessionForSettings);
+        
+        if (error) throw error;
+        alert('Settings updated successfully!');
+      } else {
+        // Create new settings
+        const { error } = await supabase
+          .from('auction_settings')
+          .insert([settingsData]);
+        
+        if (error) throw error;
+        alert('Settings created successfully!');
+      }
+
+      loadSettings(selectedSessionForSettings);
+    } catch (error: any) {
+      console.error('Error saving settings:', error);
+      alert(`Error saving settings: ${error.message}`);
     }
   };
 
@@ -759,17 +1045,40 @@ export default function AuctionAdminPage() {
               <>
                 <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
                   <h2 className="text-xl md:text-2xl lg:text-3xl font-bold" style={{ color: '#E5E7EB' }}>Players</h2>
-                  <button
-                    onClick={() => {
-                      setEditingPlayer(null);
-                      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
-                      setShowPlayerForm(true);
-                    }}
-                    className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
-                    style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
-                  >
-                    + Add Player
-                  </button>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
+                    <a
+                      href="/player_upload_template.csv"
+                      download="player_upload_template.csv"
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
+                      style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
+                    >
+                      📥 Download Template
+                    </a>
+                    <label
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto cursor-pointer"
+                      style={{ backgroundColor: '#22C55E', color: '#E5E7EB' }}
+                    >
+                      {uploadingPlayers ? '⏳ Uploading...' : '📤 Upload CSV'}
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileUpload}
+                        disabled={uploadingPlayers}
+                        className="hidden"
+                      />
+                    </label>
+                    <button
+                      onClick={() => {
+                        setEditingPlayer(null);
+                        setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+                        setShowPlayerForm(true);
+                      }}
+                      className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                      style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                    >
+                      + Add Player
+                    </button>
+                  </div>
                 </div>
 
                 {showPlayerForm && (
@@ -838,6 +1147,63 @@ export default function AuctionAdminPage() {
                         </select>
                       </div>
                       <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Bowling Hand</label>
+                        <select
+                          value={playerFormData.bowling_hand}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, bowling_hand: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        >
+                          <option value="">Select...</option>
+                          <option value="Right">Right</option>
+                          <option value="Left">Left</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Wing</label>
+                        <input
+                          type="text"
+                          value={playerFormData.wing}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, wing: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          placeholder="e.g., A Wing, B Wing"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Flat No</label>
+                        <input
+                          type="text"
+                          value={playerFormData.flat_no}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, flat_no: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          placeholder="e.g., 101, 202"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Phone</label>
+                        <input
+                          type="text"
+                          value={playerFormData.phone}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, phone: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          placeholder="e.g., +91-9876543210"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Category</label>
+                        <input
+                          type="text"
+                          value={playerFormData.category}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, category: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          placeholder="e.g., Marquee, Regular"
+                        />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Played Previous Season</label>
                         <select
                           value={playerFormData.played_s1}
@@ -894,7 +1260,7 @@ export default function AuctionAdminPage() {
                         onClick={() => {
                           setShowPlayerForm(false);
                           setEditingPlayer(null);
-                          setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+                          setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
                         }}
                         className="px-4 py-2 rounded-lg font-semibold transition-colors"
                         style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
@@ -944,6 +1310,11 @@ export default function AuctionAdminPage() {
                               age: player.age?.toString() || '',
                               skill: player.skill || '',
                               batting_hand: player.batting_hand || '',
+                              bowling_hand: player.bowling_hand || '',
+                              wing: player.wing || '',
+                              flat_no: player.flat_no || '',
+                              phone: player.phone || '',
+                              category: player.category || '',
                               played_s1: player.played_s1 || '',
                               experience: player.experience || '',
                               active_sport: player.active_sport || '',
@@ -975,20 +1346,183 @@ export default function AuctionAdminPage() {
         {/* Settings Tab */}
         {activeTab === 'settings' && (
           <div>
-            <h2 className="text-xl md:text-2xl lg:text-3xl font-bold mb-4 md:mb-6" style={{ color: '#E5E7EB' }}>Auction Settings</h2>
-            <div className="p-4 md:p-6 rounded-lg border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-              <p className="text-sm" style={{ color: '#9CA3AF' }}>
-                Settings are currently hardcoded in the application. To customize:
-              </p>
-              <ul className="list-disc list-inside mt-2 space-y-1 text-sm" style={{ color: '#9CA3AF' }}>
-                <li>Minimum Bid: ₹5,000 (in AuctionClient.tsx)</li>
-                <li>Players Per Team: 11 (in AuctionClient.tsx)</li>
-                <li>Bid Increments: Dynamic based on bid amount (in AuctionClient.tsx)</li>
-              </ul>
-              <p className="text-sm mt-4" style={{ color: '#9CA3AF' }}>
-                To make these configurable, you would need to add a settings table in the database and update the AuctionClient component to read from it.
-              </p>
+            <div className="mb-4 md:mb-6">
+              <label className="block text-sm md:text-base font-medium mb-2" style={{ color: '#E5E7EB' }}>Select Session</label>
+              <select
+                value={selectedSessionForSettings}
+                onChange={(e) => setSelectedSessionForSettings(e.target.value)}
+                className="w-full md:w-80 lg:w-96 px-3 py-2 md:px-4 md:py-3 rounded-lg border text-sm md:text-base"
+                style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+              >
+                <option value="">Select a session...</option>
+                {sessions.map((session) => (
+                  <option key={session.id} value={session.id}>{session.session_name}</option>
+                ))}
+              </select>
             </div>
+
+            {selectedSessionForSettings && (
+              <>
+                <h2 className="text-xl md:text-2xl lg:text-3xl font-bold mb-4 md:mb-6" style={{ color: '#E5E7EB' }}>Auction Settings</h2>
+                <div className="p-4 md:p-6 rounded-lg border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                  <div className="space-y-4">
+                    {/* Basic Settings */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Basic Settings</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Minimum Bid (₹)</label>
+                          <input
+                            type="number"
+                            value={settingsFormData.minimum_bid}
+                            onChange={(e) => setSettingsFormData({ ...settingsFormData, minimum_bid: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Players Per Team</label>
+                          <input
+                            type="number"
+                            value={settingsFormData.players_per_team}
+                            onChange={(e) => setSettingsFormData({ ...settingsFormData, players_per_team: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Default Bid Increment (₹)</label>
+                          <input
+                            type="number"
+                            value={settingsFormData.default_bid_increment}
+                            onChange={(e) => setSettingsFormData({ ...settingsFormData, default_bid_increment: e.target.value })}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                            placeholder="Used below first threshold"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bid Increment Tiers */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Dynamic Bid Increments</h3>
+                      <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>
+                        Configure bid increments based on bid amount thresholds. The system will use the highest threshold that the current bid exceeds.
+                      </p>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 1: Threshold (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_1_threshold}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_1_threshold: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="100000"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 1: Increment Amount (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_1_amount}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_1_amount: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="10000"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 2: Threshold (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_2_threshold}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_2_threshold: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="200000"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 2: Increment Amount (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_2_amount}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_2_amount: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="20000"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 3: Threshold (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_3_threshold}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_3_threshold: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="400000"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 3: Increment Amount (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_3_amount}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_3_amount: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="30000"
+                            />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 4: Threshold (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_4_threshold}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_4_threshold: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="700000"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tier 4: Increment Amount (₹)</label>
+                            <input
+                              type="number"
+                              value={settingsFormData.bid_increment_4_amount}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, bid_increment_4_amount: e.target.value })}
+                              className="w-full px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="50000"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                      <button
+                        onClick={handleSaveSettings}
+                        className="px-4 py-2 rounded-lg font-semibold transition-colors"
+                        style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                      >
+                        {settings ? 'Update Settings' : 'Create Settings'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -18,6 +18,11 @@ interface Player {
     active_sport?: string; // Active sport practiced
     skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
     batting_hand?: string; // Right/Left
+    bowling_hand?: string; // Right/Left
+    wing?: string; // Player wing/position
+    flat_no?: string; // Flat number
+    phone?: string; // Player phone number
+    category?: string; // Player category
 }
 
 interface Team {
@@ -26,68 +31,74 @@ interface Team {
     budget: number;
     players: Player[];
     ownerName?: string;
+    logoUrl?: string; // Custom logo URL from database
 }
 
 const TOTAL_AMOUNT = 111000;
-const MINIMUM_BID = 5000;
 const TEAMS_COUNT = 8;
-const PLAYERS_PER_TEAM = 11; // Maximum 11 players per team
 
-// Dynamic bid increment based on current bid amount
-const getBidIncrement = (currentBid: number): number => {
+// Default values (used as fallback if settings not loaded)
+const DEFAULT_MINIMUM_BID = 5000;
+const DEFAULT_PLAYERS_PER_TEAM = 11;
+
+// Default bid increment function (used as fallback)
+const getDefaultBidIncrement = (currentBid: number): number => {
     if (currentBid >= 700000) {
-        return 50000; // After 7 lacs: increase by 50,000
+        return 50000;
     } else if (currentBid >= 400000) {
-        return 30000; // After 4 lacs: increase by 30,000
+        return 30000;
     } else if (currentBid >= 200000) {
-        return 20000; // After 2 lacs: increase by 20,000
+        return 20000;
     } else if (currentBid >= 100000) {
-        return 10000; // After 1 lac: increase by 10,000
+        return 10000;
     } else {
-        return 5000; // Default: increase by 5,000
+        return 5000;
     }
 };
 
-// Team logos mapping for Women's teams (first 4 logos)
-const WOMENS_TEAM_LOGOS: { [key: number]: string } = {
-    1: '/team-logos/team1.jpeg',
-    2: '/team-logos/team2.jpeg',
-    3: '/team-logos/team3.jpeg',
-    4: '/team-logos/team4.jpeg',
-};
-
-// Team logos mapping for Men's teams (logos 5-14 for 10 teams)
-const MENS_TEAM_LOGOS: { [key: number]: string } = {
-    1: '/team-logos/team5.jpeg',
-    2: '/team-logos/team6.jpeg',
-    3: '/team-logos/team7.jpeg',
-    4: '/team-logos/team8.jpeg',
-    5: '/team-logos/team9.jpeg',
-    6: '/team-logos/team10.jpeg',
-    7: '/team-logos/team11.jpeg',
-    8: '/team-logos/team12.jpeg',
-    9: '/team-logos/team13.jpeg',
-    10: '/team-logos/team14.jpeg',
-};
-
-// Helper function to get team logo based on session type
-const getTeamLogo = (teamId: number, sessionName: string | null): string => {
-    // Default to Men's if session name is not available
-    if (!sessionName) {
-        return MENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
+// Get bid increment based on settings
+const getBidIncrementFromSettings = (currentBid: number, settings: {
+    minimum_bid: number;
+    players_per_team: number;
+    default_bid_increment: number;
+    bid_increment_1_threshold: number;
+    bid_increment_1_amount: number;
+    bid_increment_2_threshold: number;
+    bid_increment_2_amount: number;
+    bid_increment_3_threshold: number;
+    bid_increment_3_amount: number;
+    bid_increment_4_threshold: number;
+    bid_increment_4_amount: number;
+} | null): number => {
+    if (!settings) {
+        return getDefaultBidIncrement(currentBid);
     }
 
-    const sessionNameLower = sessionName.toLowerCase().trim();
+    // Check thresholds in descending order (highest first)
+    if (currentBid >= settings.bid_increment_4_threshold) {
+        return settings.bid_increment_4_amount;
+    } else if (currentBid >= settings.bid_increment_3_threshold) {
+        return settings.bid_increment_3_amount;
+    } else if (currentBid >= settings.bid_increment_2_threshold) {
+        return settings.bid_increment_2_amount;
+    } else if (currentBid >= settings.bid_increment_1_threshold) {
+        return settings.bid_increment_1_amount;
+    } else {
+        return settings.default_bid_increment;
+    }
+};
 
-    // Explicitly check for Women's session
-    if (sessionNameLower.includes('women')) {
-        // Women's teams use first 4 logos (team1-4.jpeg)
-        return WOMENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
+// Helper function to get team logo from database (Google Drive or direct URL)
+// All team logos are now stored in the database as logo_url
+const getTeamLogo = (customLogoUrl?: string): string => {
+    // If team has a custom logo URL from database, process it (handles Google Drive links)
+    if (customLogoUrl) {
+        const processed = processImageUrl(customLogoUrl);
+        return processed || customLogoUrl; // Fallback to original if processing fails
     }
 
-    // For Men's session or any other case, use Men's logos (team5-14.jpeg)
-    // This includes sessions with "Men", "Mens", or any other name
-    return MENS_TEAM_LOGOS[teamId] || '/logo.jpeg';
+    // Fallback to default logo if no custom logo is provided
+    return '/logo.jpeg';
 };
 
 // Database types for auction
@@ -97,6 +108,7 @@ interface DbTeam {
     name: string;
     budget: number;
     owner_name?: string;
+    logo_url?: string;
 }
 
 interface DbPlayer {
@@ -117,6 +129,11 @@ interface DbPlayerPool {
     active_sport?: string;
     skill?: string;
     batting_hand?: string;
+    bowling_hand?: string;
+    wing?: string;
+    flat_no?: string;
+    phone?: string;
+    category?: string;
 }
 
 // Flag to control public auction access
@@ -163,8 +180,34 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }));
     });
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
-    const [currentBid, setCurrentBid] = useState(MINIMUM_BID);
+    const [auctionSettings, setAuctionSettings] = useState<{
+        minimum_bid: number;
+        players_per_team: number;
+        default_bid_increment: number;
+        bid_increment_1_threshold: number;
+        bid_increment_1_amount: number;
+        bid_increment_2_threshold: number;
+        bid_increment_2_amount: number;
+        bid_increment_3_threshold: number;
+        bid_increment_3_amount: number;
+        bid_increment_4_threshold: number;
+        bid_increment_4_amount: number;
+    } | null>(null);
+    const [currentBid, setCurrentBid] = useState(DEFAULT_MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
+
+    // Helper functions to get current settings values (with fallback to defaults)
+    const getMinimumBid = (): number => {
+        return auctionSettings?.minimum_bid || DEFAULT_MINIMUM_BID;
+    };
+
+    const getPlayersPerTeam = (): number => {
+        return auctionSettings?.players_per_team || DEFAULT_PLAYERS_PER_TEAM;
+    };
+
+    const getBidIncrement = (currentBid: number): number => {
+        return getBidIncrementFromSettings(currentBid, auctionSettings);
+    };
     const [playerBids, setPlayerBids] = useState<Map<number, { teamId: number; teamName: string; amount: number }>>(new Map()); // Track bids: amount -> team info
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
     const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
@@ -365,7 +408,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
@@ -384,7 +427,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     experience: p.experience || undefined,
                     active_sport: p.active_sport || undefined,
                     skill: p.skill || undefined,
-                    batting_hand: p.batting_hand || undefined
+                    batting_hand: p.batting_hand || undefined,
+                    bowling_hand: p.bowling_hand || undefined,
+                    wing: p.wing || undefined,
+                    flat_no: p.flat_no || undefined,
+                    phone: p.phone || undefined,
+                    category: p.category || undefined
                 }));
 
                 setPlayers(mappedPlayers);
@@ -421,7 +469,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         name: team.name,
                         budget: Number(team.budget), // Ensure budget is a number
                         players: teamPlayers,
-                        ownerName: team.owner_name || undefined
+                        ownerName: team.owner_name || undefined,
+                        logoUrl: team.logo_url || undefined
                     };
                 });
 
@@ -527,7 +576,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     name: team.name,
                     budget: Number(team.budget), // Ensure budget is a number
                     players: teamPlayers,
-                    ownerName: team.owner_name
+                    ownerName: team.owner_name,
+                    logoUrl: team.logo_url || undefined
                 };
             });
 
@@ -617,7 +667,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand')
+                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
 
@@ -685,7 +735,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 .update({ current_player_index: 0 })
                 .eq('id', sessionId);
 
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
@@ -720,7 +770,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 .update({ current_player_index: 0 })
                 .eq('id', sessionId);
 
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
@@ -771,12 +821,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     // Default card styling (no category-based styling)
     const cardStyle = { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
 
-    const currentMinimumBid = 5000
+    const currentMinimumBid = getMinimumBid()
 
     // Update bid when player changes
     useEffect(() => {
         if (currentPlayer && sessionId) {
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setPlayerBids(new Map()); // Clear bids for new player
             setSelectedTeamId(null); // Clear selected team
@@ -794,7 +844,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
     // Track bid when team is selected and bid amount changes
     useEffect(() => {
-        if (selectedTeamId && currentBid >= MINIMUM_BID) {
+        if (selectedTeamId && currentBid >= getMinimumBid()) {
             const team = teams.find(t => t.id === selectedTeamId);
             if (team) {
                 setPlayerBids(prev => {
@@ -818,9 +868,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         if (!team) return;
 
         // Calculate maximum bid this team can make for current player
-        // They need to reserve MINIMUM_BID for each remaining player slot
-        const remainingSlots = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because buying current player
-        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * MINIMUM_BID : 0;
+        // They need to reserve minimum bid for each remaining player slot
+        const remainingSlots = getPlayersPerTeam() - team.players.length - 1; // -1 because buying current player
+        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * getMinimumBid() : 0;
         const maxBid = team.budget - minimumRequiredForRemaining;
 
         // Calculate new bid amount first
@@ -830,9 +880,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         // Check if team can afford the NEW bid amount and if it's within their max bid
         const canAfford = team.budget >= newBid;
         const withinMaxBid = newBid <= maxBid;
-        const hasSpace = team.players.length < PLAYERS_PER_TEAM;
+        const hasSpace = team.players.length < getPlayersPerTeam();
 
-        if (!canAfford || !hasSpace || !withinMaxBid || maxBid < MINIMUM_BID) return;
+        if (!canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid()) return;
 
         // Set the new bid amount and selected team
         setCurrentBid(newBid);
@@ -955,9 +1005,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         const team = teams.find(t => t.id === selectedTeamId);
         if (!team) return;
 
-        // Check if team has space (maximum 11 players)
-        if (team.players.length >= PLAYERS_PER_TEAM) {
-            alert(`Team ${team.name} already has ${PLAYERS_PER_TEAM} players! Maximum allowed is ${PLAYERS_PER_TEAM}.`);
+        // Check if team has space
+        const playersPerTeam = getPlayersPerTeam();
+        if (team.players.length >= playersPerTeam) {
+            alert(`Team ${team.name} already has ${playersPerTeam} players! Maximum allowed is ${playersPerTeam}.`);
             return;
         }
 
@@ -968,8 +1019,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
 
         // Calculate remaining players needed
-        const remainingPlayersNeeded = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because we're about to buy this player
-        const minimumRequiredBudget = remainingPlayersNeeded * MINIMUM_BID;
+        const remainingPlayersNeeded = playersPerTeam - team.players.length - 1; // -1 because we're about to buy this player
+        const minimumRequiredBudget = remainingPlayersNeeded * getMinimumBid();
 
         // Check if after this bid, team will have enough budget for remaining players
         const budgetAfterBid = team.budget - currentBid;
@@ -977,7 +1028,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             alert(
                 `Team ${team.name} cannot bid ₹${currentBid.toLocaleString()} on this player.\n\n` +
                 `After this bid, the team will have ₹${budgetAfterBid.toLocaleString()} remaining, ` +
-                `but needs at least ₹${minimumRequiredBudget.toLocaleString()} to buy ${remainingPlayersNeeded} more player(s) at minimum bid (₹${MINIMUM_BID.toLocaleString()} each).\n\n` +
+                `but needs at least ₹${minimumRequiredBudget.toLocaleString()} to buy ${remainingPlayersNeeded} more player(s) at minimum bid (₹${getMinimumBid().toLocaleString()} each).\n\n` +
                 `Maximum allowed bid: ₹${(team.budget - minimumRequiredBudget).toLocaleString()}`
             );
             return;
@@ -1095,7 +1146,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 .eq('id', sessionId);
 
             // Reset UI state
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
@@ -1224,7 +1275,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             }
 
             // Reset UI state
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
         } catch (error) {
@@ -1278,7 +1329,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setCurrentPlayerIndex(playerIndex);
 
             // Reset bid to minimum
-            const newMinimum = MINIMUM_BID;
+            const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
 
@@ -1423,8 +1474,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
             // Load team logo
             try {
-                const teamLogoPath = getTeamLogo(team.id, sessionName);
-                const response = await fetch(teamLogoPath);
+                const teamLogoPath = getTeamLogo(team.logoUrl);
+                // If it's a proxy URL (starts with /api/proxy-image), use it directly
+                // Otherwise, fetch it normally
+                const logoUrlToFetch = teamLogoPath.startsWith('/api/proxy-image')
+                    ? teamLogoPath
+                    : teamLogoPath;
+                const response = await fetch(logoUrlToFetch);
                 const blob = await response.blob();
                 const reader = new FileReader();
 
@@ -2223,7 +2279,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <h2 className="text-xl font-semibold text-gray-900">{team.name}</h2>
                                     <Image
                                         key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
-                                        src={getTeamLogo(team.id, sessionName)}
+                                        src={getTeamLogo(team.logoUrl)}
                                         alt={`${team.name} logo`}
                                         width={48}
                                         height={48}
@@ -2543,9 +2599,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 <div className="grid grid-cols-2 gap-3">
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
-                                        // They need to reserve MINIMUM_BID for each remaining player slot
-                                        const remainingSlots = PLAYERS_PER_TEAM - team.players.length - 1; // -1 because buying current player
-                                        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * MINIMUM_BID : 0;
+                                        // They need to reserve minimum bid for each remaining player slot
+                                        const remainingSlots = getPlayersPerTeam() - team.players.length - 1; // -1 because buying current player
+                                        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * getMinimumBid() : 0;
                                         const maxBid = team.budget - minimumRequiredForRemaining;
 
                                         // Calculate what the new bid would be if this team is selected
@@ -2555,8 +2611,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         // Check if team can afford the new bid and if it's within their max bid
                                         const canAfford = team.budget >= newBid;
                                         const withinMaxBid = newBid <= maxBid;
-                                        const hasSpace = team.players.length < PLAYERS_PER_TEAM;
-                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < MINIMUM_BID;
+                                        const hasSpace = team.players.length < getPlayersPerTeam();
+                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid();
 
                                         const isViewOnly = !canEdit;
                                         const finalDisabled = isDisabled || isViewOnly;
@@ -2584,7 +2640,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 <div className="flex items-center gap-2 mb-2">
                                                     <Image
                                                         key={`team-${team.id}-${sessionName || 'default'}`}
-                                                        src={getTeamLogo(team.id, sessionName)}
+                                                        src={getTeamLogo(team.logoUrl)}
                                                         alt={`${team.name} logo`}
                                                         width={32}
                                                         height={32}
@@ -2597,9 +2653,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
                                                 <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
-                                                    Players: {team.players.length}/{PLAYERS_PER_TEAM}
+                                                    Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
-                                                {maxBid >= MINIMUM_BID && (
+                                                {maxBid >= getMinimumBid() && (
                                                     <div className="text-xs mb-1 font-medium" style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{maxBid.toLocaleString()}
                                                     </div>
@@ -2607,10 +2663,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 {!hasSpace && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Team full</div>
                                                 )}
-                                                {hasSpace && maxBid < MINIMUM_BID && (
+                                                {hasSpace && maxBid < getMinimumBid() && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Cannot afford minimum</div>
                                                 )}
-                                                {hasSpace && maxBid >= MINIMUM_BID && !withinMaxBid && (
+                                                {hasSpace && maxBid >= getMinimumBid() && !withinMaxBid && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Exceeds max bid</div>
                                                 )}
                                             </button>
@@ -2701,46 +2757,84 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     </div>
 
                                     {/* Basic Info Badges - Right below name */}
-                                    <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
+                                    <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-3">
                                         {currentPlayer.age && (
-                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 Age: {currentPlayer.age}
                                             </span>
                                         )}
                                         {currentPlayer.batting_hand && (
-                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                {currentPlayer.batting_hand} Handed
+                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                                Bat: {currentPlayer.batting_hand}
+                                            </span>
+                                        )}
+                                        {currentPlayer.bowling_hand && (
+                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                                Bowl: {currentPlayer.bowling_hand}
                                             </span>
                                         )}
                                         {currentPlayer.skill && (
-                                            <span className="px-4 py-2 rounded-lg font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 {currentPlayer.skill}
                                             </span>
                                         )}
                                     </div>
 
-                                    {/* Player Details Grid */}
-                                    <div className="space-y-4">
+                                    {/* Player Details - Compact Grid Layout */}
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                                        {/* Wing */}
+                                        {currentPlayer.wing && (
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Flat No */}
+                                        {currentPlayer.flat_no && (
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Phone */}
+                                        {currentPlayer.phone && (
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Phone</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.phone}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Category */}
+                                        {currentPlayer.category && (
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Category</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.category}</div>
+                                            </div>
+                                        )}
+
                                         {/* Played Previous MBBL Season - Only for Men's auction */}
                                         {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Played Previous MBBL Season</div>
-                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played Previous Season</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
                                             </div>
                                         )}
 
                                         {/* Experience */}
                                         {currentPlayer.experience && (
-                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-2" style={{ color: '#9CA3AF' }}>Experience</div>
-                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
                                             </div>
                                         )}
 
-                                        {/* Active Sport - Below Experience */}
+                                        {/* Active Sport */}
                                         {currentPlayer.active_sport && (
-                                            <div className="rounded-lg p-4 md:p-5 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-lg md:text-xl font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
+                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                             </div>
                                         )}
                                     </div>
@@ -2792,7 +2886,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                             {team && (
                                                                 <Image
                                                                     key={`bid-team-${bidInfo.teamId}-${sessionName || 'default'}`}
-                                                                    src={getTeamLogo(bidInfo.teamId, sessionName)}
+                                                                    src={getTeamLogo(team.logoUrl)}
                                                                     alt={`${bidInfo.teamName} logo`}
                                                                     width={24}
                                                                     height={24}
@@ -2971,7 +3065,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                             <div className="flex items-center gap-3">
                                                 <Image
                                                     key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
-                                                    src={getTeamLogo(team.id, sessionName)}
+                                                    src={getTeamLogo(team.logoUrl)}
                                                     alt={`${team.name} logo`}
                                                     width={40}
                                                     height={40}
@@ -2981,7 +3075,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 <div className="min-w-0 flex-1">
                                                     <h3 className="text-base md:text-lg font-semibold break-normal leading-tight" style={{ color: '#E5E7EB' }}>{team.name}</h3>
                                                     <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
-                                                        {team.players.length} / {PLAYERS_PER_TEAM} players
+                                                        {team.players.length} / {getPlayersPerTeam()} players
                                                     </div>
                                                 </div>
                                             </div>
@@ -3094,13 +3188,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     <span className="text-base font-bold" style={{ color: '#22C55E' }}>₹{player.bidAmount?.toLocaleString() || '0'}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 text-sm ml-11" style={{ color: '#9CA3AF' }}>
-                                                    <Image
-                                                        src={getTeamLogo(player.teamId, sessionName)}
-                                                        alt={`${player.teamName} logo`}
-                                                        width={20}
-                                                        height={20}
-                                                        className="object-contain"
-                                                    />
+                                                    {(() => {
+                                                        const playerTeam = teams.find(t => t.id === player.teamId);
+                                                        return (
+                                                            <Image
+                                                                src={getTeamLogo(playerTeam?.logoUrl)}
+                                                                alt={`${player.teamName} logo`}
+                                                                width={20}
+                                                                height={20}
+                                                                className="object-contain"
+                                                            />
+                                                        );
+                                                    })()}
                                                     <span>{player.teamName}</span>
                                                 </div>
                                             </div>
@@ -3271,7 +3370,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 .eq('id', sessionId);
 
                                             // Reset bid
-                                            const newMinimum = MINIMUM_BID;
+                                            const newMinimum = getMinimumBid();
                                             setCurrentBid(newMinimum);
                                             setSelectedTeamId(null);
 
