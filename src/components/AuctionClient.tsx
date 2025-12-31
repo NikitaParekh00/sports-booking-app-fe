@@ -2589,14 +2589,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             </div>
 
             <div className="w-full px-2 md:px-3 py-4">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 items-start">
+                <div className={`grid grid-cols-1 ${teams.length > 10 ? 'lg:grid-cols-5' : 'lg:grid-cols-3'} gap-3 md:gap-4 items-start`}>
                     {/* Left Sidebar - Team Selection (Desktop) */}
-                    <div className="hidden lg:block lg:col-span-1">
-                        <div className="rounded-xl border-2 p-4 md:p-5 space-y-4" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                    <div className={`hidden lg:block ${teams.length > 10 ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
+                        <div className="rounded-xl border-2 p-4 md:p-5" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {/* Select Team Section */}
                             <div>
-                                <h2 className="text-xl font-bold mb-4" style={{ color: '#E5E7EB' }}>Select Team</h2>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // They need to reserve minimum bid for each remaining player slot
@@ -2637,7 +2636,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     : { backgroundColor: '#111827', borderColor: '#1F2937' }
                                                 }
                                             >
-                                                <div className="flex items-center gap-2 mb-2">
+                                                <div className="flex items-center gap-2 mb-2 min-w-0">
                                                     <Image
                                                         key={`team-${team.id}-${sessionName || 'default'}`}
                                                         src={getTeamLogo(team.logoUrl)}
@@ -2647,7 +2646,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         className="object-contain flex-shrink-0"
                                                         unoptimized
                                                     />
-                                                    <div className="font-semibold text-sm break-normal min-w-0 flex-1 leading-tight" style={{ color: '#E5E7EB' }}>{team.name}</div>
+                                                    <div className="font-semibold text-sm break-words min-w-0 flex-1 leading-tight overflow-wrap-anywhere" style={{ color: '#E5E7EB', wordBreak: 'break-word' }}>{team.name}</div>
                                                 </div>
                                                 <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
@@ -2678,7 +2677,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     </div>
 
                     {/* Main Content Area */}
-                    <div className="lg:col-span-2 space-y-4 pb-32 md:pb-4">
+                    <div className={`${teams.length > 10 ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-4 pb-32 md:pb-4`}>
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
@@ -2694,12 +2693,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
 
                         {/* Current Player Card */}
-                        <div className="rounded-xl p-5 md:p-7 border-2 shadow-lg" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex flex-col md:flex-row gap-6 md:gap-8 mb-6">
+                        <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
                                 {/* Player Photo - Top on mobile, Left on desktop */}
                                 <div className="flex-shrink-0 flex justify-center md:justify-start">
                                     {currentPlayer.photo && (
-                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-80 md:w-72 md:h-96 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
                                             {/* Automatically converts Google Drive links to direct image URLs */}
                                             {(() => {
                                                 const imageUrl = processImageUrl(currentPlayer.photo);
@@ -2743,8 +2742,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 {/* Player Info - Below image on mobile, Right side on desktop */}
                                 <div className="flex-1 flex flex-col">
                                     {/* Header: Name and Logo */}
-                                    <div className="flex items-center justify-center md:justify-between gap-3 md:gap-4 mb-3">
-                                        <h2 className="text-3xl md:text-4xl font-bold" style={{ color: '#E5E7EB' }}>{currentPlayer.name}</h2>
+                                    <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
+                                        <h2 className="text-xl md:text-2xl font-bold" style={{ color: '#E5E7EB' }}>{currentPlayer.name}</h2>
                                         <div className="flex-shrink-0">
                                             <Image
                                                 src="/logo.jpeg"
@@ -2757,84 +2756,87 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     </div>
 
                                     {/* Basic Info Badges - Right below name */}
-                                    <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-3">
+                                    <div className="flex flex-wrap gap-1.5 md:gap-2 justify-center md:justify-start mb-2">
                                         {currentPlayer.age && (
-                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-2 py-1 rounded-lg text-xs md:text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 Age: {currentPlayer.age}
                                             </span>
                                         )}
                                         {currentPlayer.batting_hand && (
-                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-2 py-1 rounded-lg text-xs md:text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 Bat: {currentPlayer.batting_hand}
                                             </span>
                                         )}
                                         {currentPlayer.bowling_hand && (
-                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-2 py-1 rounded-lg text-xs md:text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 Bowl: {currentPlayer.bowling_hand}
                                             </span>
                                         )}
                                         {currentPlayer.skill && (
-                                            <span className="px-3 py-1.5 rounded-lg text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                            <span className="px-2 py-1 rounded-lg text-xs md:text-sm font-medium border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
                                                 {currentPlayer.skill}
                                             </span>
                                         )}
                                     </div>
 
-                                    {/* Player Details - Compact Grid Layout */}
-                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-3">
+                                    {/* Player Details - Row 1 */}
+                                    <div className="grid grid-cols-3 md:grid-cols-4 gap-1.5 md:gap-2 mb-1.5">
                                         {/* Wing */}
                                         {currentPlayer.wing && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Wing</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
                                             </div>
                                         )}
 
                                         {/* Flat No */}
                                         {currentPlayer.flat_no && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Phone */}
-                                        {currentPlayer.phone && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Phone</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.phone}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Category */}
-                                        {currentPlayer.category && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Category</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.category}</div>
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Flat No</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
                                             </div>
                                         )}
 
                                         {/* Played Previous MBBL Season - Only for Men's auction */}
                                         {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played Previous Season</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Played S1</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Player Details - Row 2 */}
+                                    <div className="grid grid-cols-3 md:grid-cols-4 gap-1.5 md:gap-2">
+                                        {/* Phone */}
+                                        {currentPlayer.phone && (
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Phone</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.phone}</div>
+                                            </div>
+                                        )}
+
+                                        {/* Category */}
+                                        {currentPlayer.category && (
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Category</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.category}</div>
                                             </div>
                                         )}
 
                                         {/* Experience */}
                                         {currentPlayer.experience && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Experience</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
                                             </div>
                                         )}
 
                                         {/* Active Sport */}
                                         {currentPlayer.active_sport && (
-                                            <div className="rounded-lg p-2.5 md:p-3 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Active Sport</div>
+                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                             </div>
                                         )}
                                     </div>

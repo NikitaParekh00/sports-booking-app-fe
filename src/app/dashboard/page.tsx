@@ -155,9 +155,6 @@ export default function Dashboard() {
 
             // Format session name for display (remove "MBBL" prefix if already in name, or add it)
             let displayName = session.session_name;
-            if (!displayName.includes('MBBL')) {
-              displayName = `MBBL ${displayName}`;
-            }
 
             return (
               <div

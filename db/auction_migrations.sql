@@ -93,7 +93,7 @@ COMMENT ON COLUMN public.auction_teams.logo_url IS 'Custom logo URL for the team
 -- Add additional player information columns
 
 ALTER TABLE public.auction_player_pool
-ADD COLUMN IF NOT EXISTS bowling_hand VARCHAR(10) CHECK (bowling_hand IN ('Right', 'Left')) DEFAULT NULL;
+ADD COLUMN IF NOT EXISTS bowling_hand VARCHAR(50) DEFAULT NULL;
 
 ALTER TABLE public.auction_player_pool
 ADD COLUMN IF NOT EXISTS wing VARCHAR(50) DEFAULT NULL;
@@ -107,14 +107,39 @@ ADD COLUMN IF NOT EXISTS phone VARCHAR(20) DEFAULT NULL;
 ALTER TABLE public.auction_player_pool
 ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT NULL;
 
-COMMENT ON COLUMN public.auction_player_pool.bowling_hand IS 'Bowling hand preference: Right or Left';
+COMMENT ON COLUMN public.auction_player_pool.bowling_hand IS 'Bowling hand preference';
 COMMENT ON COLUMN public.auction_player_pool.wing IS 'Player wing/position';
 COMMENT ON COLUMN public.auction_player_pool.flat_no IS 'Flat number (apartment/flat number)';
 COMMENT ON COLUMN public.auction_player_pool.phone IS 'Player phone number';
 COMMENT ON COLUMN public.auction_player_pool.category IS 'Player category';
 
 -- ============================================================================
--- 6. MAKE COLUMNS NULLABLE (auction_player_pool)
+-- 6. FIX COLUMN SIZES (auction_player_pool)
+-- ============================================================================
+-- Fix VARCHAR size constraints and remove restrictive CHECK constraints
+
+-- Increase batting_hand from VARCHAR(5) to VARCHAR(50) and remove CHECK constraint
+ALTER TABLE public.auction_player_pool
+ALTER COLUMN batting_hand TYPE VARCHAR(50);
+
+-- Drop CHECK constraint if it exists
+ALTER TABLE public.auction_player_pool
+DROP CONSTRAINT IF EXISTS auction_player_pool_batting_hand_check;
+
+-- Increase bowling_hand to VARCHAR(50) and remove CHECK constraint if column already exists
+ALTER TABLE public.auction_player_pool
+ALTER COLUMN bowling_hand TYPE VARCHAR(50);
+
+-- Drop CHECK constraint if it exists
+ALTER TABLE public.auction_player_pool
+DROP CONSTRAINT IF EXISTS auction_player_pool_bowling_hand_check;
+
+-- Increase played_s1 from VARCHAR(3) to VARCHAR(10) for flexibility
+ALTER TABLE public.auction_player_pool
+ALTER COLUMN played_s1 TYPE VARCHAR(10);
+
+-- ============================================================================
+-- 7. MAKE COLUMNS NULLABLE (auction_player_pool)
 -- ============================================================================
 -- Make payment_status and category nullable to allow flexible player creation
 
