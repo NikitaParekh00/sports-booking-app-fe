@@ -874,8 +874,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         const maxBid = team.budget - minimumRequiredForRemaining;
 
         // Calculate new bid amount first
-        const increment = getBidIncrement(currentBid);
-        const newBid = currentBid + increment;
+        // If no team is selected yet, set to minimum bid on first click
+        // Otherwise, add increment for subsequent bids
+        const minimumBid = getMinimumBid();
+        let newBid: number;
+        if (!selectedTeamId || currentBid < minimumBid) {
+            // First bid: set to minimum bid (base price)
+            newBid = minimumBid;
+        } else {
+            // Subsequent bids: add increment
+            const increment = getBidIncrement(currentBid);
+            newBid = currentBid + increment;
+        }
 
         // Check if team can afford the NEW bid amount and if it's within their max bid
         const canAfford = team.budget >= newBid;
@@ -2589,9 +2599,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             </div>
 
             <div className="w-full px-2 md:px-3 py-4">
-                <div className={`grid grid-cols-1 ${teams.length > 10 ? 'lg:grid-cols-5' : 'lg:grid-cols-3'} gap-3 md:gap-4 items-start`}>
+                <div className={`grid grid-cols-1 ${teams.length > 10 ? 'xl:grid-cols-5' : 'xl:grid-cols-3'} gap-3 md:gap-4 items-start`}>
                     {/* Left Sidebar - Team Selection (Desktop) */}
-                    <div className={`hidden lg:block ${teams.length > 10 ? 'lg:col-span-2' : 'lg:col-span-1'}`}>
+                    <div className={`hidden xl:block ${teams.length > 10 ? 'xl:col-span-2' : 'xl:col-span-1'}`}>
                         <div className="rounded-xl border-2 p-4 md:p-5" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {/* Select Team Section */}
                             <div>
@@ -2625,7 +2635,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`p-3 rounded-lg border-2 text-left transition-all ${selectedTeamId === team.id
+                                                className={`p-2 md:p-3 rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
                                                     ? 'shadow-md' // Active - will add custom style
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -2636,17 +2646,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     : { backgroundColor: '#111827', borderColor: '#1F2937' }
                                                 }
                                             >
-                                                <div className="flex items-center gap-2 mb-2 min-w-0">
+                                                <div className="flex items-start gap-1.5 mb-2 w-full">
                                                     <Image
                                                         key={`team-${team.id}-${sessionName || 'default'}`}
                                                         src={getTeamLogo(team.logoUrl)}
                                                         alt={`${team.name} logo`}
-                                                        width={32}
-                                                        height={32}
-                                                        className="object-contain flex-shrink-0"
+                                                        width={28}
+                                                        height={28}
+                                                        className="object-contain flex-shrink-0 mt-0.5"
                                                         unoptimized
                                                     />
-                                                    <div className="font-semibold text-sm break-words min-w-0 flex-1 leading-tight overflow-wrap-anywhere" style={{ color: '#E5E7EB', wordBreak: 'break-word' }}>{team.name}</div>
+                                                    <div className="font-semibold flex-1 leading-tight break-words" style={{ color: '#E5E7EB', fontSize: 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
                                                 <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
@@ -2677,7 +2687,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     </div>
 
                     {/* Main Content Area */}
-                    <div className={`${teams.length > 10 ? 'lg:col-span-3' : 'lg:col-span-2'} space-y-4 pb-32 md:pb-4`}>
+                    <div className={`${teams.length > 10 ? 'xl:col-span-3' : 'xl:col-span-2'} space-y-4 pb-32 md:pb-4`}>
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>

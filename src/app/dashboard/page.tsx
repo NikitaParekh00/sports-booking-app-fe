@@ -149,11 +149,7 @@ export default function Dashboard() {
       {!selectedSport && showAuctionBanner && auctionSessions.length > 0 && (
         <div className="space-y-2 px-4 py-2">
           {auctionSessions.map((session) => {
-            const isMen = session.session_name.toLowerCase().includes('men');
-            const isWomen = session.session_name.toLowerCase().includes('women');
             const isComplete = session.is_complete;
-
-            // Format session name for display (remove "MBBL" prefix if already in name, or add it)
             let displayName = session.session_name;
 
             return (

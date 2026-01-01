@@ -49,20 +49,20 @@ export default function AuctionAdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('sessions');
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  
+
   // Sessions state
   const [sessions, setSessions] = useState<AuctionSession[]>([]);
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [editingSession, setEditingSession] = useState<AuctionSession | null>(null);
   const [sessionFormData, setSessionFormData] = useState({ name: '', is_complete: false });
-  
+
   // Teams state
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedSessionForTeams, setSelectedSessionForTeams] = useState<string>('');
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [teamFormData, setTeamFormData] = useState({ name: '', owner_name: '', budget: '', logo_url: '' });
-  
+
   // Players state
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedSessionForPlayers, setSelectedSessionForPlayers] = useState<string>('');
@@ -162,7 +162,7 @@ export default function AuctionAdminPage() {
         .from('auction_sessions')
         .select('*')
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
       setSessions(data || []);
     } catch (error) {
@@ -178,7 +178,7 @@ export default function AuctionAdminPage() {
         .select('*')
         .eq('session_id', sessionId)
         .order('team_number', { ascending: true });
-      
+
       if (error) throw error;
       setTeams(data || []);
     } catch (error) {
@@ -194,7 +194,7 @@ export default function AuctionAdminPage() {
         .select('*')
         .eq('session_id', sessionId)
         .order('player_order', { ascending: true });
-      
+
       if (error) throw error;
       setPlayers(data || []);
     } catch (error) {
@@ -214,7 +214,7 @@ export default function AuctionAdminPage() {
         }])
         .select()
         .single();
-      
+
       if (error) throw error;
       alert('Session created successfully!');
       setShowSessionForm(false);
@@ -228,7 +228,7 @@ export default function AuctionAdminPage() {
 
   const handleUpdateSession = async () => {
     if (!editingSession) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_sessions')
@@ -237,7 +237,7 @@ export default function AuctionAdminPage() {
           is_complete: sessionFormData.is_complete
         })
         .eq('id', editingSession.id);
-      
+
       if (error) throw error;
       alert('Session updated successfully!');
       setEditingSession(null);
@@ -252,13 +252,13 @@ export default function AuctionAdminPage() {
 
   const handleDeleteSession = async (id: string) => {
     if (!confirm('Are you sure you want to delete this session? This will also delete all associated teams and players.')) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_sessions')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       alert('Session deleted successfully!');
       loadSessions();
@@ -283,8 +283,8 @@ export default function AuctionAdminPage() {
         .order('team_number', { ascending: false })
         .limit(1);
 
-      const nextTeamNumber = existingTeams && existingTeams.length > 0 
-        ? existingTeams[0].team_number + 1 
+      const nextTeamNumber = existingTeams && existingTeams.length > 0
+        ? existingTeams[0].team_number + 1
         : 1;
 
       const { error } = await supabase
@@ -297,7 +297,7 @@ export default function AuctionAdminPage() {
           team_number: nextTeamNumber,
           logo_url: teamFormData.logo_url || null
         }]);
-      
+
       if (error) throw error;
       alert('Team created successfully!');
       setShowTeamForm(false);
@@ -311,7 +311,7 @@ export default function AuctionAdminPage() {
 
   const handleUpdateTeam = async () => {
     if (!editingTeam) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_teams')
@@ -322,7 +322,7 @@ export default function AuctionAdminPage() {
           logo_url: teamFormData.logo_url || null
         })
         .eq('id', editingTeam.id);
-      
+
       if (error) throw error;
       alert('Team updated successfully!');
       setEditingTeam(null);
@@ -337,13 +337,13 @@ export default function AuctionAdminPage() {
 
   const handleDeleteTeam = async (id: number) => {
     if (!confirm('Are you sure you want to delete this team?')) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_teams')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       alert('Team deleted successfully!');
       loadTeams(selectedSessionForTeams);
@@ -368,8 +368,8 @@ export default function AuctionAdminPage() {
         .order('player_order', { ascending: false })
         .limit(1);
 
-      const nextPlayerOrder = existingPlayers && existingPlayers.length > 0 
-        ? existingPlayers[0].player_order + 1 
+      const nextPlayerOrder = existingPlayers && existingPlayers.length > 0
+        ? existingPlayers[0].player_order + 1
         : 1;
 
       const { error } = await supabase
@@ -391,7 +391,7 @@ export default function AuctionAdminPage() {
           active_sport: playerFormData.active_sport || null,
           player_order: playerFormData.player_order ? parseInt(playerFormData.player_order) : nextPlayerOrder
         }]);
-      
+
       if (error) throw error;
       alert('Player created successfully!');
       setShowPlayerForm(false);
@@ -405,7 +405,7 @@ export default function AuctionAdminPage() {
 
   const handleUpdatePlayer = async () => {
     if (!editingPlayer) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_player_pool')
@@ -421,7 +421,7 @@ export default function AuctionAdminPage() {
           player_order: playerFormData.player_order ? parseInt(playerFormData.player_order) : editingPlayer.player_order
         })
         .eq('id', editingPlayer.id);
-      
+
       if (error) throw error;
       alert('Player updated successfully!');
       setEditingPlayer(null);
@@ -436,13 +436,13 @@ export default function AuctionAdminPage() {
 
   const handleDeletePlayer = async (id: string) => {
     if (!confirm('Are you sure you want to delete this player?')) return;
-    
+
     try {
       const { error } = await supabase
         .from('auction_player_pool')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
       alert('Player deleted successfully!');
       loadPlayers(selectedSessionForPlayers);
@@ -492,7 +492,7 @@ export default function AuctionAdminPage() {
       );
 
       // Find the maximum team_number to start from
-      const maxNumber = existingNumbers.size > 0 
+      const maxNumber = existingNumbers.size > 0
         ? Math.max(...Array.from(existingNumbers))
         : 0;
 
@@ -501,7 +501,7 @@ export default function AuctionAdminPage() {
       // Prepare teams for insertion
       const teamsToInsert = teams.map((team) => {
         let teamNumber: number;
-        
+
         // Auto-assign team number sequentially
         while (existingNumbers.has(nextAvailableNumber)) {
           nextAvailableNumber++;
@@ -616,7 +616,7 @@ export default function AuctionAdminPage() {
       );
 
       // Find the maximum player_order to start from
-      const maxOrder = existingOrders.size > 0 
+      const maxOrder = existingOrders.size > 0
         ? Math.max(...Array.from(existingOrders))
         : 0;
 
@@ -625,7 +625,7 @@ export default function AuctionAdminPage() {
       // Prepare players for insertion
       const playersToInsert = players.map((player) => {
         let playerOrder: number;
-        
+
         // If player_order is provided in CSV, try to use it
         if (player.player_order && player.player_order.trim() !== '') {
           const requestedOrder = parseInt(player.player_order);
@@ -713,7 +713,7 @@ export default function AuctionAdminPage() {
         .select('*')
         .eq('session_id', sessionId)
         .single();
-      
+
       if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
         throw error;
       }
@@ -785,7 +785,7 @@ export default function AuctionAdminPage() {
           .from('auction_settings')
           .update(settingsData)
           .eq('session_id', selectedSessionForSettings);
-        
+
         if (error) throw error;
         alert('Settings updated successfully!');
       } else {
@@ -793,7 +793,7 @@ export default function AuctionAdminPage() {
         const { error } = await supabase
           .from('auction_settings')
           .insert([settingsData]);
-        
+
         if (error) throw error;
         alert('Settings created successfully!');
       }
@@ -838,9 +838,8 @@ export default function AuctionAdminPage() {
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 md:px-6 md:py-3 font-semibold transition-colors capitalize whitespace-nowrap ${
-                  activeTab === tab ? 'border-b-2' : ''
-                }`}
+                className={`px-4 py-2 md:px-6 md:py-3 font-semibold transition-colors capitalize whitespace-nowrap ${activeTab === tab ? 'border-b-2' : ''
+                  }`}
                 style={{
                   color: activeTab === tab ? '#E11D48' : '#9CA3AF',
                   borderColor: activeTab === tab ? '#E11D48' : 'transparent'
@@ -1114,7 +1113,7 @@ export default function AuctionAdminPage() {
                           />
                         </div>
                       )}
-                      <h3 className="text-lg md:text-xl font-semibold mb-2" style={{ color: '#E5E7EB' }}>{team.name}</h3>
+                      <h3 className="text-xs sm:text-sm md:text-base font-semibold mb-2 whitespace-nowrap" style={{ color: '#E5E7EB' }}>{team.name}</h3>
                       <p className="text-sm md:text-base mb-1" style={{ color: '#9CA3AF' }}>Owner: {team.owner_name}</p>
                       <p className="text-sm md:text-base mb-4" style={{ color: '#9CA3AF' }}>Budget: ₹{team.budget.toLocaleString()}</p>
                       <div className="flex gap-2">
