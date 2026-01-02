@@ -197,6 +197,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [currentBid, setCurrentBid] = useState(DEFAULT_MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
 
+    // Track previous player index to detect changes
+    const prevPlayerIndexRef = useRef<number>(-1);
+    const isInitialLoadRef = useRef<boolean>(true);
+
     // Helper functions to get current settings values (with fallback to defaults)
     const getMinimumBid = (): number => {
         return auctionSettings?.minimum_bid || DEFAULT_MINIMUM_BID;
@@ -408,17 +412,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 }
 
                 setSessionId(finalSession.id);
-                setCurrentPlayerIndex(finalSession.current_player_index);
+                const initialPlayerIndex = finalSession.current_player_index;
+                setCurrentPlayerIndex(initialPlayerIndex);
+                prevPlayerIndexRef.current = initialPlayerIndex;
+                isInitialLoadRef.current = true;
                 setAuctionComplete(finalSession.is_complete);
 
                 // Load current bid amount and selected team from database
+                // We'll load settings first to get the minimum_bid, then decide what to use
                 const sessionBidAmount = (finalSession as any).current_bid_amount;
                 const sessionBidTeamId = (finalSession as any).current_bid_team_id;
-                let bidWasSet = false;
-                if (sessionBidAmount !== undefined && sessionBidAmount !== null) {
-                    setCurrentBid(Number(sessionBidAmount));
-                    bidWasSet = true;
-                }
                 if (sessionBidTeamId !== undefined && sessionBidTeamId !== null) {
                     setSelectedTeamId(Number(sessionBidTeamId));
                 }
@@ -546,7 +549,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                 if (settingsData && !settingsError) {
                     const loadedSettings = {
-                        minimum_bid: settingsData.minimum_bid || DEFAULT_MINIMUM_BID,
+                        minimum_bid: Number(settingsData.minimum_bid) || DEFAULT_MINIMUM_BID,
                         players_per_team: settingsData.players_per_team || DEFAULT_PLAYERS_PER_TEAM,
                         default_bid_increment: settingsData.default_bid_increment || 5000,
                         bid_increment_1_threshold: settingsData.bid_increment_1_threshold || 100000,
@@ -561,13 +564,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     };
                     setAuctionSettings(loadedSettings);
 
-                    // Update current bid if it's still at default and no bid was loaded from session
-                    if (!bidWasSet) {
+                    // Always use minimum_bid from settings as the base
+                    // Only use session bid if it's higher than minimum (meaning there's an active bid)
+                    const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
+                    if (sessionBid && sessionBid > loadedSettings.minimum_bid) {
+                        // There's an active bid higher than minimum, use it
+                        setCurrentBid(sessionBid);
+                    } else {
+                        // Use minimum_bid from database settings (not hardcoded default)
                         setCurrentBid(loadedSettings.minimum_bid);
                     }
                 } else {
                     // Use defaults if settings not found
                     setAuctionSettings(null);
+                    // If no settings, use session bid if available, otherwise default
+                    const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
+                    if (sessionBid) {
+                        setCurrentBid(sessionBid);
+                    } else {
+                        setCurrentBid(DEFAULT_MINIMUM_BID);
+                    }
                 }
 
                 // If auction is complete and we have skipped players, show them
@@ -642,6 +658,41 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
     }, [sessionId, supabase]);
 
+    // Reset bid to minimum when player index changes
+    useEffect(() => {
+        // Skip on initial load
+        if (isInitialLoadRef.current) {
+            prevPlayerIndexRef.current = currentPlayerIndex;
+            isInitialLoadRef.current = false;
+            return;
+        }
+
+        // If player index changed, reset bid to minimum
+        if (prevPlayerIndexRef.current !== currentPlayerIndex) {
+            const newMinimum = getMinimumBid();
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
+
+            // Update database to keep bid in sync
+            if (sessionId) {
+                supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_bid_amount: newMinimum,
+                        current_bid_team_id: null
+                    })
+                    .eq('id', sessionId)
+                    .then(({ error }) => {
+                        if (error) {
+                            console.error('Error updating bid in database:', error);
+                        }
+                    });
+            }
+
+            prevPlayerIndexRef.current = currentPlayerIndex;
+        }
+    }, [currentPlayerIndex, auctionSettings, sessionId, supabase]);
+
     // Real-time subscription for auction updates
     useEffect(() => {
         if (!sessionId) return;
@@ -657,21 +708,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             }, (payload) => {
                 if (payload.new) {
                     const session = payload.new as { current_player_index: number; is_complete: boolean; current_bid_amount?: number; current_bid_team_id?: number };
+                    const prevIndex = prevPlayerIndexRef.current;
                     setCurrentPlayerIndex(session.current_player_index);
                     setAuctionComplete(session.is_complete);
-                    // Update bid amount if it changed (only if different to avoid loops)
-                    if (session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
-                        const newBidAmount = Number(session.current_bid_amount);
-                        if (newBidAmount !== currentBid) {
+
+                    // If player index changed, we'll reset bid in the useEffect above
+                    // Only update bid from session if player index didn't change (meaning it's a bid update, not a player change)
+                    if (session.current_player_index === prevIndex) {
+                        // Player index didn't change, so this is a bid update
+                        if (session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
+                            const newBidAmount = Number(session.current_bid_amount);
                             setCurrentBid(newBidAmount);
                         }
                     }
                     // Update selected team if it changed
                     if (session.current_bid_team_id !== undefined) {
                         const newTeamId = session.current_bid_team_id === null ? null : Number(session.current_bid_team_id);
-                        if (newTeamId !== selectedTeamId) {
-                            setSelectedTeamId(newTeamId);
-                        }
+                        setSelectedTeamId(newTeamId);
                     }
                 }
             })
