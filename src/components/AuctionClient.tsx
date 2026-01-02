@@ -2287,15 +2287,33 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             <div key={team.id} className="bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
                                 <div className="flex justify-between items-center mb-3">
                                     <h2 className="text-xl font-semibold text-gray-900">{team.name}</h2>
-                                    <Image
-                                        key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
-                                        src={getTeamLogo(team.logoUrl)}
-                                        alt={`${team.name} logo`}
-                                        width={48}
-                                        height={48}
-                                        unoptimized
-                                        className="object-contain"
-                                    />
+                                    {(() => {
+                                        const logoUrl = getTeamLogo(team.logoUrl);
+                                        const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                        if (isProxyUrl) {
+                                            return (
+                                                <img
+                                                    key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
+                                                    src={logoUrl}
+                                                    alt={`${team.name} logo`}
+                                                    width={48}
+                                                    height={48}
+                                                    className="object-contain"
+                                                />
+                                            );
+                                        }
+                                        return (
+                                            <Image
+                                                key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
+                                                src={logoUrl}
+                                                alt={`${team.name} logo`}
+                                                width={48}
+                                                height={48}
+                                                unoptimized
+                                                className="object-contain"
+                                            />
+                                        );
+                                    })()}
                                 </div>
                                 {team.ownerName && (
                                     <div className="mb-2">
@@ -2325,9 +2343,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         </>
                                     ) : (
                                         <>
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                            </svg>
                                             Download PDF
                                         </>
                                     )}
@@ -2352,9 +2367,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     </>
                                 ) : (
                                     <>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
                                         Download Top 5 Male Players PDF
                                     </>
                                 )}
@@ -2371,9 +2383,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     </>
                                 ) : (
                                     <>
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
                                         Download Top 5 Female Players PDF
                                     </>
                                 )}
@@ -2505,7 +2514,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         onClick={() => router.back()}
                         className="flex items-center gap-1 md:gap-2 flex-shrink-0" style={{ color: '#E5E7EB' }}
                     >
-                        <span className="text-lg md:text-base">←</span>
                         <span className="hidden sm:inline">Back</span>
                     </button>
                     <h1 className="text-lg md:text-xl lg:text-2xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
@@ -2518,9 +2526,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
                             title="Top 5 Bidded Players"
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                            </svg>
                             <span className="hidden sm:inline">Top 5</span>
                         </button>
                         <button
@@ -2528,9 +2533,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
                             title="Team Dynamics"
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
                             <span className="hidden sm:inline">Team Dynamics</span>
                         </button>
                         <button
@@ -2538,9 +2540,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
                             title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
                             <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
                             <span className="sm:hidden">({getCurrentSkippedPlayers().length})</span>
                         </button>
@@ -2588,9 +2587,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 className="hidden md:flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
                                 title="End Auction"
                             >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
                                 End Auction
                             </button>
                         )}
@@ -2647,15 +2643,33 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 }
                                             >
                                                 <div className="flex items-start gap-1.5 mb-2 w-full">
-                                                    <Image
-                                                        key={`team-${team.id}-${sessionName || 'default'}`}
-                                                        src={getTeamLogo(team.logoUrl)}
-                                                        alt={`${team.name} logo`}
-                                                        width={28}
-                                                        height={28}
-                                                        className="object-contain flex-shrink-0 mt-0.5"
-                                                        unoptimized
-                                                    />
+                                                    {(() => {
+                                                        const logoUrl = getTeamLogo(team.logoUrl);
+                                                        const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                        if (isProxyUrl) {
+                                                            return (
+                                                                <img
+                                                                    key={`team-${team.id}-${sessionName || 'default'}`}
+                                                                    src={logoUrl}
+                                                                    alt={`${team.name} logo`}
+                                                                    width={28}
+                                                                    height={28}
+                                                                    className="object-contain flex-shrink-0 mt-0.5"
+                                                                />
+                                                            );
+                                                        }
+                                                        return (
+                                                            <Image
+                                                                key={`team-${team.id}-${sessionName || 'default'}`}
+                                                                src={logoUrl}
+                                                                alt={`${team.name} logo`}
+                                                                width={28}
+                                                                height={28}
+                                                                className="object-contain flex-shrink-0 mt-0.5"
+                                                                unoptimized
+                                                            />
+                                                        );
+                                                    })()}
                                                     <div className="font-semibold flex-1 leading-tight break-words" style={{ color: '#E5E7EB', fontSize: 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
                                                 <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
@@ -2895,17 +2909,33 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     const team = teams.find(t => t.id === bidInfo.teamId);
                                                     return (
                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#1F2937' }}>
-                                                            {team && (
-                                                                <Image
-                                                                    key={`bid-team-${bidInfo.teamId}-${sessionName || 'default'}`}
-                                                                    src={getTeamLogo(team.logoUrl)}
-                                                                    alt={`${bidInfo.teamName} logo`}
-                                                                    width={24}
-                                                                    height={24}
-                                                                    className="object-contain flex-shrink-0"
-                                                                    unoptimized
-                                                                />
-                                                            )}
+                                                            {team && (() => {
+                                                                const logoUrl = getTeamLogo(team.logoUrl);
+                                                                const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                                if (isProxyUrl) {
+                                                                    return (
+                                                                        <img
+                                                                            key={`bid-team-${bidInfo.teamId}-${sessionName || 'default'}`}
+                                                                            src={logoUrl}
+                                                                            alt={`${bidInfo.teamName} logo`}
+                                                                            width={24}
+                                                                            height={24}
+                                                                            className="object-contain flex-shrink-0"
+                                                                        />
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <Image
+                                                                        key={`bid-team-${bidInfo.teamId}-${sessionName || 'default'}`}
+                                                                        src={logoUrl}
+                                                                        alt={`${bidInfo.teamName} logo`}
+                                                                        width={24}
+                                                                        height={24}
+                                                                        className="object-contain flex-shrink-0"
+                                                                        unoptimized
+                                                                    />
+                                                                );
+                                                            })()}
                                                             <span className="text-sm font-semibold" style={{ color: '#E5E7EB' }}>
                                                                 Bid by: {bidInfo.teamName}
                                                             </span>
@@ -3075,15 +3105,33 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div key={team.id} className="rounded-xl p-4 border-2" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                                         <div className="flex justify-between items-start mb-3">
                                             <div className="flex items-center gap-3">
-                                                <Image
-                                                    key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
-                                                    src={getTeamLogo(team.logoUrl)}
-                                                    alt={`${team.name} logo`}
-                                                    width={40}
-                                                    height={40}
-                                                    className="object-contain flex-shrink-0"
-                                                    unoptimized
-                                                />
+                                                {(() => {
+                                                    const logoUrl = getTeamLogo(team.logoUrl);
+                                                    const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                    if (isProxyUrl) {
+                                                        return (
+                                                            <img
+                                                                key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
+                                                                src={logoUrl}
+                                                                alt={`${team.name} logo`}
+                                                                width={40}
+                                                                height={40}
+                                                                className="object-contain flex-shrink-0"
+                                                            />
+                                                        );
+                                                    }
+                                                    return (
+                                                        <Image
+                                                            key={`team-dynamics-${team.id}-${sessionName || 'default'}`}
+                                                            src={logoUrl}
+                                                            alt={`${team.name} logo`}
+                                                            width={40}
+                                                            height={40}
+                                                            className="object-contain flex-shrink-0"
+                                                            unoptimized
+                                                        />
+                                                    );
+                                                })()}
                                                 <div className="min-w-0 flex-1">
                                                     <h3 className="text-base md:text-lg font-semibold break-normal leading-tight" style={{ color: '#E5E7EB' }}>{team.name}</h3>
                                                     <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
@@ -3202,13 +3250,27 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 <div className="flex items-center gap-2 text-sm ml-11" style={{ color: '#9CA3AF' }}>
                                                     {(() => {
                                                         const playerTeam = teams.find(t => t.id === player.teamId);
+                                                        const logoUrl = getTeamLogo(playerTeam?.logoUrl);
+                                                        const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                        if (isProxyUrl) {
+                                                            return (
+                                                                <img
+                                                                    src={logoUrl}
+                                                                    alt={`${player.teamName} logo`}
+                                                                    width={20}
+                                                                    height={20}
+                                                                    className="object-contain"
+                                                                />
+                                                            );
+                                                        }
                                                         return (
                                                             <Image
-                                                                src={getTeamLogo(playerTeam?.logoUrl)}
+                                                                src={logoUrl}
                                                                 alt={`${player.teamName} logo`}
                                                                 width={20}
                                                                 height={20}
                                                                 className="object-contain"
+                                                                unoptimized
                                                             />
                                                         );
                                                     })()}

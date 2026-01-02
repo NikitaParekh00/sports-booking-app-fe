@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import Image from 'next/image';
+import { processImageUrl } from '@/lib/imageUrlHelper';
 
 type Tab = 'sessions' | 'teams' | 'players' | 'settings';
 
@@ -353,6 +354,30 @@ export default function AuctionAdminPage() {
     }
   };
 
+  const handleDeleteAllTeams = async () => {
+    if (!selectedSessionForTeams) {
+      alert('Please select a session first');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ALL teams for this session? This action cannot be undone.`)) return;
+    if (!confirm(`This will delete ${teams.length} team(s). Are you absolutely sure?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('auction_teams')
+        .delete()
+        .eq('session_id', selectedSessionForTeams);
+
+      if (error) throw error;
+      alert(`Successfully deleted all ${teams.length} team(s)!`);
+      loadTeams(selectedSessionForTeams);
+    } catch (error: any) {
+      console.error('Error deleting all teams:', error);
+      alert(`Error deleting all teams: ${error.message}`);
+    }
+  };
+
   const handleCreatePlayer = async () => {
     if (!selectedSessionForPlayers) {
       alert('Please select a session first');
@@ -449,6 +474,30 @@ export default function AuctionAdminPage() {
     } catch (error: any) {
       console.error('Error deleting player:', error);
       alert(`Error deleting player: ${error.message}`);
+    }
+  };
+
+  const handleDeleteAllPlayers = async () => {
+    if (!selectedSessionForPlayers) {
+      alert('Please select a session first');
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ALL players for this session? This action cannot be undone.`)) return;
+    if (!confirm(`This will delete ${players.length} player(s). Are you absolutely sure?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('auction_player_pool')
+        .delete()
+        .eq('session_id', selectedSessionForPlayers);
+
+      if (error) throw error;
+      alert(`Successfully deleted all ${players.length} player(s)!`);
+      loadPlayers(selectedSessionForPlayers);
+    } catch (error: any) {
+      console.error('Error deleting all players:', error);
+      alert(`Error deleting all players: ${error.message}`);
     }
   };
 
@@ -828,7 +877,7 @@ export default function AuctionAdminPage() {
               className="px-4 py-2 rounded-lg font-semibold transition-colors w-full md:w-auto"
               style={{ backgroundColor: '#1F2937', color: '#E5E7EB' }}
             >
-              ← Back to Dashboard
+              Back to Dashboard
             </button>
           </div>
 
@@ -990,13 +1039,13 @@ export default function AuctionAdminPage() {
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
                       style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
                     >
-                      📥 Download Template
+                      Download Template
                     </a>
                     <label
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto cursor-pointer"
                       style={{ backgroundColor: '#22C55E', color: '#E5E7EB' }}
                     >
-                      {uploadingTeams ? '⏳ Uploading...' : '📤 Upload CSV'}
+                      {uploadingTeams ? 'Uploading...' : 'Upload CSV'}
                       <input
                         type="file"
                         accept=".csv"
@@ -1014,8 +1063,17 @@ export default function AuctionAdminPage() {
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
                       style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
                     >
-                      + Add Team
+                      Add Team
                     </button>
+                    {teams.length > 0 && (
+                      <button
+                        onClick={handleDeleteAllTeams}
+                        className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                        style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                      >
+                        Delete All Teams
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1178,13 +1236,13 @@ export default function AuctionAdminPage() {
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
                       style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
                     >
-                      📥 Download Template
+                      Download Template
                     </a>
                     <label
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto cursor-pointer"
                       style={{ backgroundColor: '#22C55E', color: '#E5E7EB' }}
                     >
-                      {uploadingPlayers ? '⏳ Uploading...' : '📤 Upload CSV'}
+                      {uploadingPlayers ? 'Uploading...' : 'Upload CSV'}
                       <input
                         type="file"
                         accept=".csv"
@@ -1202,8 +1260,17 @@ export default function AuctionAdminPage() {
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
                       style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
                     >
-                      + Add Player
+                      Add Player
                     </button>
+                    {players.length > 0 && (
+                      <button
+                        onClick={handleDeleteAllPlayers}
+                        className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                        style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                      >
+                        Delete All Players
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1405,16 +1472,32 @@ export default function AuctionAdminPage() {
                       style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
                     >
                       <div className="flex items-center gap-4 flex-1">
-                        {player.photo && (
-                          <Image
-                            src={player.photo}
-                            alt={player.name}
-                            width={80}
-                            height={80}
-                            className="object-cover rounded-lg flex-shrink-0"
-                            unoptimized
-                          />
-                        )}
+                        {(() => {
+                          const photoUrl = processImageUrl(player.photo);
+                          if (!photoUrl) return null;
+                          const isProxyUrl = photoUrl.startsWith('/api/proxy-image');
+                          if (isProxyUrl) {
+                            return (
+                              <img
+                                src={photoUrl}
+                                alt={player.name}
+                                width={80}
+                                height={80}
+                                className="object-cover rounded-lg flex-shrink-0"
+                              />
+                            );
+                          }
+                          return (
+                            <Image
+                              src={photoUrl}
+                              alt={player.name}
+                              width={80}
+                              height={80}
+                              className="object-cover rounded-lg flex-shrink-0"
+                              unoptimized
+                            />
+                          );
+                        })()}
                         <div className="flex-1 min-w-0">
                           <h3 className="text-lg md:text-xl font-semibold mb-1" style={{ color: '#E5E7EB' }}>{player.name}</h3>
                           <p className="text-sm md:text-base" style={{ color: '#9CA3AF' }}>
