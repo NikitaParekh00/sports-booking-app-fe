@@ -91,6 +91,7 @@ export default function AuctionAdminPage() {
     bid_increment_4_threshold: '700000',
     bid_increment_4_amount: '50000'
   });
+  const [categoryColorMappings, setCategoryColorMappings] = useState<Array<{ category: string, color: string }>>([]);
 
   // Check authentication
   useEffect(() => {
@@ -782,6 +783,16 @@ export default function AuctionAdminPage() {
           bid_increment_4_threshold: data.bid_increment_4_threshold?.toString() || '700000',
           bid_increment_4_amount: data.bid_increment_4_amount?.toString() || '50000'
         });
+        // Load category color mappings
+        if (data.category_color_mapping && typeof data.category_color_mapping === 'object') {
+          const mappings = Object.entries(data.category_color_mapping).map(([category, color]) => ({
+            category,
+            color: color as string
+          }));
+          setCategoryColorMappings(mappings);
+        } else {
+          setCategoryColorMappings([]);
+        }
       } else {
         // No settings found, use defaults
         setSettings(null);
@@ -798,6 +809,7 @@ export default function AuctionAdminPage() {
           bid_increment_4_threshold: '700000',
           bid_increment_4_amount: '50000'
         });
+        setCategoryColorMappings([]);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -812,6 +824,14 @@ export default function AuctionAdminPage() {
     }
 
     try {
+      // Convert category color mappings array to object
+      const categoryColorMappingObj: Record<string, string> = {};
+      categoryColorMappings.forEach(({ category, color }) => {
+        if (category.trim()) {
+          categoryColorMappingObj[category.trim()] = color;
+        }
+      });
+
       const settingsData = {
         session_id: selectedSessionForSettings,
         minimum_bid: parseFloat(settingsFormData.minimum_bid) || 5000,
@@ -825,6 +845,7 @@ export default function AuctionAdminPage() {
         bid_increment_3_amount: parseFloat(settingsFormData.bid_increment_3_amount) || 30000,
         bid_increment_4_threshold: parseFloat(settingsFormData.bid_increment_4_threshold) || 700000,
         bid_increment_4_amount: parseFloat(settingsFormData.bid_increment_4_amount) || 50000,
+        category_color_mapping: categoryColorMappingObj,
         updated_at: new Date().toISOString()
       };
 
@@ -1716,6 +1737,74 @@ export default function AuctionAdminPage() {
                             />
                           </div>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Category Color Mapping */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Category Color Mapping</h3>
+                      <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>
+                        Map player categories to colors. These colors will be used to display categories in the auction interface.
+                      </p>
+                      <div className="space-y-3">
+                        {categoryColorMappings.map((mapping, index) => (
+                          <div key={index} className="flex items-center gap-3 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                            <input
+                              type="text"
+                              value={mapping.category}
+                              onChange={(e) => {
+                                const newMappings = [...categoryColorMappings];
+                                newMappings[index].category = e.target.value;
+                                setCategoryColorMappings(newMappings);
+                              }}
+                              className="flex-1 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="Category (e.g., A+, A, B)"
+                            />
+                            <input
+                              type="color"
+                              value={mapping.color}
+                              onChange={(e) => {
+                                const newMappings = [...categoryColorMappings];
+                                newMappings[index].color = e.target.value;
+                                setCategoryColorMappings(newMappings);
+                              }}
+                              className="w-16 h-10 rounded border cursor-pointer"
+                              style={{ borderColor: '#1F2937' }}
+                            />
+                            <input
+                              type="text"
+                              value={mapping.color}
+                              onChange={(e) => {
+                                const newMappings = [...categoryColorMappings];
+                                newMappings[index].color = e.target.value;
+                                setCategoryColorMappings(newMappings);
+                              }}
+                              className="w-24 px-3 py-2 rounded-lg border text-sm"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="#000000"
+                            />
+                            <button
+                              onClick={() => {
+                                const newMappings = categoryColorMappings.filter((_, i) => i !== index);
+                                setCategoryColorMappings(newMappings);
+                              }}
+                              className="px-3 py-2 rounded-lg font-medium transition-colors"
+                              style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => {
+                            setCategoryColorMappings([...categoryColorMappings, { category: '', color: '#000000' }]);
+                          }}
+                          className="w-full px-4 py-2 rounded-lg font-semibold transition-colors border-2 border-dashed"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        >
+                          Add Category Color Mapping
+                        </button>
                       </div>
                     </div>
 

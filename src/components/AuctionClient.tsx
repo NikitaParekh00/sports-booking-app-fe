@@ -192,6 +192,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         bid_increment_3_amount: number;
         bid_increment_4_threshold: number;
         bid_increment_4_amount: number;
+        category_color_mapping?: Record<string, string>;
     } | null>(null);
     const [currentBid, setCurrentBid] = useState(DEFAULT_MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
@@ -208,6 +209,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const getBidIncrement = (currentBid: number): number => {
         return getBidIncrementFromSettings(currentBid, auctionSettings);
     };
+
+    // Helper function to determine if text should be white or black based on background color
+    const getContrastColor = (hexColor: string): string => {
+        // Remove # if present
+        const hex = hexColor.replace('#', '');
+        // Convert to RGB
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        // Calculate luminance
+        const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        // Return black for light colors, white for dark colors
+        return luminance > 0.5 ? '#000000' : '#FFFFFF';
+    };
+
     const [playerBids, setPlayerBids] = useState<Map<number, { teamId: number; teamName: string; amount: number }>>(new Map()); // Track bids: amount -> team info
     const [isSkippedPlayersSheetOpen, setIsSkippedPlayersSheetOpen] = useState(false);
     const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
@@ -398,8 +414,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Load current bid amount and selected team from database
                 const sessionBidAmount = (finalSession as any).current_bid_amount;
                 const sessionBidTeamId = (finalSession as any).current_bid_team_id;
+                let bidWasSet = false;
                 if (sessionBidAmount !== undefined && sessionBidAmount !== null) {
                     setCurrentBid(Number(sessionBidAmount));
+                    bidWasSet = true;
                 }
                 if (sessionBidTeamId !== undefined && sessionBidTeamId !== null) {
                     setSelectedTeamId(Number(sessionBidTeamId));
@@ -518,6 +536,39 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .filter((p): p is Player => p !== null);
 
                 setSkippedPlayers(skippedFromTable);
+
+                // Load auction settings
+                const { data: settingsData, error: settingsError } = await supabase
+                    .from('auction_settings')
+                    .select('*')
+                    .eq('session_id', finalSession.id)
+                    .maybeSingle();
+
+                if (settingsData && !settingsError) {
+                    const loadedSettings = {
+                        minimum_bid: settingsData.minimum_bid || DEFAULT_MINIMUM_BID,
+                        players_per_team: settingsData.players_per_team || DEFAULT_PLAYERS_PER_TEAM,
+                        default_bid_increment: settingsData.default_bid_increment || 5000,
+                        bid_increment_1_threshold: settingsData.bid_increment_1_threshold || 100000,
+                        bid_increment_1_amount: settingsData.bid_increment_1_amount || 10000,
+                        bid_increment_2_threshold: settingsData.bid_increment_2_threshold || 200000,
+                        bid_increment_2_amount: settingsData.bid_increment_2_amount || 20000,
+                        bid_increment_3_threshold: settingsData.bid_increment_3_threshold || 400000,
+                        bid_increment_3_amount: settingsData.bid_increment_3_amount || 30000,
+                        bid_increment_4_threshold: settingsData.bid_increment_4_threshold || 700000,
+                        bid_increment_4_amount: settingsData.bid_increment_4_amount || 50000,
+                        category_color_mapping: settingsData.category_color_mapping || {}
+                    };
+                    setAuctionSettings(loadedSettings);
+
+                    // Update current bid if it's still at default and no bid was loaded from session
+                    if (!bidWasSet) {
+                        setCurrentBid(loadedSettings.minimum_bid);
+                    }
+                } else {
+                    // Use defaults if settings not found
+                    setAuctionSettings(null);
+                }
 
                 // If auction is complete and we have skipped players, show them
                 if (finalSession.is_complete && skippedFromTable.length > 0) {
@@ -2841,12 +2892,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         )}
 
                                         {/* Category */}
-                                        {currentPlayer.category && (
-                                            <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Category</div>
-                                                <div className="text-xs md:text-sm font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.category}</div>
-                                            </div>
-                                        )}
+                                        {currentPlayer.category && (() => {
+                                            const categoryColor = auctionSettings?.category_color_mapping?.[currentPlayer.category];
+                                            const hasColorMapping = !!categoryColor;
+                                            const backgroundColor = hasColorMapping ? categoryColor : '#1F2937';
+                                            const borderColor = hasColorMapping ? categoryColor : '#1F2937';
+                                            const textColor = hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB';
+                                            const labelColor = hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF';
+
+                                            return (
+                                                <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor, borderColor }}>
+                                                    <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: labelColor }}>Category</div>
+                                                    <div className="text-xs md:text-sm font-medium" style={{ color: textColor }}>{currentPlayer.category}</div>
+                                                </div>
+                                            );
+                                        })()}
 
                                         {/* Experience */}
                                         {currentPlayer.experience && (
