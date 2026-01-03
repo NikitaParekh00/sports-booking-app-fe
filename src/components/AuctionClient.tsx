@@ -2792,7 +2792,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
                             <button
                                 onClick={() => setIsTopPlayersSheetOpen(true)}
-                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                style={{
+                                    backgroundColor: '#111827',
+                                    borderColor: '#E11D48',
+                                    color: '#E11D48'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#E11D48';
+                                    e.currentTarget.style.color = '#FFFFFF';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#111827';
+                                    e.currentTarget.style.color = '#E11D48';
+                                }}
                                 title="Top 5 Bidded Players"
                             >
                                 <span className="sm:hidden">Top 5</span>
@@ -2800,7 +2813,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </button>
                             <button
                                 onClick={() => setIsTeamDynamicsSheetOpen(true)}
-                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                style={{
+                                    backgroundColor: '#111827',
+                                    borderColor: '#E11D48',
+                                    color: '#E11D48'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#E11D48';
+                                    e.currentTarget.style.color = '#FFFFFF';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#111827';
+                                    e.currentTarget.style.color = '#E11D48';
+                                }}
                                 title="Team Dynamics"
                             >
                                 <span className="sm:hidden">Teams</span>
@@ -2808,7 +2834,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </button>
                             <button
                                 onClick={() => setIsSkippedPlayersSheetOpen(true)}
-                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                style={{
+                                    backgroundColor: '#111827',
+                                    borderColor: '#E11D48',
+                                    color: '#E11D48'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#E11D48';
+                                    e.currentTarget.style.color = '#FFFFFF';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#111827';
+                                    e.currentTarget.style.color = '#E11D48';
+                                }}
                                 title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
                             >
                                 <span className="sm:hidden">Skip ({getCurrentSkippedPlayers().length})</span>
@@ -2843,7 +2882,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             )}
                             <button
                                 onClick={() => setIsPlayerListSheetOpen(true)}
-                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                style={{
+                                    backgroundColor: '#111827',
+                                    borderColor: '#E11D48',
+                                    color: '#E11D48'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#E11D48';
+                                    e.currentTarget.style.color = '#FFFFFF';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#111827';
+                                    e.currentTarget.style.color = '#E11D48';
+                                }}
                                 title="View All Players"
                             >
                                 <span className="hidden sm:inline">Players List</span>
