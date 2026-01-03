@@ -90,7 +90,9 @@ export default function AuctionAdminPage() {
     bid_increment_3_threshold: '400000',
     bid_increment_3_amount: '30000',
     bid_increment_4_threshold: '700000',
-    bid_increment_4_amount: '50000'
+    bid_increment_4_amount: '50000',
+    default_team_budget: '',
+    allow_multiple_player_assignment: true
   });
   const [categoryColorMappings, setCategoryColorMappings] = useState<Array<{ category: string, color: string }>>([]);
   const [categoryLimits, setCategoryLimits] = useState<Array<{ category: string, limit: string }>>([]);
@@ -798,7 +800,9 @@ export default function AuctionAdminPage() {
           bid_increment_3_threshold: data.bid_increment_3_threshold?.toString() || '400000',
           bid_increment_3_amount: data.bid_increment_3_amount?.toString() || '30000',
           bid_increment_4_threshold: data.bid_increment_4_threshold?.toString() || '700000',
-          bid_increment_4_amount: data.bid_increment_4_amount?.toString() || '50000'
+          bid_increment_4_amount: data.bid_increment_4_amount?.toString() || '50000',
+          default_team_budget: data.default_team_budget?.toString() || '',
+          allow_multiple_player_assignment: data.allow_multiple_player_assignment !== undefined ? data.allow_multiple_player_assignment : true
         });
         // Load category color mappings
         if (data.category_color_mapping && typeof data.category_color_mapping === 'object') {
@@ -834,7 +838,9 @@ export default function AuctionAdminPage() {
           bid_increment_3_threshold: '400000',
           bid_increment_3_amount: '30000',
           bid_increment_4_threshold: '700000',
-          bid_increment_4_amount: '50000'
+          bid_increment_4_amount: '50000',
+          default_team_budget: '',
+          allow_multiple_player_assignment: true
         });
         setCategoryColorMappings([]);
         setCategoryLimits([]);
@@ -886,6 +892,8 @@ export default function AuctionAdminPage() {
         bid_increment_4_amount: parseFloat(settingsFormData.bid_increment_4_amount) || 50000,
         category_color_mapping: categoryColorMappingObj,
         category_limits: categoryLimitsObj,
+        default_team_budget: settingsFormData.default_team_budget ? parseFloat(settingsFormData.default_team_budget) : null,
+        allow_multiple_player_assignment: settingsFormData.allow_multiple_player_assignment,
         updated_at: new Date().toISOString()
       };
 
@@ -1943,6 +1951,79 @@ export default function AuctionAdminPage() {
                         >
                           Add Category Limit
                         </button>
+                      </div>
+                    </div>
+
+                    {/* Team Configuration Settings */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Team Configuration</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Default Team Budget (₹)</label>
+                          <p className="text-xs mb-2" style={{ color: '#9CA3AF' }}>
+                            Set a default budget for all teams. Use the button below to apply this budget to all existing teams.
+                          </p>
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              value={settingsFormData.default_team_budget}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, default_team_budget: e.target.value })}
+                              className="flex-1 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="e.g., 17000000"
+                            />
+                            <button
+                              onClick={async () => {
+                                if (!selectedSessionForSettings) {
+                                  alert('Please select a session first');
+                                  return;
+                                }
+                                if (!settingsFormData.default_team_budget || parseFloat(settingsFormData.default_team_budget) <= 0) {
+                                  alert('Please enter a valid budget amount');
+                                  return;
+                                }
+                                if (!confirm(`Are you sure you want to set all teams' budget to ₹${parseFloat(settingsFormData.default_team_budget).toLocaleString()}?`)) {
+                                  return;
+                                }
+                                try {
+                                  const budget = parseFloat(settingsFormData.default_team_budget);
+                                  const { error } = await supabase
+                                    .from('auction_teams')
+                                    .update({ budget })
+                                    .eq('session_id', selectedSessionForSettings);
+                                  if (error) throw error;
+                                  alert(`All teams' budgets have been set to ₹${budget.toLocaleString()}`);
+                                  if (selectedSessionForTeams === selectedSessionForSettings) {
+                                    loadTeams(selectedSessionForTeams);
+                                  }
+                                } catch (error: any) {
+                                  console.error('Error updating team budgets:', error);
+                                  alert(`Error updating team budgets: ${error.message}`);
+                                }
+                              }}
+                              className="px-4 py-2 rounded-lg font-semibold transition-colors whitespace-nowrap"
+                              style={{ backgroundColor: '#3B82F6', color: '#E5E7EB' }}
+                            >
+                              Apply to All Teams
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Allow Multiple Player Assignment</label>
+                          <p className="text-xs mb-2" style={{ color: '#9CA3AF' }}>
+                            When enabled, multiple players can be assigned to a team at once (for bulk operations).
+                          </p>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={settingsFormData.allow_multiple_player_assignment}
+                              onChange={(e) => setSettingsFormData({ ...settingsFormData, allow_multiple_player_assignment: e.target.checked })}
+                              className="w-5 h-5 rounded border"
+                              style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}
+                            />
+                            <span style={{ color: '#E5E7EB' }}>Enable multiple player assignment</span>
+                          </label>
+                        </div>
                       </div>
                     </div>
 

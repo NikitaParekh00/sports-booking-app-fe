@@ -437,6 +437,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 isInitialLoadRef.current = true;
                 setAuctionComplete(finalSession.is_complete);
 
+                // Check if there's a sold player info to show (for users joining mid-auction)
+                const soldPlayerInfo = (finalSession as any).sold_player_info;
+                if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount) {
+                    setSuccessMessage({
+                        playerName: soldPlayerInfo.playerName,
+                        teamName: soldPlayerInfo.teamName,
+                        amount: soldPlayerInfo.amount
+                    });
+                    setShowSuccessModal(true);
+                }
+
                 // Load current bid amount and selected team from database
                 // We'll load settings first to get the minimum_bid, then decide what to use
                 const sessionBidAmount = (finalSession as any).current_bid_amount;
@@ -807,22 +818,43 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 filter: `id=eq.${sessionId}`
             }, (payload) => {
                 if (payload.new) {
-                    const session = payload.new as { current_player_index: number; is_complete: boolean; current_bid_amount?: number; current_bid_team_id?: number };
+                    const session = payload.new as {
+                        current_player_index: number;
+                        is_complete: boolean;
+                        current_bid_amount?: number;
+                        current_bid_team_id?: number;
+                        sold_player_info?: { playerName: string; teamName: string; amount: number } | null;
+                    };
                     const prevIndex = prevPlayerIndexRef.current;
 
+                    // Check if sold_player_info was updated (player was just sold)
+                    if (session.sold_player_info && payload.eventType === 'UPDATE') {
+                        // Show success modal to all users
+                        setSuccessMessage(session.sold_player_info);
+                        setShowSuccessModal(true);
+                    }
+
+                    // If player index changed, close modal for non-admin users (they see it auto-close)
+                    const newIndex = session.current_player_index;
+                    if (newIndex !== prevIndex && !canEdit && showSuccessModal) {
+                        // Auto-close modal for non-admin users when admin moves to next player
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                    }
+
                     // If in skipped players mode, ensure the index is within bounds of skipped players array
-                    let newIndex = session.current_player_index;
+                    let clampedIndex = newIndex;
                     if (isSkippedPlayersModeRef.current && playersRef.current.length > 0) {
                         // Clamp index to valid range for skipped players
-                        if (newIndex >= playersRef.current.length) {
-                            newIndex = playersRef.current.length - 1;
+                        if (clampedIndex >= playersRef.current.length) {
+                            clampedIndex = playersRef.current.length - 1;
                         }
-                        if (newIndex < 0) {
-                            newIndex = 0;
+                        if (clampedIndex < 0) {
+                            clampedIndex = 0;
                         }
                     }
 
-                    setCurrentPlayerIndex(newIndex);
+                    setCurrentPlayerIndex(clampedIndex);
                     setAuctionComplete(session.is_complete);
 
                     // If player index changed, we'll reset bid in the useEffect above
@@ -1068,6 +1100,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setFrozenSkippedPlayers([]);
         }
     }, [isSkippedPlayersSheetOpen, getCurrentSkippedPlayers, skippedPlayers]);
+
+    // Auto-close success modal for non-admin users when player index changes
+    useEffect(() => {
+        if (!canEdit && showSuccessModal && prevPlayerIndexRef.current !== currentPlayerIndex && prevPlayerIndexRef.current !== -1) {
+            // Player index changed, close modal for non-admin users
+            setShowSuccessModal(false);
+            setSuccessMessage(null);
+        }
+    }, [currentPlayerIndex, canEdit, showSuccessModal]);
 
     // Default card styling (no category-based styling)
     const cardStyle = { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
@@ -1399,28 +1440,34 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             // Manually reload teams to ensure UI updates immediately
             await reloadTeams();
 
-            // Show success modal
-            setSuccessMessage({
+            // Store sold player info in database for all users to see
+            const soldPlayerInfo = {
                 playerName: currentPlayer.name,
                 teamName: team.name,
                 amount: currentBid
-            });
-            setShowSuccessModal(true);
+            };
 
             // Move to next player
             // If in skipped players mode, ensure we stay within skipped players array
             // Otherwise, stay within all players array
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
 
-            // Update local state immediately for instant UI update
-            setCurrentPlayerIndex(nextIndex);
-
+            // Update session with next player index and sold player info
+            // This will trigger real-time updates for all users
             await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: nextIndex
+                    current_player_index: nextIndex,
+                    sold_player_info: soldPlayerInfo
                 })
                 .eq('id', sessionId);
+
+            // Update local state immediately for instant UI update
+            setCurrentPlayerIndex(nextIndex);
+
+            // Show success modal for admin (will also show for others via real-time)
+            setSuccessMessage(soldPlayerInfo);
+            setShowSuccessModal(true);
 
             // Reset UI state
             const newMinimum = getMinimumBid();
@@ -2844,18 +2891,35 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </p>
                         </div>
 
-                        {/* Button */}
-                        <div className="relative z-10 mt-6">
-                            <button
-                                onClick={() => {
-                                    setShowSuccessModal(false);
-                                    setSuccessMessage(null);
-                                }}
-                                className="w-full bg-red-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-red-700 transition-colors"
-                            >
-                                Continue
-                            </button>
-                        </div>
+                        {/* Button - Only show for admin users */}
+                        {canEdit && (
+                            <div className="relative z-10 mt-6">
+                                <button
+                                    onClick={async () => {
+                                        setShowSuccessModal(false);
+                                        setSuccessMessage(null);
+                                        // Clear sold_player_info in database when admin closes
+                                        if (sessionId) {
+                                            await supabase
+                                                .from('auction_sessions')
+                                                .update({ sold_player_info: null })
+                                                .eq('id', sessionId);
+                                        }
+                                    }}
+                                    className="w-full bg-red-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-red-700 transition-colors"
+                                >
+                                    Continue
+                                </button>
+                            </div>
+                        )}
+                        {/* For non-admin users, show message that it will close automatically */}
+                        {!canEdit && (
+                            <div className="relative z-10 mt-6">
+                                <p className="text-sm text-gray-500 text-center">
+                                    The auction will continue automatically...
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
