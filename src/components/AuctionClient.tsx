@@ -625,16 +625,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 }
 
                 // Check if we should be in skipped players mode
-                // This happens if:
-                // 1. Auction is complete and we have skipped players, OR
-                // 2. The current player index is within the range of skipped players (suggesting we're viewing skipped players)
-                //    AND the player at that index in the original pool is actually in the skipped players list
-                const shouldBeInSkippedMode = skippedFromTable.length > 0 && (
+                // Use the database flag if available, otherwise use the old logic
+                const dbSkippedMode = (finalSession as any).is_skipped_players_mode === true;
+                const shouldBeInSkippedMode = dbSkippedMode || (skippedFromTable.length > 0 && (
                     finalSession.is_complete ||
                     (initialPlayerIndex < skippedFromTable.length &&
                         mappedPlayers[initialPlayerIndex] &&
                         skippedFromTable.some(sp => sp.name === mappedPlayers[initialPlayerIndex].name))
-                );
+                ));
 
                 if (shouldBeInSkippedMode) {
                     // We're in skipped players mode
@@ -824,8 +822,108 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         current_bid_amount?: number;
                         current_bid_team_id?: number;
                         sold_player_info?: { playerName: string; teamName: string; amount: number } | null;
+                        is_skipped_players_mode?: boolean;
                     };
                     const prevIndex = prevPlayerIndexRef.current;
+
+                    // Check if skipped players mode changed
+                    if (session.is_skipped_players_mode !== undefined) {
+                        const shouldBeInSkippedMode = session.is_skipped_players_mode === true;
+
+                        if (shouldBeInSkippedMode && !isSkippedPlayersModeRef.current) {
+                            // Switch to skipped players mode - reload skipped players from database
+                            supabase
+                                .from('auction_skipped_players')
+                                .select(`
+                                    player_pool_id,
+                                    player_name,
+                                    player_order,
+                                    auction_player_pool!inner(
+                                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                    )
+                                `)
+                                .eq('session_id', sessionId)
+                                .order('player_order', { ascending: true })
+                                .then(({ data: skippedPlayersData }) => {
+                                    if (skippedPlayersData && skippedPlayersData.length > 0) {
+                                        const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
+                                            const poolPlayer = sp.auction_player_pool;
+                                            return {
+                                                name: poolPlayer.name,
+                                                photo: poolPlayer.photo || undefined,
+                                                age: poolPlayer.age || undefined,
+                                                played_s1: poolPlayer.played_s1 || undefined,
+                                                experience: poolPlayer.experience || undefined,
+                                                active_sport: poolPlayer.active_sport || undefined,
+                                                skill: poolPlayer.skill || undefined,
+                                                batting_hand: poolPlayer.batting_hand || undefined,
+                                                bowling_hand: poolPlayer.bowling_hand || undefined,
+                                                wing: poolPlayer.wing || undefined,
+                                                flat_no: poolPlayer.flat_no || undefined,
+                                                phone: poolPlayer.phone || undefined,
+                                                category: poolPlayer.category || undefined,
+                                                player_order: poolPlayer.player_order || undefined
+                                            };
+                                        });
+                                        setPlayers(skippedFromTable);
+                                        setSkippedPlayers(skippedFromTable);
+                                        setIsSkippedPlayersMode(true);
+                                        // Adjust index if needed
+                                        const newIndex = session.current_player_index < skippedFromTable.length
+                                            ? session.current_player_index
+                                            : 0;
+                                        setCurrentPlayerIndex(newIndex);
+                                    }
+                                });
+                        } else if (!shouldBeInSkippedMode && isSkippedPlayersModeRef.current) {
+                            // Switch back to all players mode
+                            // Use original player pool if available, otherwise reload
+                            if (originalPlayerPool.length > 0) {
+                                setPlayers(originalPlayerPool);
+                                setIsSkippedPlayersMode(false);
+                                // Adjust index if needed
+                                const newIndex = session.current_player_index < originalPlayerPool.length
+                                    ? session.current_player_index
+                                    : 0;
+                                setCurrentPlayerIndex(newIndex);
+                            } else {
+                                // Reload all players from original pool (async)
+                                supabase
+                                    .from('auction_player_pool')
+                                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                                    .eq('session_id', sessionId)
+                                    .order('player_order', { ascending: true })
+                                    .then(({ data: playerPoolData }) => {
+                                        if (playerPoolData) {
+                                            const mappedPlayers: Player[] = playerPoolData.map((p: any) => ({
+                                                name: p.name,
+                                                photo: p.photo || undefined,
+                                                age: p.age || undefined,
+                                                played_s1: p.played_s1 || undefined,
+                                                experience: p.experience || undefined,
+                                                active_sport: p.active_sport || undefined,
+                                                skill: p.skill || undefined,
+                                                batting_hand: p.batting_hand || undefined,
+                                                bowling_hand: p.bowling_hand || undefined,
+                                                wing: p.wing || undefined,
+                                                flat_no: p.flat_no || undefined,
+                                                phone: p.phone || undefined,
+                                                category: p.category || undefined,
+                                                player_order: p.player_order || undefined
+                                            }));
+                                            setPlayers(mappedPlayers);
+                                            setOriginalPlayerPool(mappedPlayers);
+                                            setIsSkippedPlayersMode(false);
+                                            // Adjust index if needed
+                                            const newIndex = session.current_player_index < mappedPlayers.length
+                                                ? session.current_player_index
+                                                : 0;
+                                            setCurrentPlayerIndex(newIndex);
+                                        }
+                                    });
+                            }
+                        }
+                    }
 
                     // Check if sold_player_info was updated (player was just sold)
                     if (session.sold_player_info && payload.eventType === 'UPDATE') {
@@ -980,9 +1078,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setIsSkippedPlayersMode(false);
             setCurrentPlayerIndex(0);
 
+            // Update database to sync mode across all screens
             await supabase
                 .from('auction_sessions')
-                .update({ current_player_index: 0 })
+                .update({
+                    current_player_index: 0,
+                    is_skipped_players_mode: false
+                })
                 .eq('id', sessionId);
 
             const newMinimum = getMinimumBid();
@@ -1015,9 +1117,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setIsSkippedPlayersMode(true);
             setCurrentPlayerIndex(0);
 
+            // Update database to sync mode across all screens
             await supabase
                 .from('auction_sessions')
-                .update({ current_player_index: 0 })
+                .update({
+                    current_player_index: 0,
+                    is_skipped_players_mode: true
+                })
                 .eq('id', sessionId);
 
             const newMinimum = getMinimumBid();
@@ -2822,7 +2928,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             {/* Success Modal */}
             {showSuccessModal && successMessage && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-8 md:p-12 transform transition-all relative overflow-hidden">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 md:p-12 transform transition-all relative overflow-visible">
                         {/* Confetti Blast Animation */}
                         <div className="absolute inset-0 pointer-events-none overflow-hidden">
                             {Array.from({ length: 100 }).map((_, i) => {
@@ -2861,11 +2967,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             })}
                         </div>
 
-                        {/* Content - Left Aligned */}
-                        <div className="relative z-10 text-left">
-                            {/* Congratulations with Logo aligned */}
-                            <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-3xl md:text-4xl font-bold text-gray-900">Congratulations!!</h2>
+                        {/* Content - Centered */}
+                        <div className="relative z-10 text-center">
+                            {/* Logo on Top */}
+                            <div className="flex justify-center mb-4">
                                 <Image
                                     src="/logo.jpeg"
                                     alt="Logo"
@@ -2874,6 +2979,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     className="object-contain"
                                 />
                             </div>
+
+                            {/* Congratulations */}
+                            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Congratulations!!</h2>
 
                             {/* Player Name */}
                             <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
@@ -2938,10 +3046,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             <span className="md:hidden">Auction</span>
                             <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
                         </h1>
-                        <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
+                        <div
+                            className="flex items-center gap-1 md:gap-1.5 md:gap-3 flex-shrink-0 overflow-x-auto"
+                            style={{
+                                scrollbarWidth: 'none',
+                                msOverflowStyle: 'none',
+                                WebkitScrollbar: { display: 'none' }
+                            } as React.CSSProperties}
+                        >
                             <button
                                 onClick={() => setIsTopPlayersSheetOpen(true)}
-                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#F59E0B',
                                     borderColor: '#F59E0B',
@@ -2954,7 +3069,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </button>
                             <button
                                 onClick={() => setIsTeamDynamicsSheetOpen(true)}
-                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#3B82F6',
                                     borderColor: '#3B82F6',
@@ -2967,7 +3082,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             </button>
                             <button
                                 onClick={() => setIsSkippedPlayersSheetOpen(true)}
-                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#F97316',
                                     borderColor: '#F97316',
@@ -3007,7 +3122,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             )}
                             <button
                                 onClick={() => setIsPlayerListSheetOpen(true)}
-                                className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#10B981',
                                     borderColor: '#10B981',
@@ -3631,7 +3746,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         {/* Player Photo - Top on mobile, Left on desktop */}
                                         <div className="flex-shrink-0 flex justify-center md:justify-start">
                                             {currentPlayer.photo && (
-                                                <div key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                                <div key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-80 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
                                                     {(() => {
                                                         const imageUrl = processImageUrl(currentPlayer.photo);
                                                         if (!imageUrl) return null;
@@ -3644,6 +3759,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                                 src={finalImageUrl}
                                                                 alt={currentPlayer.name}
                                                                 className="object-cover w-full h-full"
+                                                                style={{ objectPosition: 'center top' }}
                                                                 loading="eager"
                                                                 decoding="async"
                                                                 onError={(e) => {
@@ -3683,24 +3799,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                             {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
                                             <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
                                                 {currentPlayer.age && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         Age: {currentPlayer.age}
                                                     </span>
                                                 )}
-                                                {currentPlayer.category && (() => {
-                                                    const categoryColor = auctionSettings?.category_color_mapping?.[currentPlayer.category];
-                                                    const hasColorMapping = !!categoryColor;
-                                                    const backgroundColor = hasColorMapping ? categoryColor : '#1F2937';
-                                                    const borderColor = hasColorMapping ? categoryColor : '#1F2937';
-                                                    const textColor = hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB';
-                                                    return (
-                                                        <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor, borderColor, color: textColor }}>
-                                                            Category: {currentPlayer.category}
-                                                        </span>
-                                                    );
-                                                })()}
+                                                {currentPlayer.category && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Category: {currentPlayer.category}
+                                                    </span>
+                                                )}
                                                 {currentPlayer.skill && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderColor: hasColorMapping ? 'rgba(255, 255, 255, 0.3)' : '#1F2937' }}>
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         {currentPlayer.skill}
                                                     </span>
                                                 )}
@@ -3825,7 +3934,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     <div className="text-center text-sm mb-4" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
                                     </div>
-                                    <div className="mb-4">
+                                    {/* Custom Bid Input - Hidden on mobile */}
+                                    <div className="mb-4 hidden md:block">
                                         <label className="block text-sm font-medium mb-2" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
                                         <div className="flex items-center gap-2">
                                             <span style={{ color: '#E5E7EB' }}>₹</span>
