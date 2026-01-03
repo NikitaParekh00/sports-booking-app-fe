@@ -2943,7 +2943,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             <div className="w-full px-2 md:px-3 flex-1 overflow-hidden min-h-0">
                 <div
                     ref={containerRef}
-                    className="hidden xl:flex items-stretch gap-0 h-full"
+                    className="hidden xl:flex items-stretch gap-3 h-full"
                 >
                     {/* Left Sidebar - Team Selection (Desktop) */}
                     <div
@@ -2989,7 +2989,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-2 md:p-3'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-3 md:p-4'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
                                                     ? 'shadow-md' // Active - will add custom style
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -3004,7 +3004,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     {(() => {
                                                         const logoUrl = getTeamLogo(team.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
-                                                        const logoSize = teams.length > 10 ? 36 : 28;
+                                                        const logoSize = teams.length > 10 ? 36 : 32;
                                                         if (isProxyUrl) {
                                                             return (
                                                                 <img
@@ -3029,16 +3029,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                             />
                                                         );
                                                     })()}
-                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : ''}`} style={{ color: '#E5E7EB', fontSize: teams.length > 10 ? undefined : 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
-                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
+                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{maxBid.toLocaleString()}
                                                     </div>
                                                 )}
@@ -3096,157 +3096,160 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
 
                         {/* Current Player Card */}
-                        <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
-                                {/* Player Photo - Top on mobile, Left on desktop */}
-                                <div className="flex-shrink-0 flex justify-center md:justify-start">
-                                    {currentPlayer.photo && (
-                                        <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
-                                            {/* Automatically converts Google Drive links to direct image URLs */}
-                                            {(() => {
-                                                const imageUrl = processImageUrl(currentPlayer.photo);
-                                                if (!imageUrl) return null;
+                        {(() => {
+                            const categoryColor = currentPlayer.category ? auctionSettings?.category_color_mapping?.[currentPlayer.category] : null;
+                            const hasColorMapping = !!categoryColor;
+                            const backgroundColor = hasColorMapping
+                                ? categoryColor // Category color as background
+                                : '#111827';
+                            const borderColor = hasColorMapping ? categoryColor : '#1F2937';
 
-                                                // Simple cache-busting: use player index only (changes when player changes)
-                                                // This ensures images reload when switching players without excessive parameters
-                                                const finalImageUrl = imageUrl.includes('?')
-                                                    ? `${imageUrl}&_idx=${currentPlayerIndex}`
-                                                    : `${imageUrl}?_idx=${currentPlayerIndex}`;
+                            return (
+                                <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
+                                    <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
+                                        {/* Player Photo - Top on mobile, Left on desktop */}
+                                        <div className="flex-shrink-0 flex justify-center md:justify-start">
+                                            {currentPlayer.photo && (
+                                                <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                                    {/* Automatically converts Google Drive links to direct image URLs */}
+                                                    {(() => {
+                                                        const imageUrl = processImageUrl(currentPlayer.photo);
+                                                        if (!imageUrl) return null;
 
-                                                // Use regular img tag for all URLs (proxy API route or external URLs)
-                                                // Next.js Image doesn't support query strings in local patterns
-                                                return (
-                                                    <img
-                                                        ref={imageRef}
-                                                        key={`img-${currentPlayer.name}-${currentPlayerIndex}`}
-                                                        src={finalImageUrl}
-                                                        alt={currentPlayer.name}
-                                                        className="object-cover w-full h-full"
-                                                        loading="eager"
-                                                        decoding="async"
-                                                        onError={(e) => {
-                                                            const target = e.target as HTMLImageElement;
-                                                            target.style.display = 'none';
-                                                            const parent = target.parentElement;
-                                                            if (parent && !parent.querySelector('.placeholder')) {
-                                                                const placeholder = document.createElement('div');
-                                                                placeholder.className = 'placeholder w-full h-full flex items-center justify-center bg-gray-200 text-gray-400 text-xs';
-                                                                placeholder.textContent = 'Image unavailable';
-                                                                parent.appendChild(placeholder);
-                                                            }
-                                                        }}
+                                                        // Simple cache-busting: use player index only (changes when player changes)
+                                                        // This ensures images reload when switching players without excessive parameters
+                                                        const finalImageUrl = imageUrl.includes('?')
+                                                            ? `${imageUrl}&_idx=${currentPlayerIndex}`
+                                                            : `${imageUrl}?_idx=${currentPlayerIndex}`;
+
+                                                        // Use regular img tag for all URLs (proxy API route or external URLs)
+                                                        // Next.js Image doesn't support query strings in local patterns
+                                                        return (
+                                                            <img
+                                                                ref={imageRef}
+                                                                key={`img-${currentPlayer.name}-${currentPlayerIndex}`}
+                                                                src={finalImageUrl}
+                                                                alt={currentPlayer.name}
+                                                                className="object-cover w-full h-full"
+                                                                loading="eager"
+                                                                decoding="async"
+                                                                onError={(e) => {
+                                                                    const target = e.target as HTMLImageElement;
+                                                                    target.style.display = 'none';
+                                                                    const parent = target.parentElement;
+                                                                    if (parent && !parent.querySelector('.placeholder')) {
+                                                                        const placeholder = document.createElement('div');
+                                                                        placeholder.className = 'placeholder w-full h-full flex items-center justify-center bg-gray-200 text-gray-400 text-xs';
+                                                                        placeholder.textContent = 'Image unavailable';
+                                                                        parent.appendChild(placeholder);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        );
+                                                    })()}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Player Info - Below image on mobile, Right side on desktop */}
+                                        <div className="flex-1 flex flex-col">
+                                            {/* Header: Name and Logo */}
+                                            <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
+                                                <h2 className="text-xl md:text-2xl font-bold" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
+                                                <div className="flex-shrink-0">
+                                                    <Image
+                                                        src="/logo.jpeg"
+                                                        alt="Logo"
+                                                        width={180}
+                                                        height={80}
+                                                        className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
                                                     />
-                                                );
-                                            })()}
+                                                </div>
+                                            </div>
+
+                                            {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
+                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
+                                                {currentPlayer.age && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Age: {currentPlayer.age}
+                                                    </span>
+                                                )}
+                                                {currentPlayer.category && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Category: {currentPlayer.category}
+                                                    </span>
+                                                )}
+                                                {currentPlayer.skill && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        {currentPlayer.skill}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Basic Info Badges - Row 2: Bat and Bowl */}
+                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
+                                                {currentPlayer.batting_hand && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Bat: {currentPlayer.batting_hand}
+                                                    </span>
+                                                )}
+                                                {currentPlayer.bowling_hand && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Bowl: {currentPlayer.bowling_hand}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Player Details - Contact & Location Info */}
+                                            <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
+                                                {/* Wing */}
+                                                {currentPlayer.wing && (
+                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Wing</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing}</div>
+                                                    </div>
+                                                )}
+
+                                                {/* Flat No */}
+                                                {currentPlayer.flat_no && (
+                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Flat No</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.flat_no}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Player Details - Additional Info */}
+                                            <div className="grid grid-cols-3 gap-1.5 md:gap-2">
+                                                {/* Experience */}
+                                                {currentPlayer.experience && (
+                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Experience</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                                    </div>
+                                                )}
+
+                                                {/* Active Sport */}
+                                                {currentPlayer.active_sport && (
+                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Active Sport</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                                    </div>
+                                                )}
+
+                                                {/* Played Previous MBBL Season - Only for Men's auction */}
+                                                {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
+                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Played S1</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* Player Info - Below image on mobile, Right side on desktop */}
-                                <div className="flex-1 flex flex-col">
-                                    {/* Header: Name and Logo */}
-                                    <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
-                                        <h2 className="text-xl md:text-2xl font-bold" style={{ color: '#E5E7EB' }}>{currentPlayer.name}</h2>
-                                        <div className="flex-shrink-0">
-                                            <Image
-                                                src="/logo.jpeg"
-                                                alt="Logo"
-                                                width={180}
-                                                height={80}
-                                                className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
-                                    <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                        {currentPlayer.age && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Age: {currentPlayer.age}
-                                            </span>
-                                        )}
-                                        {currentPlayer.category && (() => {
-                                            const categoryColor = auctionSettings?.category_color_mapping?.[currentPlayer.category];
-                                            const hasColorMapping = !!categoryColor;
-                                            const backgroundColor = hasColorMapping ? categoryColor : '#1F2937';
-                                            const borderColor = hasColorMapping ? categoryColor : '#1F2937';
-                                            const textColor = hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB';
-
-                                            return (
-                                                <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor, borderColor, color: textColor }}>
-                                                    Category: {currentPlayer.category}
-                                                </span>
-                                            );
-                                        })()}
-                                        {currentPlayer.skill && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                {currentPlayer.skill}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Basic Info Badges - Row 2: Bat and Bowl */}
-                                    <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                        {currentPlayer.batting_hand && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Bat: {currentPlayer.batting_hand}
-                                            </span>
-                                        )}
-                                        {currentPlayer.bowling_hand && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Bowl: {currentPlayer.bowling_hand}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Player Details - Contact & Location Info */}
-                                    <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
-                                        {/* Wing */}
-                                        {currentPlayer.wing && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Flat No */}
-                                        {currentPlayer.flat_no && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Player Details - Additional Info */}
-                                    <div className="grid grid-cols-3 gap-1.5 md:gap-2">
-                                        {/* Experience */}
-                                        {currentPlayer.experience && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Active Sport */}
-                                        {currentPlayer.active_sport && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Played Previous MBBL Season - Only for Men's auction */}
-                                        {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played S1</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                            );
+                        })()}
 
                         {/* Bid Amount */}
                         <div className="border-2 rounded-xl p-4 md:p-6 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
@@ -3430,140 +3433,151 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
 
                         {/* Current Player Card */}
-                        <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
-                                {/* Player Photo - Top on mobile, Left on desktop */}
-                                <div className="flex-shrink-0 flex justify-center md:justify-start">
-                                    {currentPlayer.photo && (
-                                        <div key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
-                                            {(() => {
-                                                const imageUrl = processImageUrl(currentPlayer.photo);
-                                                if (!imageUrl) return null;
-                                                const finalImageUrl = imageUrl.includes('?')
-                                                    ? `${imageUrl}&_idx=${currentPlayerIndex}`
-                                                    : `${imageUrl}?_idx=${currentPlayerIndex}`;
-                                                return (
-                                                    <img
-                                                        key={`img-mobile-${currentPlayer.name}-${currentPlayerIndex}`}
-                                                        src={finalImageUrl}
-                                                        alt={currentPlayer.name}
-                                                        className="object-cover w-full h-full"
-                                                        loading="eager"
-                                                        decoding="async"
-                                                        onError={(e) => {
-                                                            const target = e.target as HTMLImageElement;
-                                                            target.style.display = 'none';
-                                                            const parent = target.parentElement;
-                                                            if (parent && !parent.querySelector('.placeholder')) {
-                                                                const placeholder = document.createElement('div');
-                                                                placeholder.className = 'placeholder w-full h-full flex items-center justify-center bg-gray-200 text-gray-400 text-xs';
-                                                                placeholder.textContent = 'Image unavailable';
-                                                                parent.appendChild(placeholder);
-                                                            }
-                                                        }}
+                        {(() => {
+                            const categoryColor = currentPlayer.category ? auctionSettings?.category_color_mapping?.[currentPlayer.category] : null;
+                            const hasColorMapping = !!categoryColor;
+                            const backgroundColor = hasColorMapping
+                                ? categoryColor // Category color as background
+                                : '#111827';
+                            const borderColor = hasColorMapping ? categoryColor : '#1F2937';
+
+                            return (
+                                <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
+                                    <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
+                                        {/* Player Photo - Top on mobile, Left on desktop */}
+                                        <div className="flex-shrink-0 flex justify-center md:justify-start">
+                                            {currentPlayer.photo && (
+                                                <div key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                                    {(() => {
+                                                        const imageUrl = processImageUrl(currentPlayer.photo);
+                                                        if (!imageUrl) return null;
+                                                        const finalImageUrl = imageUrl.includes('?')
+                                                            ? `${imageUrl}&_idx=${currentPlayerIndex}`
+                                                            : `${imageUrl}?_idx=${currentPlayerIndex}`;
+                                                        return (
+                                                            <img
+                                                                key={`img-mobile-${currentPlayer.name}-${currentPlayerIndex}`}
+                                                                src={finalImageUrl}
+                                                                alt={currentPlayer.name}
+                                                                className="object-cover w-full h-full"
+                                                                loading="eager"
+                                                                decoding="async"
+                                                                onError={(e) => {
+                                                                    const target = e.target as HTMLImageElement;
+                                                                    target.style.display = 'none';
+                                                                    const parent = target.parentElement;
+                                                                    if (parent && !parent.querySelector('.placeholder')) {
+                                                                        const placeholder = document.createElement('div');
+                                                                        placeholder.className = 'placeholder w-full h-full flex items-center justify-center bg-gray-200 text-gray-400 text-xs';
+                                                                        placeholder.textContent = 'Image unavailable';
+                                                                        parent.appendChild(placeholder);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        );
+                                                    })()}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Player Info - Below image on mobile, Right side on desktop */}
+                                        <div className="flex-1 flex flex-col">
+                                            {/* Header: Name and Logo */}
+                                            <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
+                                                <h2 className="text-xl md:text-2xl font-bold" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
+                                                <div className="flex-shrink-0">
+                                                    <Image
+                                                        src="/logo.jpeg"
+                                                        alt="Logo"
+                                                        width={180}
+                                                        height={80}
+                                                        className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
                                                     />
-                                                );
-                                            })()}
+                                                </div>
+                                            </div>
+
+                                            {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
+                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
+                                                {currentPlayer.age && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
+                                                        Age: {currentPlayer.age}
+                                                    </span>
+                                                )}
+                                                {currentPlayer.category && (() => {
+                                                    const categoryColor = auctionSettings?.category_color_mapping?.[currentPlayer.category];
+                                                    const hasColorMapping = !!categoryColor;
+                                                    const backgroundColor = hasColorMapping ? categoryColor : '#1F2937';
+                                                    const borderColor = hasColorMapping ? categoryColor : '#1F2937';
+                                                    const textColor = hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB';
+                                                    return (
+                                                        <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor, borderColor, color: textColor }}>
+                                                            Category: {currentPlayer.category}
+                                                        </span>
+                                                    );
+                                                })()}
+                                                {currentPlayer.skill && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderColor: hasColorMapping ? 'rgba(255, 255, 255, 0.3)' : '#1F2937' }}>
+                                                        {currentPlayer.skill}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Basic Info Badges - Row 2: Bat and Bowl */}
+                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
+                                                {currentPlayer.batting_hand && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Bat: {currentPlayer.batting_hand}
+                                                    </span>
+                                                )}
+                                                {currentPlayer.bowling_hand && (
+                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                        Bowl: {currentPlayer.bowling_hand}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Player Details - Contact & Location Info */}
+                                            <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
+                                                {currentPlayer.wing && (
+                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
+                                                    </div>
+                                                )}
+                                                {currentPlayer.flat_no && (
+                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Player Details - Additional Info */}
+                                            <div className="grid grid-cols-3 gap-1.5 md:gap-2">
+                                                {currentPlayer.experience && (
+                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                                    </div>
+                                                )}
+                                                {currentPlayer.active_sport && (
+                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                                    </div>
+                                                )}
+                                                {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
+                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played S1</div>
+                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* Player Info - Below image on mobile, Right side on desktop */}
-                                <div className="flex-1 flex flex-col">
-                                    {/* Header: Name and Logo */}
-                                    <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
-                                        <h2 className="text-xl md:text-2xl font-bold" style={{ color: '#E5E7EB' }}>{currentPlayer.name}</h2>
-                                        <div className="flex-shrink-0">
-                                            <Image
-                                                src="/logo.jpeg"
-                                                alt="Logo"
-                                                width={180}
-                                                height={80}
-                                                className="object-contain w-16 h-16 md:w-[180px] md:h-[80px]"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
-                                    <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                        {currentPlayer.age && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Age: {currentPlayer.age}
-                                            </span>
-                                        )}
-                                        {currentPlayer.category && (() => {
-                                            const categoryColor = auctionSettings?.category_color_mapping?.[currentPlayer.category];
-                                            const hasColorMapping = !!categoryColor;
-                                            const backgroundColor = hasColorMapping ? categoryColor : '#1F2937';
-                                            const borderColor = hasColorMapping ? categoryColor : '#1F2937';
-                                            const textColor = hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB';
-                                            return (
-                                                <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor, borderColor, color: textColor }}>
-                                                    Category: {currentPlayer.category}
-                                                </span>
-                                            );
-                                        })()}
-                                        {currentPlayer.skill && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                {currentPlayer.skill}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Basic Info Badges - Row 2: Bat and Bowl */}
-                                    <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                        {currentPlayer.batting_hand && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Bat: {currentPlayer.batting_hand}
-                                            </span>
-                                        )}
-                                        {currentPlayer.bowling_hand && (
-                                            <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold border" style={{ backgroundColor: '#1F2937', color: '#E5E7EB', borderColor: '#1F2937' }}>
-                                                Bowl: {currentPlayer.bowling_hand}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Player Details - Contact & Location Info */}
-                                    <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
-                                        {currentPlayer.wing && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
-                                            </div>
-                                        )}
-                                        {currentPlayer.flat_no && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Player Details - Additional Info */}
-                                    <div className="grid grid-cols-3 gap-1.5 md:gap-2">
-                                        {currentPlayer.experience && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
-                                            </div>
-                                        )}
-                                        {currentPlayer.active_sport && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
-                                            </div>
-                                        )}
-                                        {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played S1</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        </div>
+                            );
+                        })()}
 
                         {/* Bid Amount */}
                         <div className="border-2 rounded-xl p-4 md:p-6 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
@@ -3713,7 +3727,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-2 md:p-3'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-3 md:p-4'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
                                                     ? 'shadow-md'
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -3728,7 +3742,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     {(() => {
                                                         const logoUrl = getTeamLogo(team.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
-                                                        const logoSize = teams.length > 10 ? 36 : 28;
+                                                        const logoSize = teams.length > 10 ? 36 : 32;
                                                         if (isProxyUrl) {
                                                             return (
                                                                 <img
@@ -3753,16 +3767,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                             />
                                                         );
                                                     })()}
-                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : ''}`} style={{ color: '#E5E7EB', fontSize: teams.length > 10 ? undefined : 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
-                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
+                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{maxBid.toLocaleString()}
                                                     </div>
                                                 )}
