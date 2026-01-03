@@ -702,6 +702,18 @@ export default function AuctionAdminPage() {
           nextAvailableOrder++;
         }
 
+        // Normalize played_s1 to match check constraint (must be 'Yes' or 'No')
+        let normalizedPlayedS1: string | null = null;
+        if (player.played_s1) {
+          const playedS1Lower = player.played_s1.trim().toLowerCase();
+          if (playedS1Lower === 'yes' || playedS1Lower === 'y' || playedS1Lower === '1' || playedS1Lower === 'true') {
+            normalizedPlayedS1 = 'Yes';
+          } else if (playedS1Lower === 'no' || playedS1Lower === 'n' || playedS1Lower === '0' || playedS1Lower === 'false') {
+            normalizedPlayedS1 = 'No';
+          }
+          // If it doesn't match any expected value, set to null
+        }
+
         return {
           session_id: selectedSessionForPlayers,
           name: player.name || '',
@@ -714,7 +726,7 @@ export default function AuctionAdminPage() {
           flat_no: player.flat_no || null,
           phone: player.phone || null,
           category: player.category || null,
-          played_s1: player.played_s1 || null,
+          played_s1: normalizedPlayedS1,
           experience: player.experience || null,
           active_sport: player.active_sport || null,
           player_order: playerOrder
