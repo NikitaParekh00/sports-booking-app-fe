@@ -2794,17 +2794,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 onClick={() => setIsTopPlayersSheetOpen(true)}
                                 className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
                                 style={{
-                                    backgroundColor: '#111827',
-                                    borderColor: '#E11D48',
-                                    color: '#E11D48'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#E11D48';
-                                    e.currentTarget.style.color = '#FFFFFF';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#111827';
-                                    e.currentTarget.style.color = '#E11D48';
+                                    backgroundColor: '#F59E0B',
+                                    borderColor: '#F59E0B',
+                                    color: '#FFFFFF'
                                 }}
                                 title="Top 5 Bidded Players"
                             >
@@ -2815,17 +2807,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 onClick={() => setIsTeamDynamicsSheetOpen(true)}
                                 className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
                                 style={{
-                                    backgroundColor: '#111827',
-                                    borderColor: '#E11D48',
-                                    color: '#E11D48'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#E11D48';
-                                    e.currentTarget.style.color = '#FFFFFF';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#111827';
-                                    e.currentTarget.style.color = '#E11D48';
+                                    backgroundColor: '#3B82F6',
+                                    borderColor: '#3B82F6',
+                                    color: '#FFFFFF'
                                 }}
                                 title="Team Dynamics"
                             >
@@ -2836,17 +2820,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 onClick={() => setIsSkippedPlayersSheetOpen(true)}
                                 className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
                                 style={{
-                                    backgroundColor: '#111827',
-                                    borderColor: '#E11D48',
-                                    color: '#E11D48'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#E11D48';
-                                    e.currentTarget.style.color = '#FFFFFF';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#111827';
-                                    e.currentTarget.style.color = '#E11D48';
+                                    backgroundColor: '#F97316',
+                                    borderColor: '#F97316',
+                                    color: '#FFFFFF'
                                 }}
                                 title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
                             >
@@ -2884,17 +2860,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 onClick={() => setIsPlayerListSheetOpen(true)}
                                 className="px-3 py-1.5 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors"
                                 style={{
-                                    backgroundColor: '#111827',
-                                    borderColor: '#E11D48',
-                                    color: '#E11D48'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#E11D48';
-                                    e.currentTarget.style.color = '#FFFFFF';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.backgroundColor = '#111827';
-                                    e.currentTarget.style.color = '#E11D48';
+                                    backgroundColor: '#10B981',
+                                    borderColor: '#10B981',
+                                    color: '#FFFFFF'
                                 }}
                                 title="View All Players"
                             >
@@ -2980,6 +2948,37 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         const isViewOnly = !canEdit;
                                         const finalDisabled = isDisabled || isViewOnly;
 
+                                        // Determine team status for coloring
+                                        const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                        const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
+                                        const isSelected = selectedTeamId === team.id;
+
+                                        // Status-based colors
+                                        let backgroundColor = '#111827';
+                                        let borderColor = '#1F2937';
+
+                                        if (isSelected) {
+                                            // Red for selected team
+                                            backgroundColor = '#7F1D1D';
+                                            borderColor = '#DC2626';
+                                        } else if (finalDisabled) {
+                                            // Red for cannot bid (no budget or team full)
+                                            backgroundColor = '#111827';
+                                            borderColor = '#DC2626';
+                                        } else if (isLowBudget) {
+                                            // Yellow/Orange for low budget warning
+                                            backgroundColor = '#78350F';
+                                            borderColor = '#F59E0B';
+                                        } else if (canAfford && hasSpace && withinMaxBid) {
+                                            // Blue for can bid
+                                            backgroundColor = '#1E3A8A';
+                                            borderColor = '#3B82F6';
+                                        } else {
+                                            // Default gray
+                                            backgroundColor = '#111827';
+                                            borderColor = '#1F2937';
+                                        }
+
                                         return (
                                             <button
                                                 key={team.id}
@@ -2995,10 +2994,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         ? 'opacity-50 cursor-not-allowed'
                                                         : ''
                                                     }`}
-                                                style={selectedTeamId === team.id
-                                                    ? { backgroundColor: '#111827', borderColor: '#E11D48' }
-                                                    : { backgroundColor: '#111827', borderColor: '#1F2937' }
-                                                }
+                                                style={{ backgroundColor, borderColor }}
                                             >
                                                 <div className="flex items-start gap-1.5 mb-2 w-full">
                                                     {(() => {
@@ -3718,6 +3714,37 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         const isViewOnly = !canEdit;
                                         const finalDisabled = isDisabled || isViewOnly;
 
+                                        // Determine team status for coloring
+                                        const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                        const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
+                                        const isSelected = selectedTeamId === team.id;
+
+                                        // Status-based colors
+                                        let backgroundColor = '#111827';
+                                        let borderColor = '#1F2937';
+
+                                        if (isSelected) {
+                                            // Red for selected team
+                                            backgroundColor = '#7F1D1D';
+                                            borderColor = '#DC2626';
+                                        } else if (finalDisabled) {
+                                            // Red for cannot bid (no budget or team full)
+                                            backgroundColor = '#111827';
+                                            borderColor = '#DC2626';
+                                        } else if (isLowBudget) {
+                                            // Yellow/Orange for low budget warning
+                                            backgroundColor = '#78350F';
+                                            borderColor = '#F59E0B';
+                                        } else if (canAfford && hasSpace && withinMaxBid) {
+                                            // Blue for can bid
+                                            backgroundColor = '#1E3A8A';
+                                            borderColor = '#3B82F6';
+                                        } else {
+                                            // Default gray
+                                            backgroundColor = '#111827';
+                                            borderColor = '#1F2937';
+                                        }
+
                                         return (
                                             <button
                                                 key={`mobile-${team.id}`}
@@ -3733,10 +3760,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                         ? 'opacity-50 cursor-not-allowed'
                                                         : ''
                                                     }`}
-                                                style={selectedTeamId === team.id
-                                                    ? { backgroundColor: '#111827', borderColor: '#E11D48' }
-                                                    : { backgroundColor: '#111827', borderColor: '#1F2937' }
-                                                }
+                                                style={{ backgroundColor, borderColor }}
                                             >
                                                 <div className="flex items-start gap-1.5 mb-2 w-full">
                                                     {(() => {
