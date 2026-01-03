@@ -19,6 +19,7 @@ interface Team {
   id: number;
   name: string;
   owner_name: string;
+  owner_photo?: string;
   budget: number;
   session_id: string;
   team_number: number;
@@ -62,7 +63,7 @@ export default function AuctionAdminPage() {
   const [selectedSessionForTeams, setSelectedSessionForTeams] = useState<string>('');
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-  const [teamFormData, setTeamFormData] = useState({ name: '', owner_name: '', budget: '', logo_url: '' });
+  const [teamFormData, setTeamFormData] = useState({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
 
   // Players state
   const [players, setPlayers] = useState<Player[]>([]);
@@ -295,6 +296,7 @@ export default function AuctionAdminPage() {
           session_id: selectedSessionForTeams,
           name: teamFormData.name,
           owner_name: teamFormData.owner_name,
+          owner_photo: teamFormData.owner_photo || null,
           budget: parseFloat(teamFormData.budget) || 1000000,
           team_number: nextTeamNumber,
           logo_url: teamFormData.logo_url || null
@@ -303,7 +305,7 @@ export default function AuctionAdminPage() {
       if (error) throw error;
       alert('Team created successfully!');
       setShowTeamForm(false);
-      setTeamFormData({ name: '', owner_name: '', budget: '', logo_url: '' });
+      setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
       loadTeams(selectedSessionForTeams);
     } catch (error: any) {
       console.error('Error creating team:', error);
@@ -320,6 +322,7 @@ export default function AuctionAdminPage() {
         .update({
           name: teamFormData.name,
           owner_name: teamFormData.owner_name,
+          owner_photo: teamFormData.owner_photo || null,
           budget: parseFloat(teamFormData.budget) || editingTeam.budget,
           logo_url: teamFormData.logo_url || null
         })
@@ -329,7 +332,7 @@ export default function AuctionAdminPage() {
       alert('Team updated successfully!');
       setEditingTeam(null);
       setShowTeamForm(false);
-      setTeamFormData({ name: '', owner_name: '', budget: '', logo_url: '' });
+      setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
       loadTeams(selectedSessionForTeams);
     } catch (error: any) {
       console.error('Error updating team:', error);
@@ -564,6 +567,7 @@ export default function AuctionAdminPage() {
           session_id: selectedSessionForTeams,
           name: team.name || '',
           owner_name: team.owner_name || null,
+          owner_photo: team.owner_photo || null,
           budget: team.budget ? parseFloat(team.budget) : 111000,
           team_number: teamNumber,
           logo_url: team.logo_url || null
@@ -1090,7 +1094,7 @@ export default function AuctionAdminPage() {
                     <button
                       onClick={() => {
                         setEditingTeam(null);
-                        setTeamFormData({ name: '', owner_name: '', budget: '1000000', logo_url: '' });
+                        setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '1000000', logo_url: '' });
                         setShowTeamForm(true);
                       }}
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
@@ -1137,6 +1141,17 @@ export default function AuctionAdminPage() {
                         />
                       </div>
                       <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Owner Photo URL</label>
+                        <input
+                          type="text"
+                          value={teamFormData.owner_photo}
+                          onChange={(e) => setTeamFormData({ ...teamFormData, owner_photo: e.target.value })}
+                          placeholder="Enter owner photo URL (Google Drive link or direct URL)"
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Initial Budget (₹)</label>
                         <input
                           type="number"
@@ -1173,7 +1188,7 @@ export default function AuctionAdminPage() {
                           onClick={() => {
                             setShowTeamForm(false);
                             setEditingTeam(null);
-                            setTeamFormData({ name: '', owner_name: '', budget: '1000000', logo_url: '' });
+                            setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '1000000', logo_url: '' });
                           }}
                           className="px-4 py-2 rounded-lg font-semibold transition-colors"
                           style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
@@ -1205,7 +1220,35 @@ export default function AuctionAdminPage() {
                         </div>
                       )}
                       <h3 className="text-xs sm:text-sm md:text-base font-semibold mb-2 whitespace-nowrap" style={{ color: '#E5E7EB' }}>{team.name}</h3>
-                      <p className="text-sm md:text-base mb-1" style={{ color: '#9CA3AF' }}>Owner: {team.owner_name}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        {team.owner_photo && (() => {
+                          const ownerPhotoUrl = processImageUrl(team.owner_photo);
+                          if (!ownerPhotoUrl) return null;
+                          const isProxyUrl = ownerPhotoUrl.startsWith('/api/proxy-image');
+                          if (isProxyUrl) {
+                            return (
+                              <img
+                                src={ownerPhotoUrl}
+                                alt={team.owner_name}
+                                width={24}
+                                height={24}
+                                className="object-cover rounded-full flex-shrink-0"
+                              />
+                            );
+                          }
+                          return (
+                            <Image
+                              src={ownerPhotoUrl}
+                              alt={team.owner_name}
+                              width={24}
+                              height={24}
+                              className="object-cover rounded-full flex-shrink-0"
+                              unoptimized
+                            />
+                          );
+                        })()}
+                        <p className="text-sm md:text-base" style={{ color: '#9CA3AF' }}>Owner: {team.owner_name}</p>
+                      </div>
                       <p className="text-sm md:text-base mb-4" style={{ color: '#9CA3AF' }}>Budget: ₹{team.budget.toLocaleString()}</p>
                       <div className="flex gap-2">
                         <button
@@ -1214,6 +1257,7 @@ export default function AuctionAdminPage() {
                             setTeamFormData({
                               name: team.name,
                               owner_name: team.owner_name,
+                              owner_photo: team.owner_photo || '',
                               budget: team.budget.toString(),
                               logo_url: team.logo_url || ''
                             });
