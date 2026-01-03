@@ -942,10 +942,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         setShowSuccessModal(true);
                     }
 
-                    // If player index changed, close modal for non-admin users (they see it auto-close)
+                    // If sold_player_info was cleared (set to null), close modal for all users
+                    if (!session.sold_player_info && showSuccessModal && payload.eventType === 'UPDATE') {
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                    }
+
+                    // If player index changed, close modal for all users when moving to next player
                     const newIndex = session.current_player_index;
-                    if (newIndex !== prevIndex && !canEdit && showSuccessModal) {
-                        // Auto-close modal for non-admin users when admin moves to next player
+                    if (newIndex !== prevIndex && showSuccessModal) {
+                        // Close modal for all users when admin moves to next player
                         setShowSuccessModal(false);
                         setSuccessMessage(null);
                     }
@@ -1358,12 +1364,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setPlayerBids(new Map()); // Clear bids for new player
             setSelectedTeamId(null); // Clear selected team
 
-            // Update database to reset bid for new player
+            // Update database to reset bid for new player and clear sold_player_info
             supabase
                 .from('auction_sessions')
                 .update({
                     current_bid_amount: newMinimum,
-                    current_bid_team_id: null
+                    current_bid_team_id: null,
+                    sold_player_info: null // Clear sold player info when moving to next player
                 })
                 .eq('id', sessionId);
         }
@@ -1844,7 +1851,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         .from('auction_sessions')
                         .update({
                             current_player_index: nextIndex,
-                            is_skipped_players_mode: true
+                            is_skipped_players_mode: true,
+                            sold_player_info: null // Clear sold player info when moving to next player
                         })
                         .eq('id', sessionId);
                 } else {
@@ -1854,7 +1862,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         .from('auction_sessions')
                         .update({
                             current_player_index: nextIndex,
-                            is_skipped_players_mode: false
+                            is_skipped_players_mode: false,
+                            sold_player_info: null // Clear sold player info when moving to next player
                         })
                         .eq('id', sessionId);
                 }
