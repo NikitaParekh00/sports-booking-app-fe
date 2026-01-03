@@ -1011,13 +1011,30 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             filtered = filtered.filter(player => player.category === selectedCategoryFilter);
         }
 
-        // Sort sold players in ascending order by player name, others remain shuffled
+        // Sort sold players in ascending order by numeric prefix in name, others remain shuffled
         if (playerListFilter === 'Sold') {
-            // Sort by player name in ascending order
+            // Sort by numeric prefix in player name (e.g., "41 Raj Kale" -> 41)
             filtered.sort((a, b) => {
-                const nameA = a.name.toLowerCase();
-                const nameB = b.name.toLowerCase();
-                return nameA.localeCompare(nameB);
+                // Extract numeric prefix from name
+                const extractNumber = (name: string): number => {
+                    const match = name.match(/^\s*(\d+)/);
+                    return match ? parseInt(match[1], 10) : Number.MAX_SAFE_INTEGER;
+                };
+
+                const numA = extractNumber(a.name);
+                const numB = extractNumber(b.name);
+
+                // If both have numbers, sort by number
+                if (numA !== Number.MAX_SAFE_INTEGER && numB !== Number.MAX_SAFE_INTEGER) {
+                    return numA - numB;
+                }
+
+                // If only one has a number, put the one with number first
+                if (numA !== Number.MAX_SAFE_INTEGER) return -1;
+                if (numB !== Number.MAX_SAFE_INTEGER) return 1;
+
+                // If neither has a number, sort alphabetically
+                return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
             });
             return filtered;
         }
