@@ -197,6 +197,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         bid_increment_4_threshold: number;
         bid_increment_4_amount: number;
         category_color_mapping?: Record<string, string>;
+        category_limits?: Record<string, number>;
     } | null>(null);
     const [currentBid, setCurrentBid] = useState(DEFAULT_MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
@@ -585,7 +586,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         bid_increment_3_amount: settingsData.bid_increment_3_amount || 30000,
                         bid_increment_4_threshold: settingsData.bid_increment_4_threshold || 700000,
                         bid_increment_4_amount: settingsData.bid_increment_4_amount || 50000,
-                        category_color_mapping: settingsData.category_color_mapping || {}
+                        category_color_mapping: settingsData.category_color_mapping || {},
+                        category_limits: settingsData.category_limits || {}
                     };
                     setAuctionSettings(loadedSettings);
 
@@ -1141,7 +1143,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         const withinMaxBid = newBid <= maxBid;
         const hasSpace = team.players.length < getPlayersPerTeam();
 
-        if (!canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid()) return;
+        // Check category limits
+        const currentPlayerCategory = currentPlayer?.category;
+        let withinCategoryLimit = true;
+        if (currentPlayerCategory && auctionSettings?.category_limits && auctionSettings.category_limits[currentPlayerCategory]) {
+            const categoryLimit = auctionSettings.category_limits[currentPlayerCategory];
+            // Count how many players of this category the team already has
+            const categoryCount = team.players.filter(p => {
+                // Need to get the category from the player pool
+                const playerInPool = players.find(pl => pl.name === p.name);
+                return playerInPool?.category === currentPlayerCategory;
+            }).length;
+            withinCategoryLimit = categoryCount < categoryLimit;
+        }
+
+        if (!canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid() || !withinCategoryLimit) return;
 
         // Set the new bid amount and selected team
         setCurrentBid(newBid);
@@ -3012,7 +3028,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         const canAfford = team.budget >= newBid;
                                         const withinMaxBid = newBid <= maxBid;
                                         const hasSpace = team.players.length < getPlayersPerTeam();
-                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid();
+
+                                        // Check category limits
+                                        const currentPlayerCategory = currentPlayer?.category;
+                                        let withinCategoryLimit = true;
+                                        if (currentPlayerCategory && auctionSettings?.category_limits && auctionSettings.category_limits[currentPlayerCategory]) {
+                                            const categoryLimit = auctionSettings.category_limits[currentPlayerCategory];
+                                            // Count how many players of this category the team already has
+                                            const categoryCount = team.players.filter(p => {
+                                                // Need to get the category from the player pool
+                                                const playerInPool = players.find(pl => pl.name === p.name);
+                                                return playerInPool?.category === currentPlayerCategory;
+                                            }).length;
+                                            withinCategoryLimit = categoryCount < categoryLimit;
+                                        }
+
+                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid() || !withinCategoryLimit;
 
                                         const isViewOnly = !canEdit;
                                         const finalDisabled = isDisabled || isViewOnly;
@@ -3102,6 +3133,24 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
+                                                {/* Display category limits below Players */}
+                                                {auctionSettings?.category_limits && Object.keys(auctionSettings.category_limits).length > 0 && (
+                                                    <div className={`${teams.length > 10 ? 'text-xs' : 'text-xs'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                        {Object.entries(auctionSettings.category_limits).map(([category, limit], index) => {
+                                                            // Count how many players of this category the team already has
+                                                            const categoryCount = team.players.filter(p => {
+                                                                const playerInPool = players.find(pl => pl.name === p.name);
+                                                                return playerInPool?.category === category;
+                                                            }).length;
+                                                            return (
+                                                                <span key={category}>
+                                                                    {category}: {categoryCount}/{limit}
+                                                                    {index < Object.keys(auctionSettings.category_limits!).length - 1 && '  '}
+                                                                </span>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
                                                 {maxBid >= getMinimumBid() && (
                                                     <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{maxBid.toLocaleString()}
@@ -3115,6 +3164,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 )}
                                                 {hasSpace && maxBid >= getMinimumBid() && !withinMaxBid && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Exceeds max bid</div>
+                                                )}
+                                                {!withinCategoryLimit && currentPlayerCategory && (
+                                                    <div className="text-xs mt-1" style={{ color: '#E11D48' }}>
+                                                        {currentPlayerCategory} limit reached
+                                                    </div>
                                                 )}
                                             </button>
                                         );
@@ -3196,6 +3250,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                                 src={finalImageUrl}
                                                                 alt={currentPlayer.name}
                                                                 className="object-cover w-full h-full"
+                                                                style={{ objectPosition: 'center top' }}
                                                                 loading="eager"
                                                                 decoding="async"
                                                                 onError={(e) => {

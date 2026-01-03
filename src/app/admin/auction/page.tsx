@@ -93,6 +93,7 @@ export default function AuctionAdminPage() {
     bid_increment_4_amount: '50000'
   });
   const [categoryColorMappings, setCategoryColorMappings] = useState<Array<{ category: string, color: string }>>([]);
+  const [categoryLimits, setCategoryLimits] = useState<Array<{ category: string, limit: string }>>([]);
 
   // Check authentication
   useEffect(() => {
@@ -809,6 +810,16 @@ export default function AuctionAdminPage() {
         } else {
           setCategoryColorMappings([]);
         }
+        // Load category limits
+        if (data.category_limits && typeof data.category_limits === 'object') {
+          const limits = Object.entries(data.category_limits).map(([category, limit]) => ({
+            category,
+            limit: limit ? limit.toString() : ''
+          }));
+          setCategoryLimits(limits);
+        } else {
+          setCategoryLimits([]);
+        }
       } else {
         // No settings found, use defaults
         setSettings(null);
@@ -826,6 +837,7 @@ export default function AuctionAdminPage() {
           bid_increment_4_amount: '50000'
         });
         setCategoryColorMappings([]);
+        setCategoryLimits([]);
       }
     } catch (error) {
       console.error('Error loading settings:', error);
@@ -848,6 +860,17 @@ export default function AuctionAdminPage() {
         }
       });
 
+      // Convert category limits array to object (only include non-empty limits)
+      const categoryLimitsObj: Record<string, number> = {};
+      categoryLimits.forEach(({ category, limit }) => {
+        if (category.trim() && limit.trim()) {
+          const limitNum = parseInt(limit.trim());
+          if (!isNaN(limitNum) && limitNum > 0) {
+            categoryLimitsObj[category.trim()] = limitNum;
+          }
+        }
+      });
+
       const settingsData = {
         session_id: selectedSessionForSettings,
         minimum_bid: parseFloat(settingsFormData.minimum_bid) || 5000,
@@ -862,6 +885,7 @@ export default function AuctionAdminPage() {
         bid_increment_4_threshold: parseFloat(settingsFormData.bid_increment_4_threshold) || 700000,
         bid_increment_4_amount: parseFloat(settingsFormData.bid_increment_4_amount) || 50000,
         category_color_mapping: categoryColorMappingObj,
+        category_limits: categoryLimitsObj,
         updated_at: new Date().toISOString()
       };
 
@@ -1860,6 +1884,64 @@ export default function AuctionAdminPage() {
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
                         >
                           Add Category Color Mapping
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Category Limits */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Category Player Limits</h3>
+                      <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>
+                        Set maximum number of players per category for each team. Leave blank to allow unlimited players of that category.
+                      </p>
+                      <div className="space-y-3">
+                        {categoryLimits.map((limit, index) => (
+                          <div key={index} className="flex items-center gap-3 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                            <input
+                              type="text"
+                              value={limit.category}
+                              onChange={(e) => {
+                                const newLimits = [...categoryLimits];
+                                newLimits[index].category = e.target.value;
+                                setCategoryLimits(newLimits);
+                              }}
+                              className="flex-1 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="Category (e.g., A+, A, B)"
+                            />
+                            <input
+                              type="number"
+                              value={limit.limit}
+                              onChange={(e) => {
+                                const newLimits = [...categoryLimits];
+                                newLimits[index].limit = e.target.value;
+                                setCategoryLimits(newLimits);
+                              }}
+                              className="w-32 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="Max players (leave blank for unlimited)"
+                              min="1"
+                            />
+                            <button
+                              onClick={() => {
+                                const newLimits = categoryLimits.filter((_, i) => i !== index);
+                                setCategoryLimits(newLimits);
+                              }}
+                              className="px-3 py-2 rounded-lg font-medium transition-colors"
+                              style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => {
+                            setCategoryLimits([...categoryLimits, { category: '', limit: '' }]);
+                          }}
+                          className="w-full px-4 py-2 rounded-lg font-semibold transition-colors border-2 border-dashed"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        >
+                          Add Category Limit
                         </button>
                       </div>
                     </div>
