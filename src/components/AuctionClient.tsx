@@ -570,7 +570,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             wing: poolPlayer.wing || undefined,
                             flat_no: poolPlayer.flat_no || undefined,
                             phone: poolPlayer.phone || undefined,
-                            category: poolPlayer.category || undefined
+                            category: poolPlayer.category || undefined,
+                            player_order: poolPlayer.player_order || undefined
                         } as Player;
                     })
                     .filter((p): p is Player => p !== null);
@@ -627,17 +628,30 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 // Check if we should be in skipped players mode
                 // Use the database flag if available, otherwise use the old logic
                 const dbSkippedMode = (finalSession as any).is_skipped_players_mode === true;
-                const shouldBeInSkippedMode = dbSkippedMode || (skippedFromTable.length > 0 && (
-                    finalSession.is_complete ||
-                    (initialPlayerIndex < skippedFromTable.length &&
-                        mappedPlayers[initialPlayerIndex] &&
-                        skippedFromTable.some(sp => sp.name === mappedPlayers[initialPlayerIndex].name))
-                ));
+                console.log('Initial load - finalSession.is_skipped_players_mode:', (finalSession as any).is_skipped_players_mode, 'dbSkippedMode:', dbSkippedMode);
 
-                if (shouldBeInSkippedMode) {
+                // If database flag is set to true, always use skipped players mode (if we have skipped players)
+                // Otherwise, use the old logic
+                const shouldBeInSkippedMode = dbSkippedMode
+                    ? (skippedFromTable.length > 0) // If flag is true, only enter mode if we have skipped players
+                    : (skippedFromTable.length > 0 && (
+                        finalSession.is_complete ||
+                        (initialPlayerIndex < skippedFromTable.length &&
+                            mappedPlayers[initialPlayerIndex] &&
+                            skippedFromTable.some(sp => sp.name === mappedPlayers[initialPlayerIndex].name))
+                    ));
+
+                console.log('Initial load - dbSkippedMode:', dbSkippedMode, 'skippedFromTable.length:', skippedFromTable.length, 'shouldBeInSkippedMode:', shouldBeInSkippedMode);
+
+                if (shouldBeInSkippedMode && skippedFromTable.length > 0) {
                     // We're in skipped players mode
+                    console.log('Loading skipped players mode with', skippedFromTable.length, 'players');
                     setPlayers(skippedFromTable);
                     setIsSkippedPlayersMode(true);
+                    setSkippedPlayers(skippedFromTable); // Also update skippedPlayers state
+                    // Update refs immediately to prevent race conditions
+                    isSkippedPlayersModeRef.current = true;
+                    playersRef.current = skippedFromTable;
 
                     // Find the index of current player in skipped players list
                     const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
@@ -646,19 +660,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         if (skippedIndex !== -1) {
                             setCurrentPlayerIndex(skippedIndex);
                         } else {
-                            // If current player not found in skipped list, use the stored index if it's valid
-                            const validIndex = initialPlayerIndex < skippedFromTable.length ? initialPlayerIndex : 0;
-                            setCurrentPlayerIndex(validIndex);
+                            // If current player not found in skipped list, start at 0
+                            setCurrentPlayerIndex(0);
                         }
                     } else {
-                        // Use the stored index if it's valid, otherwise start at 0
-                        const validIndex = initialPlayerIndex < skippedFromTable.length ? initialPlayerIndex : 0;
-                        setCurrentPlayerIndex(validIndex);
+                        // Start at 0 if no current player name
+                        setCurrentPlayerIndex(0);
                     }
                 } else {
                     // Show all players normally
+                    console.log('Loading all players mode with', mappedPlayers.length, 'players');
                     setPlayers(mappedPlayers);
                     setIsSkippedPlayersMode(false);
+                    // Update refs immediately to prevent race conditions
+                    isSkippedPlayersModeRef.current = false;
+                    playersRef.current = mappedPlayers;
                 }
             } catch (error) {
                 console.error('Error loading auction state:', error);
@@ -788,7 +804,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .from('auction_sessions')
                     .update({
                         current_bid_amount: newMinimum,
-                        current_bid_team_id: null
+                        current_bid_team_id: null,
+                        is_skipped_players_mode: isSkippedPlayersModeRef.current
                     })
                     .eq('id', sessionId)
                     .then(({ error }) => {
@@ -827,10 +844,27 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     const prevIndex = prevPlayerIndexRef.current;
 
                     // Check if skipped players mode changed
-                    if (session.is_skipped_players_mode !== undefined) {
+                    // Only react if the value is explicitly set (not undefined) and different from current state
+                    // Skip if we're already in the correct mode to prevent unnecessary reloads
+                    if (session.is_skipped_players_mode !== undefined &&
+                        session.is_skipped_players_mode !== isSkippedPlayersModeRef.current) {
                         const shouldBeInSkippedMode = session.is_skipped_players_mode === true;
 
+                        console.log('Real-time subscription: mode change detected', {
+                            dbMode: session.is_skipped_players_mode,
+                            currentMode: isSkippedPlayersModeRef.current,
+                            shouldSwitch: shouldBeInSkippedMode && !isSkippedPlayersModeRef.current,
+                            currentPlayersCount: playersRef.current.length
+                        });
+
                         if (shouldBeInSkippedMode && !isSkippedPlayersModeRef.current) {
+                            console.log('Real-time subscription: Switching to skipped players mode');
+                            // Double-check we're still not in skipped mode (race condition protection)
+                            if (isSkippedPlayersModeRef.current) {
+                                console.log('Real-time subscription: Already in skipped mode, skipping reload');
+                                return;
+                            }
+
                             // Switch to skipped players mode - reload skipped players from database
                             supabase
                                 .from('auction_skipped_players')
@@ -845,6 +879,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 .eq('session_id', sessionId)
                                 .order('player_order', { ascending: true })
                                 .then(({ data: skippedPlayersData }) => {
+                                    console.log('Real-time subscription: Loaded skipped players', skippedPlayersData?.length);
+                                    // Double-check again before setting (race condition protection)
+                                    if (isSkippedPlayersModeRef.current) {
+                                        console.log('Real-time subscription: Mode changed while loading, skipping set');
+                                        return;
+                                    }
+
                                     if (skippedPlayersData && skippedPlayersData.length > 0) {
                                         const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
                                             const poolPlayer = sp.auction_player_pool;
@@ -865,9 +906,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                 player_order: poolPlayer.player_order || undefined
                                             };
                                         });
+                                        console.log('Real-time subscription: Setting skipped players', skippedFromTable.length);
                                         setPlayers(skippedFromTable);
                                         setSkippedPlayers(skippedFromTable);
                                         setIsSkippedPlayersMode(true);
+                                        // Update ref immediately to prevent race conditions
+                                        isSkippedPlayersModeRef.current = true;
+                                        playersRef.current = skippedFromTable;
+                                        console.log('Real-time subscription: Refs updated, players count:', playersRef.current.length);
                                         // Adjust index if needed
                                         const newIndex = session.current_player_index < skippedFromTable.length
                                             ? session.current_player_index
@@ -876,52 +922,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     }
                                 });
                         } else if (!shouldBeInSkippedMode && isSkippedPlayersModeRef.current) {
-                            // Switch back to all players mode
-                            // Use original player pool if available, otherwise reload
-                            if (originalPlayerPool.length > 0) {
-                                setPlayers(originalPlayerPool);
-                                setIsSkippedPlayersMode(false);
-                                // Adjust index if needed
-                                const newIndex = session.current_player_index < originalPlayerPool.length
-                                    ? session.current_player_index
-                                    : 0;
-                                setCurrentPlayerIndex(newIndex);
-                            } else {
-                                // Reload all players from original pool (async)
-                                supabase
-                                    .from('auction_player_pool')
-                                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
-                                    .eq('session_id', sessionId)
-                                    .order('player_order', { ascending: true })
-                                    .then(({ data: playerPoolData }) => {
-                                        if (playerPoolData) {
-                                            const mappedPlayers: Player[] = playerPoolData.map((p: any) => ({
-                                                name: p.name,
-                                                photo: p.photo || undefined,
-                                                age: p.age || undefined,
-                                                played_s1: p.played_s1 || undefined,
-                                                experience: p.experience || undefined,
-                                                active_sport: p.active_sport || undefined,
-                                                skill: p.skill || undefined,
-                                                batting_hand: p.batting_hand || undefined,
-                                                bowling_hand: p.bowling_hand || undefined,
-                                                wing: p.wing || undefined,
-                                                flat_no: p.flat_no || undefined,
-                                                phone: p.phone || undefined,
-                                                category: p.category || undefined,
-                                                player_order: p.player_order || undefined
-                                            }));
-                                            setPlayers(mappedPlayers);
-                                            setOriginalPlayerPool(mappedPlayers);
-                                            setIsSkippedPlayersMode(false);
-                                            // Adjust index if needed
-                                            const newIndex = session.current_player_index < mappedPlayers.length
-                                                ? session.current_player_index
-                                                : 0;
-                                            setCurrentPlayerIndex(newIndex);
-                                        }
-                                    });
-                            }
+                            // Database says false but we're in skipped mode
+                            // This could be:
+                            // 1. A race condition (we just set it to true but subscription fired before update)
+                            // 2. Another admin explicitly switched it back
+                            // 3. The database update failed
+
+                            console.log('Real-time subscription: Database says false, but we are in skipped mode. Ignoring to prevent race condition.');
+                            // Don't auto-switch back - let the user explicitly switch via button
+                            // This prevents the flickering issue where it switches back immediately
+                            return;
                         }
                     }
 
@@ -1011,6 +1021,42 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 table: 'auction_player_pool',
                 filter: `session_id=eq.${sessionId}`
             }, async () => {
+                // Only reload player pool if we're NOT in skipped players mode
+                // If we're in skipped players mode, we should keep showing skipped players
+                console.log('Player pool subscription fired, isSkippedPlayersMode:', isSkippedPlayersModeRef.current);
+                if (isSkippedPlayersModeRef.current) {
+                    console.log('In skipped players mode, skipping player pool reload');
+                    // We're in skipped players mode, don't reset the players list
+                    // Just update the original player pool for when we switch back
+                    const { data: playerPoolData } = await supabase
+                        .from('auction_player_pool')
+                        .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                        .eq('session_id', sessionId)
+                        .order('player_order', { ascending: true });
+
+                    if (playerPoolData) {
+                        const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
+                            name: p.name,
+                            photo: p.photo || undefined,
+                            age: p.age || undefined,
+                            played_s1: p.played_s1 || undefined,
+                            experience: p.experience || undefined,
+                            active_sport: p.active_sport || undefined,
+                            skill: p.skill || undefined,
+                            batting_hand: p.batting_hand || undefined,
+                            bowling_hand: p.bowling_hand || undefined,
+                            wing: p.wing || undefined,
+                            flat_no: p.flat_no || undefined,
+                            phone: p.phone || undefined,
+                            category: p.category || undefined,
+                            player_order: p.player_order || undefined
+                        }));
+                        // Only update originalPlayerPool, don't change the current players list
+                        setOriginalPlayerPool(mappedPlayers);
+                    }
+                    return; // Exit early, don't reset players
+                }
+
                 // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
@@ -1019,6 +1065,28 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     .order('player_order', { ascending: true });
 
                 if (playerPoolData) {
+                    // Double-check we're still not in skipped mode (race condition protection)
+                    if (isSkippedPlayersModeRef.current) {
+                        console.log('Player pool subscription: Still in skipped mode, skipping reset');
+                        setOriginalPlayerPool(playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
+                            name: p.name,
+                            photo: p.photo || undefined,
+                            age: p.age || undefined,
+                            played_s1: p.played_s1 || undefined,
+                            experience: p.experience || undefined,
+                            active_sport: p.active_sport || undefined,
+                            skill: p.skill || undefined,
+                            batting_hand: p.batting_hand || undefined,
+                            bowling_hand: p.bowling_hand || undefined,
+                            wing: p.wing || undefined,
+                            flat_no: p.flat_no || undefined,
+                            phone: p.phone || undefined,
+                            category: p.category || undefined,
+                            player_order: p.player_order || undefined
+                        })));
+                        return;
+                    }
+
                     // Safely handle missing fields (in case migration hasn't been run yet)
                     const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
                         name: p.name,
@@ -1029,10 +1097,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         active_sport: p.active_sport || undefined,
                         skill: p.skill || undefined,
                         batting_hand: p.batting_hand || undefined,
+                        bowling_hand: p.bowling_hand || undefined,
+                        wing: p.wing || undefined,
+                        flat_no: p.flat_no || undefined,
+                        phone: p.phone || undefined,
+                        category: p.category || undefined,
                         player_order: p.player_order || undefined
                     }));
-
+                    console.log('Player pool subscription: Setting all players', mappedPlayers.length, 'isSkippedMode:', isSkippedPlayersModeRef.current);
                     setPlayers(mappedPlayers);
+                    setOriginalPlayerPool(mappedPlayers);
                 }
             })
             .subscribe();
@@ -1076,6 +1150,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
             setPlayers(unbiddedList);
             setIsSkippedPlayersMode(false);
+            // Update ref immediately to prevent race conditions with real-time subscription
+            isSkippedPlayersModeRef.current = false;
+            playersRef.current = unbiddedList;
             setCurrentPlayerIndex(0);
 
             // Update database to sync mode across all screens
@@ -1104,27 +1181,79 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
 
         try {
-            const skippedList = skippedPlayers.length > 0
-                ? skippedPlayers
-                : getCurrentSkippedPlayers();
+            // Always load skipped players from database to ensure we have the complete list
+            const { data: skippedPlayersData, error: skippedError } = await supabase
+                .from('auction_skipped_players')
+                .select(`
+                    player_pool_id,
+                    player_name,
+                    player_order,
+                    auction_player_pool!inner(
+                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                    )
+                `)
+                .eq('session_id', sessionId)
+                .order('player_order', { ascending: true });
 
-            if (skippedList.length === 0) {
+            if (skippedError) {
+                console.error('Error fetching skipped players:', skippedError);
+                alert('Failed to load skipped players. Please try again.');
+                return;
+            }
+
+            if (!skippedPlayersData || skippedPlayersData.length === 0) {
                 alert('No skipped players available.');
                 return;
             }
 
+            // Map skipped players from the database
+            const skippedList: Player[] = skippedPlayersData.map((sp: any) => {
+                const poolPlayer = sp.auction_player_pool;
+                return {
+                    name: poolPlayer.name,
+                    photo: poolPlayer.photo || undefined,
+                    age: poolPlayer.age || undefined,
+                    played_s1: poolPlayer.played_s1 || undefined,
+                    experience: poolPlayer.experience || undefined,
+                    active_sport: poolPlayer.active_sport || undefined,
+                    skill: poolPlayer.skill || undefined,
+                    batting_hand: poolPlayer.batting_hand || undefined,
+                    bowling_hand: poolPlayer.bowling_hand || undefined,
+                    wing: poolPlayer.wing || undefined,
+                    flat_no: poolPlayer.flat_no || undefined,
+                    phone: poolPlayer.phone || undefined,
+                    category: poolPlayer.category || undefined,
+                    player_order: poolPlayer.player_order || undefined
+                };
+            });
+
+            console.log('handleSwitchToSkippedPlayers: Setting skipped players', skippedList.length);
             setPlayers(skippedList);
+            setSkippedPlayers(skippedList);
             setIsSkippedPlayersMode(true);
+            // Update ref immediately to prevent race conditions with real-time subscription
+            isSkippedPlayersModeRef.current = true;
+            playersRef.current = skippedList;
             setCurrentPlayerIndex(0);
 
+            console.log('handleSwitchToSkippedPlayers: Refs updated, updating database');
             // Update database to sync mode across all screens
-            await supabase
+            const { data: updateData, error: updateError } = await supabase
                 .from('auction_sessions')
                 .update({
                     current_player_index: 0,
                     is_skipped_players_mode: true
                 })
-                .eq('id', sessionId);
+                .eq('id', sessionId)
+                .select();
+
+            if (updateError) {
+                console.error('handleSwitchToSkippedPlayers: Database update error:', updateError);
+            } else {
+                console.log('handleSwitchToSkippedPlayers: Database updated successfully', updateData);
+            }
+
+            console.log('handleSwitchToSkippedPlayers: Database update complete, current players:', playersRef.current.length);
 
             const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
@@ -1560,11 +1689,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
             // Update session with next player index and sold player info
             // This will trigger real-time updates for all users
+            // Preserve is_skipped_players_mode flag
             await supabase
                 .from('auction_sessions')
                 .update({
                     current_player_index: nextIndex,
-                    sold_player_info: soldPlayerInfo
+                    sold_player_info: soldPlayerInfo,
+                    is_skipped_players_mode: isSkippedPlayersModeRef.current
                 })
                 .eq('id', sessionId);
 
@@ -1692,10 +1823,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         setPlayers(skippedList);
                         setSkippedPlayers(skippedList);
                         setIsSkippedPlayersMode(true);
+                        isSkippedPlayersModeRef.current = true;
                         setCurrentPlayerIndex(0);
                         await supabase
                             .from('auction_sessions')
-                            .update({ current_player_index: 0 })
+                            .update({
+                                current_player_index: 0,
+                                is_skipped_players_mode: true
+                            })
                             .eq('id', sessionId);
                     }
                 }
@@ -1707,14 +1842,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     setCurrentPlayerIndex(nextIndex);
                     await supabase
                         .from('auction_sessions')
-                        .update({ current_player_index: nextIndex })
+                        .update({
+                            current_player_index: nextIndex,
+                            is_skipped_players_mode: true
+                        })
                         .eq('id', sessionId);
                 } else {
                     const nextIndex = currentPlayerIndex + 1;
                     setCurrentPlayerIndex(nextIndex);
                     await supabase
                         .from('auction_sessions')
-                        .update({ current_player_index: nextIndex })
+                        .update({
+                            current_player_index: nextIndex,
+                            is_skipped_players_mode: false
+                        })
                         .eq('id', sessionId);
                 }
             }
@@ -3172,7 +3313,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 )}
             </div>
 
-            <div className="w-full px-2 md:px-3 flex-1 overflow-hidden min-h-0">
+            <div className="w-full px-2 md:px-3 flex-1 overflow-hidden xl:overflow-hidden overflow-y-auto min-h-0">
                 <div
                     ref={containerRef}
                     className="hidden xl:flex items-stretch gap-3 h-full"
@@ -3714,7 +3855,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 </div>
 
                 {/* Mobile Layout - Keep original grid for mobile/tablet */}
-                <div className={`xl:hidden flex flex-col gap-3 md:gap-4`}>
+                <div className={`xl:hidden flex flex-col gap-3 md:gap-4 overflow-y-auto flex-1 min-h-0`}>
                     {/* Main Content Area (Mobile) - Player info only, teams hidden */}
                     <div className="space-y-4 pb-4">
                         {/* Progress */}
