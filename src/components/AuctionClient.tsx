@@ -170,6 +170,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [canView, setCanView] = useState(false); // Can this user view the auction?
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [sessionName, setSessionName] = useState<string | null>(null); // Store session name to determine Men's/Women's
+    const [tournamentLogo, setTournamentLogo] = useState<string | null>(null); // Store tournament logo URL from database
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
     const imageRef = useRef<HTMLImageElement | null>(null);
@@ -260,7 +261,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
     const [originalPlayerPool, setOriginalPlayerPool] = useState<Player[]>([]); // Store original player pool for switching back
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
-    const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<string | null>(null); // Track which top players PDF is generating ('male' or 'female')
+    const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<boolean>(false); // Track if top players PDF is generating
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -376,6 +377,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     if (session) {
                         finalSession = session;
                         setSessionName(session.session_name); // Store session name for logo mapping
+                        setTournamentLogo((session as any).tournament_logo || null); // Store tournament logo from database
                     } else if (sessionError && sessionError.code !== 'PGRST116') {
                         // Error other than "no rows" - might be table doesn't exist
                         console.error('Error fetching session:', sessionError);
@@ -403,6 +405,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                         finalSession = newSession;
                         setSessionName(newSession.session_name); // Store session name for logo mapping
+                        setTournamentLogo((newSession as any).tournament_logo || null); // Store tournament logo from database
 
                         // Create initial teams
                         const teamsData = Array.from({ length: TEAMS_COUNT }, (_, i) => ({
@@ -1780,9 +1783,50 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 console.error('Error loading team logo:', teamLogoError);
             }
 
-            // Load logo2.png
+            // Load tournament logo from database (or fallback to logo2.png)
             try {
-                const response = await fetch('/logo2.png');
+                // Fetch tournament logo directly from database for this session
+                let tournamentLogoUrl: string = '/logo2.png'; // Default fallback
+
+                if (sessionId) {
+                    const { data: sessionData, error: sessionError } = await supabase
+                        .from('auction_sessions')
+                        .select('tournament_logo')
+                        .eq('id', sessionId)
+                        .single();
+
+                    if (!sessionError && sessionData && sessionData.tournament_logo && typeof sessionData.tournament_logo === 'string') {
+                        const processedUrl = processImageUrl(sessionData.tournament_logo);
+                        if (processedUrl) {
+                            tournamentLogoUrl = processedUrl;
+                            console.log('Using tournament logo from DB:', tournamentLogoUrl);
+                        } else {
+                            console.log('Failed to process tournament logo URL, using fallback');
+                        }
+                    } else {
+                        console.log('No tournament logo in DB, using fallback:', sessionError || 'No logo field');
+                    }
+                } else if (tournamentLogo && typeof tournamentLogo === 'string') {
+                    // Fallback to state if sessionId not available
+                    const processedUrl = processImageUrl(tournamentLogo);
+                    if (processedUrl) {
+                        tournamentLogoUrl = processedUrl;
+                        console.log('Using tournament logo from state:', tournamentLogoUrl);
+                    } else {
+                        console.log('Failed to process tournament logo from state, using fallback');
+                    }
+                }
+
+                // If it's a proxy URL (starts with /api/proxy-image), use it directly
+                // Otherwise, fetch it normally
+                const logoUrlToFetch = tournamentLogoUrl.startsWith('/api/proxy-image')
+                    ? tournamentLogoUrl
+                    : tournamentLogoUrl;
+
+                const response = await fetch(logoUrlToFetch);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch tournament logo: ${response.statusText}`);
+                }
                 const blob = await response.blob();
                 const reader = new FileReader();
 
@@ -1794,14 +1838,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             logo2Height = (logoImg.height / logoImg.width) * logoWidth;
                             resolve();
                         };
-                        logoImg.onerror = () => resolve(); // Continue if logo2 fails
+                        logoImg.onerror = () => {
+                            console.error('Error loading tournament logo image');
+                            resolve(); // Continue if tournament logo fails
+                        };
                         logoImg.src = logo2DataUrl;
                     };
-                    reader.onerror = () => resolve(); // Continue if logo2 fails
+                    reader.onerror = () => {
+                        console.error('Error reading tournament logo file');
+                        resolve(); // Continue if tournament logo fails
+                    };
                     reader.readAsDataURL(blob);
                 });
             } catch (logo2Error) {
-                console.error('Error loading logo2:', logo2Error);
+                console.error('Error loading tournament logo:', logo2Error);
             }
 
             // Add app logo (left side)
@@ -2150,20 +2200,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         }
     };
 
-    const generateTopBiddedPlayersPDF = async (gender: 'M' | 'F') => {
+    const generateTopBiddedPlayersPDF = async () => {
         // Set loading state
-        setPdfGeneratingTopPlayers(gender);
+        setPdfGeneratingTopPlayers(true);
         try {
-            // Use the correct session ID based on gender
-            // Men's session: ebd10b54-366d-4986-bdea-fa4cd35fe000
-            // Women's session: d4dbe601-381a-4dcf-b131-8919cbbc9f17
-            const targetSessionId = gender === 'M'
-                ? 'ebd10b54-366d-4986-bdea-fa4cd35fe000'
-                : 'd4dbe601-381a-4dcf-b131-8919cbbc9f17';
+            if (!sessionId) {
+                alert('No session found. Please select a session first.');
+                return;
+            }
 
-            // Fetch top 5 bidded players for the specified session
-            // Note: We don't filter by gender since session_id already determines gender
-            // (Men's session = M, Women's session = F)
+            // Fetch top 5 bidded players for the current session
             const { data: topPlayers, error: fetchError } = await supabase
                 .from('auction_players')
                 .select(`
@@ -2172,7 +2218,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     photo,
                     age
                 `)
-                .eq('session_id', targetSessionId)
+                .eq('session_id', sessionId)
                 .order('bid_amount', { ascending: false })
                 .limit(5);
 
@@ -2182,14 +2228,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             }
 
             if (!topPlayers || topPlayers.length === 0) {
-                console.log('No players found for session:', targetSessionId, 'gender:', gender);
-                // Try to get count of all players in this session for debugging
-                const { count } = await supabase
-                    .from('auction_players')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('session_id', targetSessionId);
-                console.log('Total players in session:', count);
-                alert(`No ${gender === 'M' ? 'male' : 'female'} players have been bid on yet in this session.`);
+                alert('No players have been bid on yet in this session.');
                 return;
             }
 
@@ -2234,9 +2273,50 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 console.error('Error loading logo:', logoError);
             }
 
-            // Load logo2.png
+            // Load tournament logo from database (or fallback to logo2.png)
             try {
-                const response = await fetch('/logo2.png');
+                // Fetch tournament logo directly from database for this session
+                let tournamentLogoUrl: string = '/logo2.png'; // Default fallback
+
+                if (sessionId) {
+                    const { data: sessionData, error: sessionError } = await supabase
+                        .from('auction_sessions')
+                        .select('tournament_logo')
+                        .eq('id', sessionId)
+                        .single();
+
+                    if (!sessionError && sessionData && sessionData.tournament_logo && typeof sessionData.tournament_logo === 'string') {
+                        const processedUrl = processImageUrl(sessionData.tournament_logo);
+                        if (processedUrl) {
+                            tournamentLogoUrl = processedUrl;
+                            console.log('Using tournament logo from DB:', tournamentLogoUrl);
+                        } else {
+                            console.log('Failed to process tournament logo URL, using fallback');
+                        }
+                    } else {
+                        console.log('No tournament logo in DB, using fallback:', sessionError || 'No logo field');
+                    }
+                } else if (tournamentLogo && typeof tournamentLogo === 'string') {
+                    // Fallback to state if sessionId not available
+                    const processedUrl = processImageUrl(tournamentLogo);
+                    if (processedUrl) {
+                        tournamentLogoUrl = processedUrl;
+                        console.log('Using tournament logo from state:', tournamentLogoUrl);
+                    } else {
+                        console.log('Failed to process tournament logo from state, using fallback');
+                    }
+                }
+
+                // If it's a proxy URL (starts with /api/proxy-image), use it directly
+                // Otherwise, fetch it normally
+                const logoUrlToFetch = tournamentLogoUrl.startsWith('/api/proxy-image')
+                    ? tournamentLogoUrl
+                    : tournamentLogoUrl;
+
+                const response = await fetch(logoUrlToFetch);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch tournament logo: ${response.statusText}`);
+                }
                 const blob = await response.blob();
                 const reader = new FileReader();
 
@@ -2248,14 +2328,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             logo2Height = (logoImg.height / logoImg.width) * logoWidth;
                             resolve();
                         };
-                        logoImg.onerror = () => resolve();
+                        logoImg.onerror = () => {
+                            console.error('Error loading tournament logo image');
+                            resolve(); // Continue if tournament logo fails
+                        };
                         logoImg.src = logo2DataUrl;
                     };
-                    reader.onerror = () => resolve();
+                    reader.onerror = () => {
+                        console.error('Error reading tournament logo file');
+                        resolve(); // Continue if tournament logo fails
+                    };
                     reader.readAsDataURL(blob);
                 });
             } catch (logo2Error) {
-                console.error('Error loading logo2:', logo2Error);
+                console.error('Error loading tournament logo:', logo2Error);
             }
 
             // Add app logo (left side)
@@ -2291,7 +2377,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             // Calculate max header height including logo2
             const maxLogoHeight = Math.max(appLogoHeight || 15, logo2HeightBigger || 0);
             const titleY = logoY + maxLogoHeight + 12; // Increased gap to avoid overlap
-            const titleText = `Top 5 Bidded ${gender === 'M' ? 'Male' : 'Female'} Players`;
+            const titleText = 'Top 5 Bidded Players';
             pdf.text(titleText, margin, titleY);
             yPosition = titleY + 12;
 
@@ -2318,11 +2404,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             pdf.text('Bid Amount', tableStartX + sNoWidth + imageWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
             yPosition += rowHeight;
 
-            // Fetch player photos from player pool using the correct session ID
+            // Fetch player photos from player pool using the current session ID
             const { data: playerPoolData } = await supabase
                 .from('auction_player_pool')
                 .select('name, photo')
-                .eq('session_id', targetSessionId);
+                .eq('session_id', sessionId);
 
             const playerPhotoMap = new Map<string, string>();
             if (playerPoolData) {
@@ -2478,13 +2564,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             pdf.text(totalAmountText, totalAmountX, yPosition + 5.5, { align: 'right' });
 
             // Save PDF
-            const genderLabel = gender === 'M' ? 'Male' : 'Female';
-            pdf.save(`Top_5_Bidded_${genderLabel}_Players.pdf`);
+            pdf.save('Top_5_Bidded_Players.pdf');
         } catch (error) {
             console.error('Error generating PDF:', error);
             alert('Failed to generate PDF. Please try again.');
         } finally {
-            setPdfGeneratingTopPlayers(null);
+            setPdfGeneratingTopPlayers(false);
         }
     };
 
@@ -2621,37 +2706,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                     {/* Top 5 Bidded Players PDF Downloads */}
                     <div className="mt-8 bg-white border-2 border-gray-200 rounded-xl p-6 shadow-sm">
-                        <h2 className="text-2xl font-semibold text-gray-900 mb-4">Top 5 Bidded Players Reports</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <h2 className="text-2xl font-semibold text-gray-900 mb-4">Top 5 Bidded Players Report</h2>
+                        <div className="flex justify-center">
                             <button
-                                onClick={() => generateTopBiddedPlayersPDF('M')}
-                                disabled={pdfGeneratingTopPlayers === 'M'}
-                                className="w-full px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => generateTopBiddedPlayersPDF()}
+                                disabled={pdfGeneratingTopPlayers}
+                                className="w-full md:w-auto px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {pdfGeneratingTopPlayers === 'M' ? (
+                                {pdfGeneratingTopPlayers ? (
                                     <>
                                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
                                         Generating PDF...
                                     </>
                                 ) : (
                                     <>
-                                        Download Top 5 Male Players PDF
-                                    </>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => generateTopBiddedPlayersPDF('F')}
-                                disabled={pdfGeneratingTopPlayers === 'F'}
-                                className="w-full px-6 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {pdfGeneratingTopPlayers === 'F' ? (
-                                    <>
-                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                                        Generating PDF...
-                                    </>
-                                ) : (
-                                    <>
-                                        Download Top 5 Female Players PDF
+                                        Download Top 5 Players PDF
                                     </>
                                 )}
                             </button>
