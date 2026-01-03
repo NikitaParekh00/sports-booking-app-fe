@@ -76,6 +76,16 @@ export default function AuctionAdminPage() {
   const [uploadingPlayers, setUploadingPlayers] = useState(false);
   const [uploadingTeams, setUploadingTeams] = useState(false);
 
+  // Player assignment state
+  const [selectedPlayersForAssignment, setSelectedPlayersForAssignment] = useState<string[]>([]);
+  const [showAssignPlayerModal, setShowAssignPlayerModal] = useState(false);
+  const [assignTeamId, setAssignTeamId] = useState<string>('');
+  const [assignBidAmount, setAssignBidAmount] = useState<string>('');
+
+  // Reset auction state
+  const [showResetAuctionModal, setShowResetAuctionModal] = useState(false);
+  const [resetStartingBalance, setResetStartingBalance] = useState<string>('');
+
   // Settings state
   const [selectedSessionForSettings, setSelectedSessionForSettings] = useState<string>('');
   const [settings, setSettings] = useState<any>(null);
@@ -505,6 +515,214 @@ export default function AuctionAdminPage() {
     } catch (error: any) {
       console.error('Error deleting all players:', error);
       alert(`Error deleting all players: ${error.message}`);
+    }
+  };
+
+  const handleAssignPlayersToTeam = async () => {
+    if (!selectedSessionForPlayers) {
+      alert('Please select a session first');
+      return;
+    }
+
+    if (selectedPlayersForAssignment.length === 0) {
+      alert('Please select at least one player to assign');
+      return;
+    }
+
+    if (!assignTeamId) {
+      alert('Please select a team');
+      return;
+    }
+
+    const bidAmount = parseFloat(assignBidAmount) || 0;
+    if (bidAmount <= 0) {
+      alert('Please enter a valid bid amount');
+      return;
+    }
+
+    try {
+      // Get team details
+      const { data: teamData, error: teamError } = await supabase
+        .from('auction_teams')
+        .select('id, budget, name')
+        .eq('id', assignTeamId)
+        .eq('session_id', selectedSessionForPlayers)
+        .single();
+
+      if (teamError || !teamData) {
+        throw new Error('Team not found');
+      }
+
+      // Get player names from IDs first
+      const selectedPlayerNames = players
+        .filter(p => selectedPlayersForAssignment.includes(p.id))
+        .map(p => p.name);
+
+      // Check if team has enough budget for all players
+      const totalCost = bidAmount * selectedPlayerNames.length;
+      if (teamData.budget < totalCost) {
+        alert(`Insufficient budget. Required: ₹${totalCost.toLocaleString()}, Available: ₹${teamData.budget.toLocaleString()}`);
+        return;
+      }
+
+      // Get player details from pool
+      const { data: playerPoolData, error: poolError } = await supabase
+        .from('auction_player_pool')
+        .select('*')
+        .eq('session_id', selectedSessionForPlayers)
+        .in('name', selectedPlayerNames);
+
+      if (poolError || !playerPoolData || playerPoolData.length !== selectedPlayerNames.length) {
+        throw new Error('Some players not found in pool');
+      }
+
+      // Check if players are already assigned
+      const { data: existingPlayers, error: existingError } = await supabase
+        .from('auction_players')
+        .select('player_name')
+        .eq('session_id', selectedSessionForPlayers)
+        .in('player_name', selectedPlayerNames);
+
+      if (existingError) {
+        throw existingError;
+      }
+
+      if (existingPlayers && existingPlayers.length > 0) {
+        const alreadyAssigned = existingPlayers.map(p => p.player_name).join(', ');
+        alert(`Some players are already assigned: ${alreadyAssigned}`);
+        return;
+      }
+
+      // Insert players into auction_players table
+      const playersToInsert = playerPoolData.map((player: any) => ({
+        session_id: selectedSessionForPlayers,
+        team_id: assignTeamId,
+        player_name: player.name,
+        player_category: player.category || 'Regular',
+        bid_amount: bidAmount,
+        payment_status: 'Y', // Default to paid
+        gender: (player as any).gender || 'M', // Default if not in schema
+        runs: (player as any).runs || 0,
+        strike_rate: (player as any).strike_rate || 0,
+        wickets: (player as any).wickets || 0,
+        average: (player as any).average || 0,
+        catch_count: (player as any).catch_count || 0,
+        ro: (player as any).ro || 0,
+        mvp: (player as any).mvp || 0
+      }));
+
+      const { error: insertError } = await supabase
+        .from('auction_players')
+        .insert(playersToInsert);
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      // Update team budget
+      const newBudget = Number(teamData.budget) - totalCost;
+      const { error: updateError } = await supabase
+        .from('auction_teams')
+        .update({ budget: newBudget })
+        .eq('id', assignTeamId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      alert(`Successfully assigned ${selectedPlayerNames.length} player(s) to ${teamData.name}!`);
+      setShowAssignPlayerModal(false);
+      setSelectedPlayersForAssignment([]);
+      setAssignTeamId('');
+      setAssignBidAmount('');
+      loadPlayers(selectedSessionForPlayers);
+      loadTeams(selectedSessionForPlayers);
+    } catch (error: any) {
+      console.error('Error assigning players:', error);
+      alert(`Error assigning players: ${error.message}`);
+    }
+  };
+
+  const handleResetAuction = async () => {
+    if (!selectedSessionForSettings) {
+      alert('Please select a session first');
+      return;
+    }
+
+    const balance = parseFloat(resetStartingBalance);
+    if (!resetStartingBalance || balance <= 0) {
+      alert('Please enter a valid starting balance');
+      return;
+    }
+
+    if (!confirm(`Are you absolutely sure you want to reset the auction? This will:\n- Delete all bought players\n- Delete all skipped players\n- Reset auction index to 0\n- Set all teams' budgets to ₹${balance.toLocaleString()}\n\nThis action cannot be undone!`)) {
+      return;
+    }
+
+    try {
+      // Delete all bought players
+      const { error: deletePlayersError } = await supabase
+        .from('auction_players')
+        .delete()
+        .eq('session_id', selectedSessionForSettings);
+
+      if (deletePlayersError) {
+        throw deletePlayersError;
+      }
+
+      // Delete all skipped players
+      const { error: deleteSkippedError } = await supabase
+        .from('auction_skipped_players')
+        .delete()
+        .eq('session_id', selectedSessionForSettings);
+
+      if (deleteSkippedError) {
+        // Table might not exist, log but don't fail
+        console.warn('Error deleting skipped players (table may not exist):', deleteSkippedError);
+      }
+
+      // Reset auction session
+      const { error: updateSessionError } = await supabase
+        .from('auction_sessions')
+        .update({
+          current_player_index: 0,
+          is_complete: false,
+          is_skipped_players_mode: false,
+          current_bid_amount: null,
+          current_bid_team_id: null,
+          sold_player_info: null
+        })
+        .eq('id', selectedSessionForSettings);
+
+      if (updateSessionError) {
+        throw updateSessionError;
+      }
+
+      // Update all teams' budgets
+      const { error: updateTeamsError } = await supabase
+        .from('auction_teams')
+        .update({ budget: balance })
+        .eq('session_id', selectedSessionForSettings);
+
+      if (updateTeamsError) {
+        throw updateTeamsError;
+      }
+
+      alert(`Auction reset successfully! All teams' budgets set to ₹${balance.toLocaleString()}`);
+      setShowResetAuctionModal(false);
+      setResetStartingBalance('');
+
+      // Reload data
+      if (selectedSessionForPlayers === selectedSessionForSettings) {
+        loadPlayers(selectedSessionForPlayers);
+      }
+      if (selectedSessionForTeams === selectedSessionForSettings) {
+        loadTeams(selectedSessionForTeams);
+      }
+      loadSettings(selectedSessionForSettings);
+    } catch (error: any) {
+      console.error('Error resetting auction:', error);
+      alert(`Error resetting auction: ${error.message}`);
     }
   };
 
@@ -1372,13 +1590,37 @@ export default function AuctionAdminPage() {
                       Add Player
                     </button>
                     {players.length > 0 && (
-                      <button
-                        onClick={handleDeleteAllPlayers}
-                        className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
-                        style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
-                      >
-                        Delete All Players
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            if (selectedPlayersForAssignment.length === 0) {
+                              alert('Please select players first by checking the boxes next to player names');
+                              return;
+                            }
+                            if (!selectedSessionForPlayers) {
+                              alert('Please select a session first');
+                              return;
+                            }
+                            // Use the same session for teams
+                            if (!selectedSessionForTeams && selectedSessionForPlayers) {
+                              setSelectedSessionForTeams(selectedSessionForPlayers);
+                              loadTeams(selectedSessionForPlayers);
+                            }
+                            setShowAssignPlayerModal(true);
+                          }}
+                          className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                          style={{ backgroundColor: '#10B981', color: '#E5E7EB' }}
+                        >
+                          Assign to Team ({selectedPlayersForAssignment.length})
+                        </button>
+                        <button
+                          onClick={handleDeleteAllPlayers}
+                          className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
+                          style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                        >
+                          Delete All Players
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -1578,9 +1820,22 @@ export default function AuctionAdminPage() {
                     <div
                       key={player.id}
                       className="p-4 md:p-6 rounded-lg border flex flex-col md:flex-row md:justify-between md:items-center gap-4 hover:border-[#E11D48] transition-colors"
-                      style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
+                      style={{ backgroundColor: '#111827', borderColor: selectedPlayersForAssignment.includes(player.id) ? '#10B981' : '#1F2937' }}
                     >
                       <div className="flex items-center gap-4 flex-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedPlayersForAssignment.includes(player.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedPlayersForAssignment([...selectedPlayersForAssignment, player.id]);
+                            } else {
+                              setSelectedPlayersForAssignment(selectedPlayersForAssignment.filter(id => id !== player.id));
+                            }
+                          }}
+                          className="w-5 h-5 rounded border-2 cursor-pointer"
+                          style={{ borderColor: '#1F2937', backgroundColor: '#111827', accentColor: '#10B981' }}
+                        />
                         {(() => {
                           const photoUrl = processImageUrl(player.photo);
                           if (!photoUrl) return null;
@@ -1656,6 +1911,69 @@ export default function AuctionAdminPage() {
                     </div>
                   ))}
                 </div>
+
+                {/* Assign Players to Team Modal */}
+                {showAssignPlayerModal && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#111827] rounded-lg border-2 border-[#1F2937] p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto">
+                      <h3 className="text-xl font-semibold mb-4" style={{ color: '#E5E7EB' }}>Assign Players to Team</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#E5E7EB' }}>Select Team *</label>
+                          <select
+                            value={assignTeamId}
+                            onChange={(e) => setAssignTeamId(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          >
+                            <option value="">Select a team...</option>
+                            {teams.filter(t => t.session_id === selectedSessionForPlayers).map((team) => (
+                              <option key={team.id} value={team.id}>{team.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#E5E7EB' }}>Bid Amount (₹) *</label>
+                          <input
+                            type="number"
+                            value={assignBidAmount}
+                            onChange={(e) => setAssignBidAmount(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                            placeholder="e.g., 50000"
+                            min="0"
+                            step="1000"
+                          />
+                        </div>
+                        <div>
+                          <p className="text-sm" style={{ color: '#9CA3AF' }}>
+                            Selected: {selectedPlayersForAssignment.length} player(s)
+                          </p>
+                        </div>
+                        <div className="flex gap-2 mt-6">
+                          <button
+                            onClick={handleAssignPlayersToTeam}
+                            className="flex-1 px-4 py-2 rounded-lg font-semibold transition-colors"
+                            style={{ backgroundColor: '#10B981', color: '#E5E7EB' }}
+                          >
+                            Assign
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowAssignPlayerModal(false);
+                              setAssignTeamId('');
+                              setAssignBidAmount('');
+                            }}
+                            className="flex-1 px-4 py-2 rounded-lg font-semibold transition-colors"
+                            style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -2035,9 +2353,68 @@ export default function AuctionAdminPage() {
                       >
                         {settings ? 'Update Settings' : 'Create Settings'}
                       </button>
+                      <button
+                        onClick={() => {
+                          if (!selectedSessionForSettings) {
+                            alert('Please select a session first');
+                            return;
+                          }
+                          setShowResetAuctionModal(true);
+                        }}
+                        className="px-4 py-2 rounded-lg font-semibold transition-colors"
+                        style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                      >
+                        Reset Auction
+                      </button>
                     </div>
                   </div>
                 </div>
+
+                {/* Reset Auction Modal */}
+                {showResetAuctionModal && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-[#111827] rounded-lg border-2 border-[#1F2937] p-6 md:p-8 max-w-md w-full">
+                      <h3 className="text-xl font-semibold mb-4" style={{ color: '#E5E7EB' }}>Reset Auction</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <p className="text-sm mb-4" style={{ color: '#9CA3AF' }}>
+                            This will delete all bought players, skipped players, and reset the auction to the beginning. All teams' budgets will be set to the amount you specify below.
+                          </p>
+                          <label className="block text-sm font-medium mb-2" style={{ color: '#E5E7EB' }}>Starting Balance for All Teams (₹) *</label>
+                          <input
+                            type="number"
+                            value={resetStartingBalance}
+                            onChange={(e) => setResetStartingBalance(e.target.value)}
+                            className="w-full px-3 py-2 rounded-lg border"
+                            style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                            placeholder="e.g., 17000000"
+                            min="0"
+                            step="1000"
+                          />
+                        </div>
+                        <div className="flex gap-2 mt-6">
+                          <button
+                            onClick={handleResetAuction}
+                            className="flex-1 px-4 py-2 rounded-lg font-semibold transition-colors"
+                            style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                          >
+                            Reset Auction
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowResetAuctionModal(false);
+                              setResetStartingBalance('');
+                            }}
+                            className="flex-1 px-4 py-2 rounded-lg font-semibold transition-colors"
+                            style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>
