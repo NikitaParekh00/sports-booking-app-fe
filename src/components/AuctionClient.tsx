@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
-import jsPDF from 'jspdf';
 import { processImageUrl } from '@/lib/imageUrlHelper';
 
 interface Player {
@@ -162,7 +161,7 @@ interface AuctionClientProps {
     initialSessionId?: string;
 }
 
-export default function AuctionClient({ initialSessionId }: AuctionClientProps = {}) {
+export default function AuctionClient({ initialSessionId }: AuctionClientProps) {
     const router = useRouter();
     const supabase = createClient();
     const [authLoading, setAuthLoading] = useState(true);
@@ -207,6 +206,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const isInitialLoadRef = useRef<boolean>(true);
     const isSkippedPlayersModeRef = useRef<boolean>(false);
     const playersRef = useRef<Player[]>([]);
+    const prevSoldPlayerInfoRef = useRef<{ playerName: string; teamName: string; amount: number } | null>(null);
 
     // Resizable divider state
     const [leftPanelWidth, setLeftPanelWidth] = useState<number | null>(null); // null means use default
@@ -219,7 +219,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
     // Helper functions to get current settings values (with fallback to defaults)
     const getMinimumBid = (): number => {
-        return auctionSettings?.minimum_bid || DEFAULT_MINIMUM_BID;
+        // Always use database value only, no hardcoded fallback
+        return auctionSettings?.minimum_bid || 0;
     };
 
     const getPlayersPerTeam = (): number => {
@@ -587,7 +588,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
 
                 if (settingsData && !settingsError) {
                     const loadedSettings = {
-                        minimum_bid: Number(settingsData.minimum_bid) || DEFAULT_MINIMUM_BID,
+                        minimum_bid: Number(settingsData.minimum_bid) || 0, // Use database value only
                         players_per_team: settingsData.players_per_team || DEFAULT_PLAYERS_PER_TEAM,
                         default_bid_increment: settingsData.default_bid_increment || 5000,
                         bid_increment_1_threshold: settingsData.bid_increment_1_threshold || 100000,
@@ -603,26 +604,32 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     };
                     setAuctionSettings(loadedSettings);
 
-                    // Always use minimum_bid from settings as the base
+                    // Always use minimum_bid from database settings only
                     // Only use session bid if it's higher than minimum (meaning there's an active bid)
                     const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
                     if (sessionBid && sessionBid > loadedSettings.minimum_bid) {
                         // There's an active bid higher than minimum, use it
                         setCurrentBid(sessionBid);
                     } else {
-                        // Use minimum_bid from database settings (not hardcoded default)
+                        // Use minimum_bid from database settings only
                         setCurrentBid(loadedSettings.minimum_bid);
+                        // Update the database to reflect the correct minimum bid from settings
+                        if (sessionId) {
+                            supabase
+                                .from('auction_sessions')
+                                .update({ current_bid_amount: loadedSettings.minimum_bid })
+                                .eq('id', sessionId);
+                        }
                     }
                 } else {
                     // Use defaults if settings not found
                     setAuctionSettings(null);
-                    // If no settings, use session bid if available, otherwise default
+                    // If no settings, use session bid if available
                     const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
                     if (sessionBid) {
                         setCurrentBid(sessionBid);
-                    } else {
-                        setCurrentBid(DEFAULT_MINIMUM_BID);
                     }
+                    // Don't set a default - wait for settings to load
                 }
 
                 // Check if we should be in skipped players mode
@@ -936,24 +943,97 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     }
 
                     // Check if sold_player_info was updated (player was just sold)
-                    if (session.sold_player_info && payload.eventType === 'UPDATE') {
-                        // Show success modal to all users
-                        setSuccessMessage(session.sold_player_info);
-                        setShowSuccessModal(true);
-                    }
-
-                    // If sold_player_info was cleared (set to null), close modal for all users
-                    if (!session.sold_player_info && showSuccessModal && payload.eventType === 'UPDATE') {
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                    }
-
-                    // If player index changed, close modal for all users when moving to next player
+                    const oldSoldInfo = (payload.old as any)?.sold_player_info;
+                    const newSoldInfo = session.sold_player_info;
                     const newIndex = session.current_player_index;
-                    if (newIndex !== prevIndex && showSuccessModal) {
-                        // Close modal for all users when admin moves to next player
+                    const oldIndex = (payload.old as any)?.current_player_index;
+
+                    // Log all subscription updates for debugging
+                    console.log('[MODAL DEBUG] Real-time subscription update:', {
+                        eventType: payload.eventType,
+                        timestamp: new Date().toISOString(),
+                        oldSoldInfo: oldSoldInfo,
+                        newSoldInfo: newSoldInfo,
+                        oldIndex: oldIndex,
+                        newIndex: newIndex,
+                        prevIndex: prevIndex,
+                        currentShowSuccessModal: showSuccessModal,
+                        canEdit: canEdit
+                    });
+
+                    // Track previous sold_player_info value (since payload.old is often undefined)
+                    const prevSoldInfo = prevSoldPlayerInfoRef.current;
+
+                    // Show modal when sold_player_info is set (has a value)
+                    if (newSoldInfo && payload.eventType === 'UPDATE') {
+                        // Show success modal to all users when sold_player_info is set
+                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info was set', {
+                            soldInfo: newSoldInfo,
+                            timestamp: new Date().toISOString()
+                        });
+                        setSuccessMessage(newSoldInfo);
+                        setShowSuccessModal(true);
+                        // Update ref to track the value
+                        prevSoldPlayerInfoRef.current = newSoldInfo;
+                    }
+
+                    // Close modal if player index changed (admin moved to next player)
+                    // This is the primary way to close the modal when moving to next player
+                    if (oldIndex !== undefined && newIndex !== oldIndex && payload.eventType === 'UPDATE') {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - player index changed (admin moved to next player)', {
+                            oldIndex: oldIndex,
+                            newIndex: newIndex,
+                            prevIndex: prevIndex,
+                            timestamp: new Date().toISOString(),
+                            currentModalState: showSuccessModal
+                        });
                         setShowSuccessModal(false);
                         setSuccessMessage(null);
+                        prevSoldPlayerInfoRef.current = null;
+                    } else if (prevIndex !== newIndex && payload.eventType === 'UPDATE') {
+                        // Fallback: if oldIndex is undefined but prevIndex changed, close modal
+                        console.log('[MODAL DEBUG] ❌ Closing modal - player index changed (fallback check)', {
+                            prevIndex: prevIndex,
+                            newIndex: newIndex,
+                            timestamp: new Date().toISOString(),
+                            currentModalState: showSuccessModal
+                        });
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                        prevSoldPlayerInfoRef.current = null;
+                    }
+
+                    // Close modal if sold_player_info was cleared (went from having value to null)
+                    // Check both payload.old and our tracked ref (since payload.old is often undefined)
+                    const wasCleared = (oldSoldInfo && !newSoldInfo) || (prevSoldInfo && !newSoldInfo && (newSoldInfo === null || newSoldInfo === undefined));
+                    if (wasCleared && payload.eventType === 'UPDATE') {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info cleared', {
+                            oldSoldInfo: oldSoldInfo,
+                            prevSoldInfo: prevSoldInfo,
+                            newSoldInfo: newSoldInfo,
+                            timestamp: new Date().toISOString(),
+                            currentModalState: showSuccessModal
+                        });
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                        prevSoldPlayerInfoRef.current = null;
+                    }
+
+                    // Close modal if sold_player_info is null and modal is currently open
+                    // This handles cases where we need to close the modal when it's null
+                    if ((newSoldInfo === null || newSoldInfo === undefined) && showSuccessModal && payload.eventType === 'UPDATE' && prevSoldInfo) {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info is null and modal is open (had previous value)', {
+                            newSoldInfo: newSoldInfo,
+                            prevSoldInfo: prevSoldInfo,
+                            timestamp: new Date().toISOString(),
+                            currentModalState: showSuccessModal
+                        });
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                        prevSoldPlayerInfoRef.current = null;
+                    } else if (!newSoldInfo) {
+                        // Update ref when sold_player_info is null/undefined
+                        prevSoldPlayerInfoRef.current = null;
                     }
 
                     // If in skipped players mode, ensure the index is within bounds of skipped players array
@@ -969,6 +1049,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     }
 
                     setCurrentPlayerIndex(clampedIndex);
+                    // Update ref after setting state
+                    prevPlayerIndexRef.current = clampedIndex;
                     setAuctionComplete(session.is_complete);
 
                     // If player index changed, we'll reset bid in the useEffect above
@@ -1346,6 +1428,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     useEffect(() => {
         if (!canEdit && showSuccessModal && prevPlayerIndexRef.current !== currentPlayerIndex && prevPlayerIndexRef.current !== -1) {
             // Player index changed, close modal for non-admin users
+            console.log('[MODAL DEBUG] 👤 Auto-closing modal for non-admin user - player index changed', {
+                prevIndex: prevPlayerIndexRef.current,
+                currentIndex: currentPlayerIndex,
+                canEdit: canEdit,
+                timestamp: new Date().toISOString()
+            });
             setShowSuccessModal(false);
             setSuccessMessage(null);
         }
@@ -1364,6 +1452,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             setPlayerBids(new Map()); // Clear bids for new player
             setSelectedTeamId(null); // Clear selected team
 
+            console.log('[MODAL DEBUG] 🔄 Player changed - clearing sold_player_info in useEffect', {
+                currentPlayerIndex: currentPlayerIndex,
+                playerName: currentPlayer.name,
+                timestamp: new Date().toISOString(),
+                sessionId: sessionId
+            });
+
             // Update database to reset bid for new player and clear sold_player_info
             supabase
                 .from('auction_sessions')
@@ -1372,7 +1467,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     current_bid_team_id: null,
                     sold_player_info: null // Clear sold player info when moving to next player
                 })
-                .eq('id', sessionId);
+                .eq('id', sessionId)
+                .then(({ error }) => {
+                    if (error) {
+                        console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info in useEffect:', error);
+                    } else {
+                        console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info in useEffect');
+                    }
+                });
         }
     }, [currentPlayerIndex, currentPlayer, sessionId, supabase]);
 
@@ -1697,6 +1799,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             // Update session with next player index and sold player info
             // This will trigger real-time updates for all users
             // Preserve is_skipped_players_mode flag
+            console.log('[MODAL DEBUG] 🛒 handleBuyPlayer - Setting sold_player_info and moving to next player', {
+                currentIndex: currentPlayerIndex,
+                nextIndex: nextIndex,
+                soldPlayerInfo: soldPlayerInfo,
+                timestamp: new Date().toISOString()
+            });
+
             await supabase
                 .from('auction_sessions')
                 .update({
@@ -1704,12 +1813,45 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                     sold_player_info: soldPlayerInfo,
                     is_skipped_players_mode: isSkippedPlayersModeRef.current
                 })
-                .eq('id', sessionId);
+                .eq('id', sessionId)
+                .then(({ error }) => {
+                    if (error) {
+                        console.error('[MODAL DEBUG] ❌ Error setting sold_player_info:', error);
+                    } else {
+                        console.log('[MODAL DEBUG] ✅ Successfully set sold_player_info and moved to next player');
+                    }
+                });
 
             // Update local state immediately for instant UI update
             setCurrentPlayerIndex(nextIndex);
 
+            // Clear sold_player_info after a brief delay to allow modal to show first
+            // This ensures users see the congratulations message before it closes
+            console.log('[MODAL DEBUG] ⏰ Scheduling sold_player_info clear in 2 seconds');
+            setTimeout(async () => {
+                if (sessionId) {
+                    console.log('[MODAL DEBUG] 🧹 Clearing sold_player_info after delay', {
+                        timestamp: new Date().toISOString(),
+                        sessionId: sessionId
+                    });
+                    const { error } = await supabase
+                        .from('auction_sessions')
+                        .update({ sold_player_info: null })
+                        .eq('id', sessionId);
+
+                    if (error) {
+                        console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info after delay:', error);
+                    } else {
+                        console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info after delay');
+                    }
+                }
+            }, 2000); // 2 second delay to show the modal
+
             // Show success modal for admin (will also show for others via real-time)
+            console.log('[MODAL DEBUG] 📢 Setting local modal state for admin', {
+                soldPlayerInfo: soldPlayerInfo,
+                timestamp: new Date().toISOString()
+            });
             setSuccessMessage(soldPlayerInfo);
             setShowSuccessModal(true);
 
@@ -2028,7 +2170,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         // Set loading state
         setPdfGeneratingTeamId(team.id);
         try {
-            const pdf = new jsPDF('p', 'mm', 'a4');
+            const { default: JsPDF } = await import('jspdf');
+            const pdf = new JsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
             const margin = 15;
@@ -2551,7 +2694,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                 return;
             }
 
-            const pdf = new jsPDF('p', 'mm', 'a4');
+            const { default: JsPDF } = await import('jspdf');
+            const pdf = new JsPDF('p', 'mm', 'a4');
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
             const margin = 15;
@@ -3154,14 +3298,24 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                             <div className="relative z-10 mt-6">
                                 <button
                                     onClick={async () => {
+                                        console.log('[MODAL DEBUG] 🔘 Continue button clicked - admin closing modal', {
+                                            timestamp: new Date().toISOString(),
+                                            sessionId: sessionId
+                                        });
                                         setShowSuccessModal(false);
                                         setSuccessMessage(null);
                                         // Clear sold_player_info in database when admin closes
                                         if (sessionId) {
-                                            await supabase
+                                            const { error } = await supabase
                                                 .from('auction_sessions')
                                                 .update({ sold_player_info: null })
                                                 .eq('id', sessionId);
+
+                                            if (error) {
+                                                console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info on Continue click:', error);
+                                            } else {
+                                                console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info on Continue click');
+                                            }
                                         }
                                     }}
                                     className="w-full bg-red-600 text-white py-3 px-8 rounded-lg font-semibold text-base hover:bg-red-700 transition-colors"
@@ -4055,8 +4209,51 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                         >
                                             −
                                         </button>
-                                        <div className="text-4xl md:text-5xl font-bold" style={{ color: '#22C55E' }}>
-                                            ₹{currentBid.toLocaleString()}
+                                        <div className="flex flex-col items-center gap-2">
+                                            <div className="text-4xl md:text-5xl font-bold" style={{ color: '#22C55E' }}>
+                                                ₹{currentBid.toLocaleString()}
+                                            </div>
+                                            {(() => {
+                                                const bidInfo = playerBids.get(currentBid);
+                                                if (bidInfo) {
+                                                    const team = teams.find(t => t.id === bidInfo.teamId);
+                                                    return (
+                                                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#1F2937' }}>
+                                                            {team && (() => {
+                                                                const logoUrl = getTeamLogo(team.logoUrl);
+                                                                const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                                if (isProxyUrl) {
+                                                                    return (
+                                                                        <img
+                                                                            key={`bid-team-mobile-${bidInfo.teamId}-${sessionName || 'default'}`}
+                                                                            src={logoUrl}
+                                                                            alt={`${bidInfo.teamName} logo`}
+                                                                            width={24}
+                                                                            height={24}
+                                                                            className="object-contain flex-shrink-0"
+                                                                        />
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <Image
+                                                                        key={`bid-team-mobile-${bidInfo.teamId}-${sessionName || 'default'}`}
+                                                                        src={logoUrl}
+                                                                        alt={`${bidInfo.teamName} logo`}
+                                                                        width={24}
+                                                                        height={24}
+                                                                        className="object-contain flex-shrink-0"
+                                                                        unoptimized
+                                                                    />
+                                                                );
+                                                            })()}
+                                                            <span className="text-xs md:text-sm font-semibold" style={{ color: '#E5E7EB' }}>
+                                                                Bid by: {bidInfo.teamName}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
                                         </div>
                                         <button
                                             onClick={handleBidIncrease}
