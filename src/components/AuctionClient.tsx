@@ -203,6 +203,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     const isSkippedPlayersModeRef = useRef<boolean>(false);
     const playersRef = useRef<Player[]>([]);
 
+    // Resizable divider state
+    const [leftPanelWidth, setLeftPanelWidth] = useState<number | null>(null); // null means use default
+    const [isDragging, setIsDragging] = useState(false);
+    const dividerRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    // Header minimize/expand state
+    const [isHeaderOpen, setIsHeaderOpen] = useState(true);
+
     // Helper functions to get current settings values (with fallback to defaults)
     const getMinimumBid = (): number => {
         return auctionSettings?.minimum_bid || DEFAULT_MINIMUM_BID;
@@ -693,6 +702,38 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
         isSkippedPlayersModeRef.current = isSkippedPlayersMode;
         playersRef.current = players;
     }, [isSkippedPlayersMode, players]);
+
+    // Handle divider drag
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isDragging || !containerRef.current) return;
+
+            const containerRect = containerRef.current.getBoundingClientRect();
+            const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+
+            // Constrain between 20% and 70% of container width
+            const constrainedWidth = Math.max(20, Math.min(70, newLeftWidth));
+            setLeftPanelWidth(constrainedWidth);
+        };
+
+        const handleMouseUp = () => {
+            setIsDragging(false);
+        };
+
+        if (isDragging) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [isDragging]);
 
     // Reset bid to minimum when player index changes
     useEffect(() => {
@@ -2604,7 +2645,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
     }
 
     return (
-        <div className="min-h-screen" style={{ backgroundColor: '#0F172A' }}>
+        <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#0F172A' }}>
             {/* Success Modal */}
             {showSuccessModal && successMessage && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -2694,102 +2735,138 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
             )}
 
             {/* Header */}
-            <div className="border-b px-2 md:px-3 py-3 sticky top-0 z-10 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                <div className="w-full flex items-center justify-between gap-2">
-                    <button
-                        onClick={() => router.back()}
-                        className="flex items-center gap-1 md:gap-2 flex-shrink-0" style={{ color: '#E5E7EB' }}
-                    >
-                        <span className="hidden sm:inline">Back</span>
-                    </button>
-                    <h1 className="text-lg md:text-xl lg:text-2xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
-                        <span className="md:hidden">Auction</span>
-                        <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
-                    </h1>
-                    <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
+            <div className={`border-b sticky top-0 z-10 shadow-sm transition-all duration-300 ${isHeaderOpen ? 'px-2 md:px-3 py-3' : 'px-2 py-1'}`} style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                {isHeaderOpen ? (
+                    <div className="w-full flex items-center justify-between gap-2">
                         <button
-                            onClick={() => setIsTopPlayersSheetOpen(true)}
-                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
-                            title="Top 5 Bidded Players"
+                            onClick={() => router.back()}
+                            className="flex items-center gap-1 md:gap-2 flex-shrink-0" style={{ color: '#E5E7EB' }}
                         >
-                            <span className="sm:hidden">Top 5</span>
-                            <span className="hidden sm:inline">Top 5</span>
+                            <span className="hidden sm:inline">Back</span>
                         </button>
-                        <button
-                            onClick={() => setIsTeamDynamicsSheetOpen(true)}
-                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
-                            title="Team Dynamics"
-                        >
-                            <span className="sm:hidden">Teams</span>
-                            <span className="hidden sm:inline">Team Dynamics</span>
-                        </button>
-                        <button
-                            onClick={() => setIsSkippedPlayersSheetOpen(true)}
-                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
-                            title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
-                        >
-                            <span className="sm:hidden">Skip ({getCurrentSkippedPlayers().length})</span>
-                            <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
-                        </button>
-                        {/* Mode switcher buttons - show when in skipped mode or auction is complete */}
-                        {(isSkippedPlayersMode || auctionComplete) && canEdit && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={handleSwitchToUnbiddedPlayers}
-                                    className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${!isSkippedPlayersMode
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
-                                    title="Switch to All Unbidded Players"
-                                >
-                                    <span className="hidden sm:inline">All Unbidded</span>
-                                    <span className="sm:hidden">All</span>
-                                </button>
-                                <button
-                                    onClick={handleSwitchToSkippedPlayers}
-                                    className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${isSkippedPlayersMode
-                                        ? 'bg-red-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
-                                    title="Switch to Skipped Players Only"
-                                >
-                                    <span className="hidden sm:inline">Skipped Only</span>
-                                    <span className="sm:hidden">Skipped</span>
-                                </button>
-                            </div>
-                        )}
-                        <button
-                            onClick={() => setIsPlayerListSheetOpen(true)}
-                            className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1"
-                            title="View All Players"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <span className="hidden sm:inline">Players List</span>
-                            <span className="sm:hidden">List</span>
-                        </button>
-                        {canEdit && !auctionComplete && (
+                        <h1 className="text-lg md:text-xl lg:text-2xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
+                            <span className="md:hidden">Auction</span>
+                            <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
+                        </h1>
+                        <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
                             <button
-                                onClick={handleEndAuction}
-                                className="hidden md:flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
-                                title="End Auction"
+                                onClick={() => setIsTopPlayersSheetOpen(true)}
+                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                title="Top 5 Bidded Players"
                             >
-                                End Auction
+                                <span className="sm:hidden">Top 5</span>
+                                <span className="hidden sm:inline">Top 5</span>
                             </button>
-                        )}
+                            <button
+                                onClick={() => setIsTeamDynamicsSheetOpen(true)}
+                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                title="Team Dynamics"
+                            >
+                                <span className="sm:hidden">Teams</span>
+                                <span className="hidden sm:inline">Team Dynamics</span>
+                            </button>
+                            <button
+                                onClick={() => setIsSkippedPlayersSheetOpen(true)}
+                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
+                            >
+                                <span className="sm:hidden">Skip ({getCurrentSkippedPlayers().length})</span>
+                                <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
+                            </button>
+                            {/* Mode switcher buttons - show when in skipped mode or auction is complete */}
+                            {(isSkippedPlayersMode || auctionComplete) && canEdit && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={handleSwitchToUnbiddedPlayers}
+                                        className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${!isSkippedPlayersMode
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                        title="Switch to All Unbidded Players"
+                                    >
+                                        <span className="hidden sm:inline">All Unbidded</span>
+                                        <span className="sm:hidden">All</span>
+                                    </button>
+                                    <button
+                                        onClick={handleSwitchToSkippedPlayers}
+                                        className={`px-3 py-1.5 text-xs md:text-sm rounded-lg font-medium transition-colors ${isSkippedPlayersMode
+                                            ? 'bg-red-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                        title="Switch to Skipped Players Only"
+                                    >
+                                        <span className="hidden sm:inline">Skipped Only</span>
+                                        <span className="sm:hidden">Skipped</span>
+                                    </button>
+                                </div>
+                            )}
+                            <button
+                                onClick={() => setIsPlayerListSheetOpen(true)}
+                                className="text-red-600 hover:text-red-700 font-medium text-xs md:text-sm flex items-center gap-1 px-1.5 py-1"
+                                title="View All Players"
+                            >
+                                <span className="hidden sm:inline">Players List</span>
+                                <span className="sm:hidden">List</span>
+                            </button>
+                            {canEdit && !auctionComplete && (
+                                <button
+                                    onClick={handleEndAuction}
+                                    className="hidden md:flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium"
+                                    title="End Auction"
+                                >
+                                    End Auction
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setIsHeaderOpen(!isHeaderOpen)}
+                                className="flex items-center gap-1 px-2 py-1 text-sm hover:bg-gray-700 rounded transition-colors"
+                                style={{ color: '#E5E7EB' }}
+                                title={isHeaderOpen ? "Minimize header" : "Expand header"}
+                            >
+                                {isHeaderOpen ? '−' : '+'}
+                            </button>
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    <div className="w-full flex items-center justify-between">
+                        <button
+                            onClick={() => router.back()}
+                            className="flex items-center gap-1 md:gap-2 flex-shrink-0" style={{ color: '#E5E7EB' }}
+                        >
+                            <span className="hidden sm:inline">Back</span>
+                        </button>
+                        <button
+                            onClick={() => setIsHeaderOpen(!isHeaderOpen)}
+                            className="flex items-center gap-1 px-2 py-1 text-sm hover:bg-gray-700 rounded transition-colors"
+                            style={{ color: '#E5E7EB' }}
+                            title="Expand header"
+                        >
+                            +
+                        </button>
+                    </div>
+                )}
             </div>
 
-            <div className="w-full px-2 md:px-3 py-4">
-                <div className={`grid grid-cols-1 ${teams.length > 10 ? 'xl:grid-cols-5' : 'xl:grid-cols-3'} gap-3 md:gap-4 items-start`}>
+            <div className="w-full px-2 md:px-3 flex-1 overflow-hidden min-h-0">
+                <div
+                    ref={containerRef}
+                    className="hidden xl:flex items-stretch gap-0 h-full"
+                >
                     {/* Left Sidebar - Team Selection (Desktop) */}
-                    <div className={`hidden xl:block ${teams.length > 10 ? 'xl:col-span-2' : 'xl:col-span-1'}`}>
-                        <div className="rounded-xl border-2 p-4 md:p-5" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                    <div
+                        className="flex-shrink-0 overflow-hidden"
+                        style={{
+                            width: leftPanelWidth !== null
+                                ? `${leftPanelWidth}%`
+                                : teams.length > 10
+                                    ? '60%'
+                                    : '33.333%'
+                        }}
+                    >
+                        <div className="rounded-xl border-2 p-4 md:p-5 h-full flex flex-col" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {/* Select Team Section */}
-                            <div>
-                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
+                            <div className="flex-1 overflow-hidden">
+                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 h-full overflow-y-auto pr-2`}>
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // They need to reserve minimum bid for each remaining player slot
@@ -2819,7 +2896,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`p-2 md:p-3 rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-2 md:p-3'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
                                                     ? 'shadow-md' // Active - will add custom style
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -2834,14 +2911,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                     {(() => {
                                                         const logoUrl = getTeamLogo(team.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                        const logoSize = teams.length > 10 ? 36 : 28;
                                                         if (isProxyUrl) {
                                                             return (
                                                                 <img
                                                                     key={`team-${team.id}-${sessionName || 'default'}`}
                                                                     src={logoUrl}
                                                                     alt={`${team.name} logo`}
-                                                                    width={28}
-                                                                    height={28}
+                                                                    width={logoSize}
+                                                                    height={logoSize}
                                                                     className="object-contain flex-shrink-0 mt-0.5"
                                                                 />
                                                             );
@@ -2851,23 +2929,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                                                 key={`team-${team.id}-${sessionName || 'default'}`}
                                                                 src={logoUrl}
                                                                 alt={`${team.name} logo`}
-                                                                width={28}
-                                                                height={28}
+                                                                width={logoSize}
+                                                                height={logoSize}
                                                                 className="object-contain flex-shrink-0 mt-0.5"
                                                                 unoptimized
                                                             />
                                                         );
                                                     })()}
-                                                    <div className="font-semibold flex-1 leading-tight break-words" style={{ color: '#E5E7EB', fontSize: 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : ''}`} style={{ color: '#E5E7EB', fontSize: teams.length > 10 ? undefined : 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Budget: ₹{team.budget.toLocaleString()}
                                                 </div>
-                                                <div className="text-xs mb-1" style={{ color: '#9CA3AF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
-                                                    <div className="text-xs mb-1 font-medium" style={{ color: '#22C55E' }}>
+                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{maxBid.toLocaleString()}
                                                     </div>
                                                 )}
@@ -2888,8 +2966,28 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                         </div>
                     </div>
 
+                    {/* Resizable Divider */}
+                    <div
+                        ref={dividerRef}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setIsDragging(true);
+                        }}
+                        className="w-1 bg-gray-600 hover:bg-gray-500 cursor-col-resize flex-shrink-0 transition-colors"
+                        style={{
+                            minWidth: '4px',
+                            cursor: isDragging ? 'col-resize' : 'col-resize'
+                        }}
+                        title="Drag to resize panels"
+                    />
+
                     {/* Main Content Area */}
-                    <div className={`${teams.length > 10 ? 'xl:col-span-3' : 'xl:col-span-2'} space-y-4 pb-32 md:pb-4`}>
+                    <div
+                        className="flex-1 overflow-auto space-y-4"
+                        style={{
+                            minWidth: '30%'
+                        }}
+                    >
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
@@ -3009,7 +3107,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                     </div>
 
                                     {/* Player Details - Contact & Location Info */}
-                                    <div className="grid grid-cols-3 gap-1.5 md:gap-2 mb-1.5">
+                                    <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
                                         {/* Wing */}
                                         {currentPlayer.wing && (
                                             <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
@@ -3023,14 +3121,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                             <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
                                                 <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Flat No</div>
                                                 <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                            </div>
-                                        )}
-
-                                        {/* Phone */}
-                                        {currentPlayer.phone && (
-                                            <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Phone</div>
-                                                <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.phone}</div>
                                             </div>
                                         )}
                                     </div>
@@ -3225,6 +3315,103 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps =
                                 </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                {/* Mobile Layout - Keep original grid for mobile/tablet */}
+                <div className={`xl:hidden grid grid-cols-1 ${teams.length > 10 ? 'lg:grid-cols-5' : 'lg:grid-cols-3'} gap-3 md:gap-4 items-start`}>
+                    {/* Left Sidebar - Team Selection (Mobile) */}
+                    <div className={`${teams.length > 10 ? 'lg:col-span-3' : 'lg:col-span-1'}`}>
+                        <div className="rounded-xl border-2 p-4 md:p-5" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div>
+                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
+                                    {/* Mobile team list - using same team mapping logic */}
+                                    {teams.map(team => {
+                                        const remainingSlots = getPlayersPerTeam() - team.players.length - 1;
+                                        const minimumRequiredForRemaining = remainingSlots > 0 ? remainingSlots * getMinimumBid() : 0;
+                                        const maxBid = team.budget - minimumRequiredForRemaining;
+                                        const increment = getBidIncrement(currentBid);
+                                        const newBid = currentBid + increment;
+                                        const canAfford = team.budget >= newBid;
+                                        const withinMaxBid = newBid <= maxBid;
+                                        const hasSpace = team.players.length < getPlayersPerTeam();
+                                        const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid();
+                                        const isViewOnly = !canEdit;
+                                        const finalDisabled = isDisabled || isViewOnly;
+
+                                        return (
+                                            <button
+                                                key={`mobile-${team.id}`}
+                                                onClick={() => {
+                                                    if (!finalDisabled) {
+                                                        handleTeamSelection(team.id);
+                                                    }
+                                                }}
+                                                disabled={finalDisabled}
+                                                className={`${teams.length > 10 ? 'p-3 md:p-4' : 'p-2 md:p-3'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                    ? 'shadow-md'
+                                                    : finalDisabled
+                                                        ? 'opacity-50 cursor-not-allowed'
+                                                        : ''
+                                                    }`}
+                                                style={selectedTeamId === team.id
+                                                    ? { backgroundColor: '#111827', borderColor: '#E11D48' }
+                                                    : { backgroundColor: '#111827', borderColor: '#1F2937' }
+                                                }
+                                            >
+                                                <div className="flex items-start gap-1.5 mb-2 w-full">
+                                                    {(() => {
+                                                        const logoUrl = getTeamLogo(team.logoUrl);
+                                                        const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                        const logoSize = teams.length > 10 ? 36 : 28;
+                                                        if (isProxyUrl) {
+                                                            return (
+                                                                <img
+                                                                    key={`mobile-team-${team.id}`}
+                                                                    src={logoUrl}
+                                                                    alt={`${team.name} logo`}
+                                                                    width={logoSize}
+                                                                    height={logoSize}
+                                                                    className="object-contain flex-shrink-0 mt-0.5"
+                                                                />
+                                                            );
+                                                        }
+                                                        return (
+                                                            <Image
+                                                                key={`mobile-team-${team.id}`}
+                                                                src={logoUrl}
+                                                                alt={`${team.name} logo`}
+                                                                width={logoSize}
+                                                                height={logoSize}
+                                                                className="object-contain flex-shrink-0 mt-0.5"
+                                                                unoptimized
+                                                            />
+                                                        );
+                                                    })()}
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : ''}`} style={{ color: '#E5E7EB', fontSize: teams.length > 10 ? undefined : 'clamp(8px, 1.2vw, 10px)', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                </div>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                    Budget: ₹{team.budget.toLocaleString()}
+                                                </div>
+                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1`} style={{ color: '#9CA3AF' }}>
+                                                    Players: {team.players.length}/{getPlayersPerTeam()}
+                                                </div>
+                                                {maxBid >= getMinimumBid() && (
+                                                    <div className={`${teams.length > 10 ? 'text-sm' : 'text-xs'} mb-1 font-medium`} style={{ color: '#22C55E' }}>
+                                                        Max Bid: ₹{maxBid.toLocaleString()}
+                                                    </div>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main Content Area (Mobile) - Player card will be shown here via responsive classes */}
+                    <div className={`${teams.length > 10 ? 'lg:col-span-2' : 'lg:col-span-2'} space-y-4 pb-32 md:pb-4`}>
+                        {/* Player content is shared, will show on mobile via responsive design */}
                     </div>
                 </div>
             </div>
