@@ -2439,19 +2439,47 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 console.error('Error loading tournament logo:', logo2Error);
             }
 
+            // Helper function to detect image format from data URL
+            const getImageFormat = (dataUrl: string): string => {
+                if (dataUrl.startsWith('data:image/png')) return 'PNG';
+                if (dataUrl.startsWith('data:image/jpeg') || dataUrl.startsWith('data:image/jpg')) return 'JPEG';
+                if (dataUrl.startsWith('data:image/gif')) return 'GIF';
+                if (dataUrl.startsWith('data:image/webp')) return 'WEBP';
+                // Default to JPEG if format cannot be determined
+                return 'JPEG';
+            };
+
             // Add app logo (left side)
-            if (appLogoDataUrl) {
-                pdf.addImage(appLogoDataUrl, 'JPEG', margin, logoY, logoWidth, appLogoHeight);
-                maxHeaderHeight = Math.max(maxHeaderHeight, appLogoHeight);
+            if (appLogoDataUrl && appLogoHeight > 0 && logoWidth > 0) {
+                try {
+                    // Validate dimensions before adding
+                    if (isFinite(logoWidth) && isFinite(appLogoHeight)) {
+                        const appLogoFormat = getImageFormat(appLogoDataUrl);
+                        pdf.addImage(appLogoDataUrl, appLogoFormat, margin, logoY, logoWidth, appLogoHeight);
+                        maxHeaderHeight = Math.max(maxHeaderHeight, appLogoHeight);
+                    }
+                } catch (appLogoError) {
+                    console.error('Error adding app logo to PDF:', appLogoError);
+                    // Continue without app logo
+                }
             }
 
             // Add logo2.png (right side) - same Y position as app logo (bigger size)
-            if (logo2DataUrl) {
-                const logo2Width = logoWidth * 1.3; // 30% bigger than app logo
-                const logo2HeightBigger = (logo2Height / logoWidth) * logo2Width; // Maintain aspect ratio
-                const logo2X = pageWidth - margin - logo2Width; // Right aligned
-                pdf.addImage(logo2DataUrl, 'PNG', logo2X, logoY, logo2Width, logo2HeightBigger);
-                maxHeaderHeight = Math.max(maxHeaderHeight, logo2HeightBigger);
+            if (logo2DataUrl && logo2Height > 0 && logoWidth > 0) {
+                try {
+                    const logo2Width = logoWidth * 1.3; // 30% bigger than app logo
+                    const logo2HeightBigger = (logo2Height / logoWidth) * logo2Width; // Maintain aspect ratio
+                    // Validate dimensions before adding
+                    if (logo2Width > 0 && logo2HeightBigger > 0 && isFinite(logo2Width) && isFinite(logo2HeightBigger)) {
+                        const logo2X = pageWidth - margin - logo2Width; // Right aligned
+                        const logo2Format = getImageFormat(logo2DataUrl);
+                        pdf.addImage(logo2DataUrl, logo2Format, logo2X, logoY, logo2Width, logo2HeightBigger);
+                        maxHeaderHeight = Math.max(maxHeaderHeight, logo2HeightBigger);
+                    }
+                } catch (logo2AddError) {
+                    console.error('Error adding tournament logo to PDF:', logo2AddError);
+                    // Continue without tournament logo
+                }
             }
 
             // "Team Report" text below app logo (left aligned)
@@ -2463,11 +2491,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             // Add team logo below "Team Report" (left aligned, larger size)
             let teamLogoBelowY = teamReportY + 6; // Small gap below "Team Report" text
-            if (teamLogoDataUrl) {
-                const teamLogoBelowWidth = 50; // Increased width for logo below Team Report (was 30)
-                const teamLogoBelowHeight = (teamLogoHeight / logoWidth) * teamLogoBelowWidth;
-                pdf.addImage(teamLogoDataUrl, 'JPEG', margin, teamLogoBelowY, teamLogoBelowWidth, teamLogoBelowHeight);
-                teamLogoBelowY += teamLogoBelowHeight + 8; // Increased gap to 8mm between logo and text
+            if (teamLogoDataUrl && teamLogoHeight > 0 && logoWidth > 0) {
+                try {
+                    const teamLogoBelowWidth = 50; // Increased width for logo below Team Report (was 30)
+                    const teamLogoBelowHeight = (teamLogoHeight / logoWidth) * teamLogoBelowWidth;
+                    // Validate dimensions before adding
+                    if (teamLogoBelowWidth > 0 && teamLogoBelowHeight > 0 && isFinite(teamLogoBelowWidth) && isFinite(teamLogoBelowHeight)) {
+                        const teamLogoFormat = getImageFormat(teamLogoDataUrl);
+                        pdf.addImage(teamLogoDataUrl, teamLogoFormat, margin, teamLogoBelowY, teamLogoBelowWidth, teamLogoBelowHeight);
+                        teamLogoBelowY += teamLogoBelowHeight + 8; // Increased gap to 8mm between logo and text
+                    } else {
+                        teamLogoBelowY += 8;
+                    }
+                } catch (teamLogoError) {
+                    console.error('Error adding team logo to PDF:', teamLogoError);
+                    teamLogoBelowY += 8;
+                }
             } else {
                 teamLogoBelowY += 8;
             }
