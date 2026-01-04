@@ -39,7 +39,7 @@ const TOTAL_AMOUNT = 111000;
 const TEAMS_COUNT = 8;
 
 // Default values (used as fallback if settings not loaded)
-const DEFAULT_MINIMUM_BID = 5000;
+const DEFAULT_MINIMUM_BID = 500000;
 const DEFAULT_PLAYERS_PER_TEAM = 11;
 
 // Default bid increment function (used as fallback)
@@ -218,10 +218,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [isHeaderOpen, setIsHeaderOpen] = useState(true);
 
     // Helper functions to get current settings values (with fallback to defaults)
-    const getMinimumBid = (): number => {
-        // Always use database value only, no hardcoded fallback
-        return auctionSettings?.minimum_bid || 0;
-    };
+        const getMinimumBid = (): number => {
+            // Use database value, fallback to DEFAULT_MINIMUM_BID if not set or invalid
+            const minBid = auctionSettings?.minimum_bid;
+            return (minBid != null && minBid > 0) ? minBid : DEFAULT_MINIMUM_BID;
+        };
 
     const getPlayersPerTeam = (): number => {
         return auctionSettings?.players_per_team || DEFAULT_PLAYERS_PER_TEAM;
@@ -588,7 +589,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                 if (settingsData && !settingsError) {
                     const loadedSettings = {
-                        minimum_bid: Number(settingsData.minimum_bid) || 0, // Use database value only
+                        minimum_bid: (settingsData.minimum_bid != null && !isNaN(Number(settingsData.minimum_bid)) && Number(settingsData.minimum_bid) > 0) ? Number(settingsData.minimum_bid) : DEFAULT_MINIMUM_BID, // Use database value, fallback to default if invalid
                         players_per_team: settingsData.players_per_team || DEFAULT_PLAYERS_PER_TEAM,
                         default_bid_increment: settingsData.default_bid_increment || 5000,
                         bid_increment_1_threshold: settingsData.bid_increment_1_threshold || 100000,
