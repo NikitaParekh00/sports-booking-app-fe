@@ -683,7 +683,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     if (skippedPlayersIndex !== undefined && skippedPlayersIndex !== null && skippedPlayersIndex >= 0 && skippedPlayersIndex < skippedFromTable.length) {
                         // Use saved index if valid
                         skippedIndex = skippedPlayersIndex;
-                    } else {
+                        } else {
                         // Try to find current player in skipped list
                         const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
                         if (currentPlayerName) {
@@ -694,6 +694,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         }
                     }
                     setCurrentPlayerIndex(skippedIndex);
+                    
+                    // Ensure database reflects the skipped players mode state
+                    supabase
+                        .from('auction_sessions')
+                        .update({
+                            is_skipped_players_mode: true,
+                            skipped_players_index: skippedIndex
+                        })
+                        .eq('id', finalSession.id)
+                        .then(({ error }) => {
+                            if (error) {
+                                console.error('Error updating skipped players mode on load:', error);
+                            } else {
+                                console.log('Successfully updated skipped players mode on load');
+                            }
+                        });
                 } else {
                     // Show all players normally
                     console.log('Loading all players mode with', mappedPlayers.length, 'players');
@@ -702,6 +718,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Update refs immediately to prevent race conditions
                     isSkippedPlayersModeRef.current = false;
                     playersRef.current = mappedPlayers;
+                    
+                    // Ensure database reflects the all players mode state
+                    supabase
+                        .from('auction_sessions')
+                        .update({
+                            is_skipped_players_mode: false,
+                            current_player_index: initialPlayerIndex
+                        })
+                        .eq('id', finalSession.id)
+                        .then(({ error }) => {
+                            if (error) {
+                                console.error('Error updating all players mode on load:', error);
+                            } else {
+                                console.log('Successfully updated all players mode on load');
+                            }
+                        });
                 }
             } catch (error) {
                 console.error('Error loading auction state:', error);
@@ -847,7 +879,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Also save skipped_players_index to maintain position when switching back
                     // (we'll keep the last known skipped index)
                 }
-
+                
                 supabase
                     .from('auction_sessions')
                     .update(updateData)
@@ -888,10 +920,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 if (payload.new) {
                     const session = payload.new as {
                         current_player_index: number;
+                        skipped_players_index?: number;
                         is_complete: boolean;
                         current_bid_amount?: number;
                         current_bid_team_id?: number;
                         sold_player_info?: { playerName: string; teamName: string; amount: number } | null;
+                        congratulations_modal_acknowledged?: boolean;
                         is_skipped_players_mode?: boolean;
                     };
                     const prevIndex = prevPlayerIndexRef.current;
@@ -985,35 +1019,65 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             // Don't auto-switch back - let the user explicitly switch via button
                             // This prevents the flickering issue where it switches back immediately
                             return;
-                        }
+                            }
                     }
 
-                    // Check congratulations_modal_acknowledged status (no real-time updates, just check on session changes)
-                    const congratulationsAcknowledged = (session as any).congratulations_modal_acknowledged;
-                    const soldPlayerInfo = (session as any).sold_player_info;
-                    const sessionNewIndex = session.current_player_index;
+                    // Handle congratulations modal state via real-time updates
+                    const congratulationsAcknowledged = session.congratulations_modal_acknowledged;
+                    const soldPlayerInfo = session.sold_player_info;
+                    const oldSoldInfo = (payload.old as any)?.sold_player_info;
+                    const oldAcknowledged = (payload.old as any)?.congratulations_modal_acknowledged;
                     
-                    // If modal was acknowledged (set to true), close the modal
-                    if (congratulationsAcknowledged === true && showSuccessModal) {
-                        console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged is true', {
+                    // Read the correct index based on mode
+                    // In skipped players mode, use skipped_players_index; otherwise use current_player_index
+                    let sessionNewIndex: number;
+                    if (isSkippedPlayersModeRef.current && session.skipped_players_index !== undefined && session.skipped_players_index !== null) {
+                        sessionNewIndex = session.skipped_players_index;
+                    } else if (!isSkippedPlayersModeRef.current) {
+                        sessionNewIndex = session.current_player_index;
+                    } else {
+                        // If we're in skipped mode but skipped_players_index is not set, use current_player_index as fallback
+                        sessionNewIndex = session.current_player_index;
+                    }
+                    
+                    // Show modal when sold_player_info is set and not acknowledged (real-time)
+                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && 
+                        congratulationsAcknowledged === false && payload.eventType === 'UPDATE') {
+                        // Only show if it's a new sold_player_info (was null/undefined before, now has value)
+                        const isNewSoldInfo = !oldSoldInfo && soldPlayerInfo;
+                        if (isNewSoldInfo || !showSuccessModal) {
+                            console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info set (real-time)', {
+                                soldInfo: soldPlayerInfo,
+                                timestamp: new Date().toISOString()
+                            });
+                            setSuccessMessage(soldPlayerInfo);
+                            setShowSuccessModal(true);
+                        }
+                    }
+                    
+                    // Close modal when congratulations_modal_acknowledged is set to true (real-time)
+                    if (congratulationsAcknowledged === true && (oldAcknowledged === false || oldAcknowledged === undefined || oldAcknowledged === null) && 
+                        payload.eventType === 'UPDATE' && showSuccessModal) {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged set to true (real-time)', {
                             timestamp: new Date().toISOString()
                         });
                         setShowSuccessModal(false);
                         setSuccessMessage(null);
                     }
                     
-                    // If sold_player_info exists and modal is not acknowledged, show modal
-                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false && !showSuccessModal) {
-                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info exists and not acknowledged', {
-                            soldInfo: soldPlayerInfo,
+                    // Close modal if sold_player_info is cleared (set to null)
+                    if (!soldPlayerInfo && oldSoldInfo && payload.eventType === 'UPDATE' && showSuccessModal) {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info cleared (real-time)', {
                             timestamp: new Date().toISOString()
                         });
-                        setSuccessMessage(soldPlayerInfo);
-                        setShowSuccessModal(true);
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
                     }
 
                     // If in skipped players mode, ensure the index is within bounds of skipped players array
                     let clampedIndex = sessionNewIndex;
+                    let shouldUpdateIndex = true;
+                    
                     if (isSkippedPlayersModeRef.current && playersRef.current.length > 0) {
                         // Clamp index to valid range for skipped players
                         if (clampedIndex >= playersRef.current.length) {
@@ -1022,15 +1086,35 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         if (clampedIndex < 0) {
                             clampedIndex = 0;
                         }
+                        
+                        // Only update if the index actually changed to prevent unnecessary resets
+                        // This prevents resetting to index 0 when we're already at the last player
+                        if (clampedIndex === prevPlayerIndexRef.current && clampedIndex === currentPlayerIndex) {
+                            // Index hasn't changed, skip index update but continue with other updates
+                            shouldUpdateIndex = false;
+                        }
+                    } else if (!isSkippedPlayersModeRef.current) {
+                        // Only update if the index actually changed
+                        if (sessionNewIndex === prevPlayerIndexRef.current && sessionNewIndex === currentPlayerIndex) {
+                            // Index hasn't changed, skip index update but continue with other updates
+                            shouldUpdateIndex = false;
+                        }
+                        clampedIndex = sessionNewIndex;
                     }
 
-                    setCurrentPlayerIndex(clampedIndex);
-                    // Update ref after setting state
-                    prevPlayerIndexRef.current = clampedIndex;
+                    // Only update index if it actually changed
+                    if (shouldUpdateIndex) {
+                        setCurrentPlayerIndex(clampedIndex);
+                        // Update ref after setting state
+                        prevPlayerIndexRef.current = clampedIndex;
+                    }
+                    
                     setAuctionComplete(session.is_complete);
 
                     // If player index changed, reset bid to minimum (don't use old bid from database)
-                    if (sessionNewIndex !== prevIndex) {
+                    // Use clampedIndex for comparison to handle skipped mode correctly
+                    const effectiveNewIndex = shouldUpdateIndex ? clampedIndex : currentPlayerIndex;
+                    if (effectiveNewIndex !== prevIndex) {
                         // Player index changed, reset to minimum bid
                         const newMinimum = getMinimumBid();
                         setCurrentBid(newMinimum);
@@ -1466,62 +1550,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         }
     }, [currentPlayerIndex, currentPlayer, sessionId, supabase, auctionSettings]);
 
-    // Poll database for congratulations modal state (instead of real-time)
-    useEffect(() => {
-        if (!sessionId) return;
-
-        // Function to check modal state from database
-        const checkModalState = async () => {
-            try {
-                const { data: sessionData, error } = await supabase
-                    .from('auction_sessions')
-                    .select('sold_player_info, congratulations_modal_acknowledged')
-                    .eq('id', sessionId)
-                    .single();
-
-                if (error) {
-                    console.error('[MODAL DEBUG] Error checking modal state:', error);
-                    return;
-                }
-
-                if (sessionData) {
-                    const soldPlayerInfo = (sessionData as any).sold_player_info;
-                    const congratulationsAcknowledged = (sessionData as any).congratulations_modal_acknowledged;
-
-                    // If modal was acknowledged, close it
-                    if (congratulationsAcknowledged === true && showSuccessModal) {
-                        console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged is true (polling)', {
-                            timestamp: new Date().toISOString()
-                        });
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                    }
-
-                    // If sold_player_info exists and modal is not acknowledged, show modal
-                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false && !showSuccessModal) {
-                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info exists and not acknowledged (polling)', {
-                            soldInfo: soldPlayerInfo,
-                            timestamp: new Date().toISOString()
-                        });
-                        setSuccessMessage(soldPlayerInfo);
-                        setShowSuccessModal(true);
-                    }
-                }
-            } catch (error) {
-                console.error('[MODAL DEBUG] Error in checkModalState:', error);
-            }
-        };
-
-        // Check immediately
-        checkModalState();
-
-        // Poll every 1 second to check for state changes
-        const intervalId = setInterval(checkModalState, 1000);
-
-        return () => {
-            clearInterval(intervalId);
-        };
-    }, [sessionId, supabase, showSuccessModal]);
+    // Modal state is now handled via real-time subscription (no polling needed)
 
     // Track bid when team is selected and bid amount changes
     useEffect(() => {
@@ -1698,7 +1727,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Sync bidInputValue with currentBid when it changes externally
     useEffect(() => {
-        setBidInputValue(currentBid.toString());
+            setBidInputValue(currentBid.toString());
     }, [currentBid]);
 
     const handleBidInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1933,9 +1962,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             });
 
             const updateData: any = {
-                sold_player_info: soldPlayerInfo,
+                    sold_player_info: soldPlayerInfo,
                 congratulations_modal_acknowledged: false, // Set to false to show modal to all users
-                is_skipped_players_mode: isSkippedPlayersModeRef.current
+                    is_skipped_players_mode: isSkippedPlayersModeRef.current
             };
 
             // Save index to the appropriate column based on mode
@@ -2168,12 +2197,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 setIsSkippedPlayersMode(true);
             }
 
-            // Update database session
+            // Update database session - save mode and appropriate index
+            const updateData: any = {
+                is_skipped_players_mode: true
+            };
+            
+            // Save to skipped_players_index since we're in skipped players mode
+            updateData.skipped_players_index = playerIndex;
+            
             await supabase
                 .from('auction_sessions')
-                .update({
-                    current_player_index: playerIndex
-                })
+                .update(updateData)
                 .eq('id', sessionId);
 
             // Update local state to the specific player index
@@ -2309,7 +2343,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             try {
                 const response = await fetch('/logo.jpeg');
                 const blob = await response.blob();
-                const reader = new FileReader();
+                    const reader = new FileReader();
 
                 await new Promise<void>((resolve, reject) => {
                     reader.onload = () => {
@@ -2869,7 +2903,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             try {
                 const response = await fetch('/logo.jpeg');
                 const blob = await response.blob();
-                const reader = new FileReader();
+                    const reader = new FileReader();
 
                 await new Promise<void>((resolve, reject) => {
                     reader.onload = () => {
@@ -3300,22 +3334,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     ))}
                                 </div>
                                 {/* Download PDF Button */}
-                                <button
-                                    onClick={() => generateTeamPDF(team)}
-                                    disabled={pdfGeneratingTeamId === team.id}
+                                    <button
+                                        onClick={() => generateTeamPDF(team)}
+                                        disabled={pdfGeneratingTeamId === team.id}
                                     className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {pdfGeneratingTeamId === team.id ? (
-                                        <>
+                                    >
+                                        {pdfGeneratingTeamId === team.id ? (
+                                            <>
                                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                            Generating PDF...
-                                        </>
-                                    ) : (
+                                                Generating PDF...
+                                            </>
+                                        ) : (
                                         <>
                                             Download PDF
                                         </>
-                                    )}
-                                </button>
+                                        )}
+                                    </button>
                             </div>
                         ))}
                     </div>
