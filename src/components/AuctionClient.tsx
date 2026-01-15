@@ -442,9 +442,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 isInitialLoadRef.current = true;
                 setAuctionComplete(finalSession.is_complete);
 
-                // Check if there's a sold player info to show (for users joining mid-auction)
+                // Check if there's a sold player info to show and modal is not acknowledged
                 const soldPlayerInfo = (finalSession as any).sold_player_info;
-                if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount) {
+                const congratulationsAcknowledged = (finalSession as any).congratulations_modal_acknowledged;
+                
+                // Show modal if sold_player_info exists and congratulations_modal_acknowledged is false
+                if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false) {
                     setSuccessMessage({
                         playerName: soldPlayerInfo.playerName,
                         teamName: soldPlayerInfo.teamName,
@@ -460,6 +463,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 if (sessionBidTeamId !== undefined && sessionBidTeamId !== null) {
                     setSelectedTeamId(Number(sessionBidTeamId));
                 }
+
+                // Load skipped_players_index if available (for maintaining position in skipped players mode)
+                const skippedPlayersIndex = (finalSession as any).skipped_players_index;
 
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
@@ -672,19 +678,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     playersRef.current = skippedFromTable;
 
                     // Find the index of current player in skipped players list
-                    const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
-                    if (currentPlayerName) {
-                        const skippedIndex = skippedFromTable.findIndex(sp => sp.name === currentPlayerName);
-                        if (skippedIndex !== -1) {
-                            setCurrentPlayerIndex(skippedIndex);
-                        } else {
-                            // If current player not found in skipped list, start at 0
-                            setCurrentPlayerIndex(0);
-                        }
+                    // Use saved skipped_players_index if available, otherwise try to find current player
+                    let skippedIndex = 0;
+                    if (skippedPlayersIndex !== undefined && skippedPlayersIndex !== null && skippedPlayersIndex >= 0 && skippedPlayersIndex < skippedFromTable.length) {
+                        // Use saved index if valid
+                        skippedIndex = skippedPlayersIndex;
                     } else {
-                        // Start at 0 if no current player name
-                        setCurrentPlayerIndex(0);
+                        // Try to find current player in skipped list
+                        const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
+                        if (currentPlayerName) {
+                            const foundIndex = skippedFromTable.findIndex(sp => sp.name === currentPlayerName);
+                            if (foundIndex !== -1) {
+                                skippedIndex = foundIndex;
+                            }
+                        }
                     }
+                    setCurrentPlayerIndex(skippedIndex);
                 } else {
                     // Show all players normally
                     console.log('Loading all players mode with', mappedPlayers.length, 'players');
@@ -820,14 +829,28 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setSelectedTeamId(null);
 
             // Update database to keep bid in sync
+            // Save the appropriate index based on mode
             if (sessionId) {
+                const updateData: any = {
+                    current_bid_amount: newMinimum,
+                    current_bid_team_id: null,
+                    is_skipped_players_mode: isSkippedPlayersModeRef.current
+                };
+
+                // Save index to the appropriate column based on mode
+                if (isSkippedPlayersModeRef.current) {
+                    // In skipped players mode: save to skipped_players_index
+                    updateData.skipped_players_index = currentPlayerIndex;
+                } else {
+                    // In all players mode: save to current_player_index
+                    updateData.current_player_index = currentPlayerIndex;
+                    // Also save skipped_players_index to maintain position when switching back
+                    // (we'll keep the last known skipped index)
+                }
+
                 supabase
                     .from('auction_sessions')
-                    .update({
-                        current_bid_amount: newMinimum,
-                        current_bid_team_id: null,
-                        is_skipped_players_mode: isSkippedPlayersModeRef.current
-                    })
+                    .update(updateData)
                     .eq('id', sessionId)
                     .then(({ error }) => {
                         if (error) {
@@ -965,102 +988,32 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         }
                     }
 
-                    // Check if sold_player_info was updated (player was just sold)
-                    const oldSoldInfo = (payload.old as any)?.sold_player_info;
-                    const newSoldInfo = session.sold_player_info;
-                    const newIndex = session.current_player_index;
-                    const oldIndex = (payload.old as any)?.current_player_index;
-
-                    // Log all subscription updates for debugging
-                    console.log('[MODAL DEBUG] Real-time subscription update:', {
-                        eventType: payload.eventType,
-                        timestamp: new Date().toISOString(),
-                        oldSoldInfo: oldSoldInfo,
-                        newSoldInfo: newSoldInfo,
-                        oldIndex: oldIndex,
-                        newIndex: newIndex,
-                        prevIndex: prevIndex,
-                        currentShowSuccessModal: showSuccessModal,
-                        canEdit: canEdit
-                    });
-
-                    // Track previous sold_player_info value (since payload.old is often undefined)
-                    const prevSoldInfo = prevSoldPlayerInfoRef.current;
-
-                    // Show modal when sold_player_info is set (has a value)
-                    if (newSoldInfo && payload.eventType === 'UPDATE') {
-                        // Show success modal to all users when sold_player_info is set
-                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info was set', {
-                            soldInfo: newSoldInfo,
+                    // Check congratulations_modal_acknowledged status (no real-time updates, just check on session changes)
+                    const congratulationsAcknowledged = (session as any).congratulations_modal_acknowledged;
+                    const soldPlayerInfo = (session as any).sold_player_info;
+                    const sessionNewIndex = session.current_player_index;
+                    
+                    // If modal was acknowledged (set to true), close the modal
+                    if (congratulationsAcknowledged === true && showSuccessModal) {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged is true', {
                             timestamp: new Date().toISOString()
                         });
-                        setSuccessMessage(newSoldInfo);
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                    }
+                    
+                    // If sold_player_info exists and modal is not acknowledged, show modal
+                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false && !showSuccessModal) {
+                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info exists and not acknowledged', {
+                            soldInfo: soldPlayerInfo,
+                            timestamp: new Date().toISOString()
+                        });
+                        setSuccessMessage(soldPlayerInfo);
                         setShowSuccessModal(true);
-                        // Update ref to track the value
-                        prevSoldPlayerInfoRef.current = newSoldInfo;
-                    }
-
-                    // Close modal if player index changed (admin moved to next player)
-                    // This is the primary way to close the modal when moving to next player
-                    if (oldIndex !== undefined && newIndex !== oldIndex && payload.eventType === 'UPDATE') {
-                        console.log('[MODAL DEBUG] ❌ Closing modal - player index changed (admin moved to next player)', {
-                            oldIndex: oldIndex,
-                            newIndex: newIndex,
-                            prevIndex: prevIndex,
-                            timestamp: new Date().toISOString(),
-                            currentModalState: showSuccessModal
-                        });
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                        prevSoldPlayerInfoRef.current = null;
-                    } else if (prevIndex !== newIndex && payload.eventType === 'UPDATE') {
-                        // Fallback: if oldIndex is undefined but prevIndex changed, close modal
-                        console.log('[MODAL DEBUG] ❌ Closing modal - player index changed (fallback check)', {
-                            prevIndex: prevIndex,
-                            newIndex: newIndex,
-                            timestamp: new Date().toISOString(),
-                            currentModalState: showSuccessModal
-                        });
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                        prevSoldPlayerInfoRef.current = null;
-                    }
-
-                    // Close modal if sold_player_info was cleared (went from having value to null)
-                    // Check both payload.old and our tracked ref (since payload.old is often undefined)
-                    const wasCleared = (oldSoldInfo && !newSoldInfo) || (prevSoldInfo && !newSoldInfo && (newSoldInfo === null || newSoldInfo === undefined));
-                    if (wasCleared && payload.eventType === 'UPDATE') {
-                        console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info cleared', {
-                            oldSoldInfo: oldSoldInfo,
-                            prevSoldInfo: prevSoldInfo,
-                            newSoldInfo: newSoldInfo,
-                            timestamp: new Date().toISOString(),
-                            currentModalState: showSuccessModal
-                        });
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                        prevSoldPlayerInfoRef.current = null;
-                    }
-
-                    // Close modal if sold_player_info is null and modal is currently open
-                    // This handles cases where we need to close the modal when it's null
-                    if ((newSoldInfo === null || newSoldInfo === undefined) && showSuccessModal && payload.eventType === 'UPDATE' && prevSoldInfo) {
-                        console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info is null and modal is open (had previous value)', {
-                            newSoldInfo: newSoldInfo,
-                            prevSoldInfo: prevSoldInfo,
-                            timestamp: new Date().toISOString(),
-                            currentModalState: showSuccessModal
-                        });
-                        setShowSuccessModal(false);
-                        setSuccessMessage(null);
-                        prevSoldPlayerInfoRef.current = null;
-                    } else if (!newSoldInfo) {
-                        // Update ref when sold_player_info is null/undefined
-                        prevSoldPlayerInfoRef.current = null;
                     }
 
                     // If in skipped players mode, ensure the index is within bounds of skipped players array
-                    let clampedIndex = newIndex;
+                    let clampedIndex = sessionNewIndex;
                     if (isSkippedPlayersModeRef.current && playersRef.current.length > 0) {
                         // Clamp index to valid range for skipped players
                         if (clampedIndex >= playersRef.current.length) {
@@ -1077,7 +1030,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     setAuctionComplete(session.is_complete);
 
                     // If player index changed, reset bid to minimum (don't use old bid from database)
-                    if (newIndex !== prevIndex) {
+                    if (sessionNewIndex !== prevIndex) {
                         // Player index changed, reset to minimum bid
                         const newMinimum = getMinimumBid();
                         setCurrentBid(newMinimum);
@@ -1279,11 +1232,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setCurrentPlayerIndex(0);
 
             // Update database to sync mode across all screens
+            // Restore current_player_index when switching back to all players
             await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: 0,
+                    current_player_index: 0, // Start at beginning of all players
                     is_skipped_players_mode: false
+                    // Keep skipped_players_index unchanged so we can restore it when switching back
                 })
                 .eq('id', sessionId);
 
@@ -1361,11 +1316,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             console.log('handleSwitchToSkippedPlayers: Refs updated, updating database');
             // Update database to sync mode across all screens
+            // Save current_player_index before switching (to restore when switching back)
+            // and set skipped_players_index to 0 (starting at beginning of skipped players)
             const { data: updateData, error: updateError } = await supabase
                 .from('auction_sessions')
                 .update({
-                    current_player_index: 0,
+                    skipped_players_index: 0, // Start at beginning of skipped players
                     is_skipped_players_mode: true
+                    // Keep current_player_index unchanged so we can restore it when switching back
                 })
                 .eq('id', sessionId)
                 .select();
@@ -1459,20 +1417,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         }
     }, [isSkippedPlayersSheetOpen, getCurrentSkippedPlayers, skippedPlayers]);
 
-    // Auto-close success modal for non-admin users when player index changes
-    useEffect(() => {
-        if (!canEdit && showSuccessModal && prevPlayerIndexRef.current !== currentPlayerIndex && prevPlayerIndexRef.current !== -1) {
-            // Player index changed, close modal for non-admin users
-            console.log('[MODAL DEBUG] 👤 Auto-closing modal for non-admin user - player index changed', {
-                prevIndex: prevPlayerIndexRef.current,
-                currentIndex: currentPlayerIndex,
-                canEdit: canEdit,
-                timestamp: new Date().toISOString()
-            });
-            setShowSuccessModal(false);
-            setSuccessMessage(null);
-        }
-    }, [currentPlayerIndex, canEdit, showSuccessModal]);
+    // Modal state is now controlled by database polling (congratulations_modal_acknowledged)
+    // No need for auto-close logic - modal closes when admin clicks Proceed
 
     // Default card styling (no category-based styling)
     const cardStyle = { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
@@ -1481,7 +1427,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Update bid when player changes
     useEffect(() => {
-        if (currentPlayer && sessionId) {
+        if (currentPlayer && sessionId && auctionSettings) {
             const newMinimum = getMinimumBid();
 
             // Mark that we're updating the bid ourselves to prevent subscription from overwriting
@@ -1498,19 +1444,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             });
 
             // Update database to reset bid for new player and clear sold_player_info
+            // Note: do NOT clear sold_player_info here; it is cleared only when admin clicks Proceed.
             supabase
                 .from('auction_sessions')
                 .update({
                     current_bid_amount: newMinimum,
                     current_bid_team_id: null,
-                    sold_player_info: null // Clear sold player info when moving to next player
                 })
                 .eq('id', sessionId)
                 .then(({ error }) => {
                     if (error) {
-                        console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info in useEffect:', error);
+                        console.error('[MODAL DEBUG] ❌ Error updating bid in useEffect:', error);
                     } else {
-                        console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info in useEffect');
+                        console.log('[MODAL DEBUG] ✅ Successfully updated bid in useEffect');
                     }
                     // Reset flag after database update completes
                     setTimeout(() => {
@@ -1518,7 +1464,64 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }, 300);
                 });
         }
-    }, [currentPlayerIndex, currentPlayer, sessionId, supabase]);
+    }, [currentPlayerIndex, currentPlayer, sessionId, supabase, auctionSettings]);
+
+    // Poll database for congratulations modal state (instead of real-time)
+    useEffect(() => {
+        if (!sessionId) return;
+
+        // Function to check modal state from database
+        const checkModalState = async () => {
+            try {
+                const { data: sessionData, error } = await supabase
+                    .from('auction_sessions')
+                    .select('sold_player_info, congratulations_modal_acknowledged')
+                    .eq('id', sessionId)
+                    .single();
+
+                if (error) {
+                    console.error('[MODAL DEBUG] Error checking modal state:', error);
+                    return;
+                }
+
+                if (sessionData) {
+                    const soldPlayerInfo = (sessionData as any).sold_player_info;
+                    const congratulationsAcknowledged = (sessionData as any).congratulations_modal_acknowledged;
+
+                    // If modal was acknowledged, close it
+                    if (congratulationsAcknowledged === true && showSuccessModal) {
+                        console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged is true (polling)', {
+                            timestamp: new Date().toISOString()
+                        });
+                        setShowSuccessModal(false);
+                        setSuccessMessage(null);
+                    }
+
+                    // If sold_player_info exists and modal is not acknowledged, show modal
+                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false && !showSuccessModal) {
+                        console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info exists and not acknowledged (polling)', {
+                            soldInfo: soldPlayerInfo,
+                            timestamp: new Date().toISOString()
+                        });
+                        setSuccessMessage(soldPlayerInfo);
+                        setShowSuccessModal(true);
+                    }
+                }
+            } catch (error) {
+                console.error('[MODAL DEBUG] Error in checkModalState:', error);
+            }
+        };
+
+        // Check immediately
+        checkModalState();
+
+        // Poll every 1 second to check for state changes
+        const intervalId = setInterval(checkModalState, 1000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, [sessionId, supabase, showSuccessModal]);
 
     // Track bid when team is selected and bid amount changes
     useEffect(() => {
@@ -1921,7 +1924,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             // Update session with next player index and sold player info
             // This will trigger real-time updates for all users
-            // Preserve is_skipped_players_mode flag
+            // Preserve is_skipped_players_mode flag and save appropriate index
             console.log('[MODAL DEBUG] 🛒 handleBuyPlayer - Setting sold_player_info and moving to next player', {
                 currentIndex: currentPlayerIndex,
                 nextIndex: nextIndex,
@@ -1929,13 +1932,24 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 timestamp: new Date().toISOString()
             });
 
+            const updateData: any = {
+                sold_player_info: soldPlayerInfo,
+                congratulations_modal_acknowledged: false, // Set to false to show modal to all users
+                is_skipped_players_mode: isSkippedPlayersModeRef.current
+            };
+
+            // Save index to the appropriate column based on mode
+            if (isSkippedPlayersModeRef.current) {
+                // In skipped players mode: save to skipped_players_index
+                updateData.skipped_players_index = nextIndex;
+            } else {
+                // In all players mode: save to current_player_index
+                updateData.current_player_index = nextIndex;
+            }
+
             await supabase
                 .from('auction_sessions')
-                .update({
-                    current_player_index: nextIndex,
-                    sold_player_info: soldPlayerInfo,
-                    is_skipped_players_mode: isSkippedPlayersModeRef.current
-                })
+                .update(updateData)
                 .eq('id', sessionId)
                 .then(({ error }) => {
                     if (error) {
@@ -1948,29 +1962,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             // Update local state immediately for instant UI update
             setCurrentPlayerIndex(nextIndex);
 
-            // Clear sold_player_info after a brief delay to allow modal to show first
-            // This ensures users see the congratulations message before it closes
-            console.log('[MODAL DEBUG] ⏰ Scheduling sold_player_info clear in 2 seconds');
-            setTimeout(async () => {
-                if (sessionId) {
-                    console.log('[MODAL DEBUG] 🧹 Clearing sold_player_info after delay', {
-                        timestamp: new Date().toISOString(),
-                        sessionId: sessionId
-                    });
-                    const { error } = await supabase
-                        .from('auction_sessions')
-                        .update({ sold_player_info: null })
-                        .eq('id', sessionId);
-
-                    if (error) {
-                        console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info after delay:', error);
-                    } else {
-                        console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info after delay');
-                    }
-                }
-            }, 2000); // 2 second delay to show the modal
-
-            // Show success modal for admin (will also show for others via real-time)
+            // Show success modal for admin (will also show for others via database polling)
+            // sold_player_info will be cleared when admin clicks "Proceed" button
             console.log('[MODAL DEBUG] 📢 Setting local modal state for admin', {
                 soldPlayerInfo: soldPlayerInfo,
                 timestamp: new Date().toISOString()
@@ -2100,7 +2093,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         await supabase
                             .from('auction_sessions')
                             .update({
-                                current_player_index: 0,
+                                skipped_players_index: 0,
                                 is_skipped_players_mode: true
                             })
                             .eq('id', sessionId);
@@ -2115,9 +2108,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     await supabase
                         .from('auction_sessions')
                         .update({
-                            current_player_index: nextIndex,
-                            is_skipped_players_mode: true,
-                            sold_player_info: null // Clear sold player info when moving to next player
+                            skipped_players_index: nextIndex,
+                            is_skipped_players_mode: true
                         })
                         .eq('id', sessionId);
                 } else {
@@ -2127,8 +2119,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         .from('auction_sessions')
                         .update({
                             current_player_index: nextIndex,
-                            is_skipped_players_mode: false,
-                            sold_player_info: null // Clear sold player info when moving to next player
+                            is_skipped_players_mode: false
                         })
                         .eq('id', sessionId);
                 }
@@ -3460,23 +3451,29 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             <div className="relative z-10 mt-6">
                                 <button
                                     onClick={async () => {
-                                        console.log('[MODAL DEBUG] 🔘 Continue button clicked - admin closing modal', {
+                                        console.log('[MODAL DEBUG] 🔘 Proceed button clicked - admin acknowledging modal', {
                                             timestamp: new Date().toISOString(),
                                             sessionId: sessionId
                                         });
-                                        setShowSuccessModal(false);
-                                        setSuccessMessage(null);
-                                        // Clear sold_player_info in database when admin closes
+                                        
+                                        // Update database: set congratulations_modal_acknowledged to true and clear sold_player_info
                                         if (sessionId) {
                                             const { error } = await supabase
                                                 .from('auction_sessions')
-                                                .update({ sold_player_info: null })
+                                                .update({ 
+                                                    congratulations_modal_acknowledged: true,
+                                                    sold_player_info: null 
+                                                })
                                                 .eq('id', sessionId);
 
                                             if (error) {
-                                                console.error('[MODAL DEBUG] ❌ Error clearing sold_player_info on Continue click:', error);
+                                                console.error('[MODAL DEBUG] ❌ Error updating congratulations_modal_acknowledged:', error);
+                                                alert('Failed to update. Please try again.');
                                             } else {
-                                                console.log('[MODAL DEBUG] ✅ Successfully cleared sold_player_info on Continue click');
+                                                console.log('[MODAL DEBUG] ✅ Successfully acknowledged congratulations modal');
+                                                // Close modal locally
+                                                setShowSuccessModal(false);
+                                                setSuccessMessage(null);
                                             }
                                         }
                                     }}
