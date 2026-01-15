@@ -437,7 +437,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                 setSessionId(finalSession.id);
                 const initialPlayerIndex = finalSession.current_player_index;
-                setCurrentPlayerIndex(initialPlayerIndex);
+                // Don't set currentPlayerIndex yet - we need to load players first
+                // Then we'll find the correct index in the players array
                 prevPlayerIndexRef.current = initialPlayerIndex;
                 isInitialLoadRef.current = true;
                 setAuctionComplete(finalSession.is_complete);
@@ -719,19 +720,35 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     isSkippedPlayersModeRef.current = false;
                     playersRef.current = mappedPlayers;
                     
+                    // Find the player at initialPlayerIndex in originalPlayerPool, then find it in the current players array
+                    // initialPlayerIndex is the index in originalPlayerPool (which matches mappedPlayers at this point)
+                    let actualPlayerIndex = initialPlayerIndex;
+                    if (initialPlayerIndex >= 0 && initialPlayerIndex < mappedPlayers.length) {
+                        // In all players mode, mappedPlayers should match originalPlayerPool, so index should be the same
+                        actualPlayerIndex = initialPlayerIndex;
+                    } else if (initialPlayerIndex >= mappedPlayers.length) {
+                        // Index is out of bounds, use last valid index
+                        actualPlayerIndex = mappedPlayers.length > 0 ? mappedPlayers.length - 1 : 0;
+                    }
+                    setCurrentPlayerIndex(actualPlayerIndex);
+                    
                     // Ensure database reflects the all players mode state
                     supabase
                         .from('auction_sessions')
                         .update({
                             is_skipped_players_mode: false,
-                            current_player_index: initialPlayerIndex
+                            current_player_index: initialPlayerIndex // Keep the original pool index
                         })
                         .eq('id', finalSession.id)
                         .then(({ error }) => {
                             if (error) {
                                 console.error('Error updating all players mode on load:', error);
                             } else {
-                                console.log('Successfully updated all players mode on load');
+                                console.log('Successfully updated all players mode on load', {
+                                    initialPlayerIndex,
+                                    actualPlayerIndex,
+                                    playerName: mappedPlayers[actualPlayerIndex]?.name
+                                });
                             }
                         });
                 }
@@ -1041,13 +1058,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                     
                     // Show modal when sold_player_info is set and not acknowledged (real-time)
+                    // Only show if congratulations_modal_acknowledged is false or undefined
                     if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && 
-                        congratulationsAcknowledged === false && payload.eventType === 'UPDATE') {
+                        congratulationsAcknowledged !== true && payload.eventType === 'UPDATE') {
                         // Only show if it's a new sold_player_info (was null/undefined before, now has value)
                         const isNewSoldInfo = !oldSoldInfo && soldPlayerInfo;
                         if (isNewSoldInfo || !showSuccessModal) {
                             console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info set (real-time)', {
                                 soldInfo: soldPlayerInfo,
+                                acknowledged: congratulationsAcknowledged,
                                 timestamp: new Date().toISOString()
                             });
                             setSuccessMessage(soldPlayerInfo);
@@ -1056,9 +1075,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                     
                     // Close modal when congratulations_modal_acknowledged is set to true (real-time)
-                    if (congratulationsAcknowledged === true && (oldAcknowledged === false || oldAcknowledged === undefined || oldAcknowledged === null) && 
-                        payload.eventType === 'UPDATE' && showSuccessModal) {
+                    // Close regardless of current modal state to ensure all devices close
+                    if (congratulationsAcknowledged === true && payload.eventType === 'UPDATE') {
                         console.log('[MODAL DEBUG] ❌ Closing modal - congratulations_modal_acknowledged set to true (real-time)', {
+                            oldAcknowledged: oldAcknowledged,
+                            newAcknowledged: congratulationsAcknowledged,
+                            currentModalState: showSuccessModal,
                             timestamp: new Date().toISOString()
                         });
                         setShowSuccessModal(false);
@@ -1066,7 +1088,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                     
                     // Close modal if sold_player_info is cleared (set to null)
-                    if (!soldPlayerInfo && oldSoldInfo && payload.eventType === 'UPDATE' && showSuccessModal) {
+                    // This handles the case where sold_player_info is cleared
+                    if (!soldPlayerInfo && oldSoldInfo && payload.eventType === 'UPDATE') {
                         console.log('[MODAL DEBUG] ❌ Closing modal - sold_player_info cleared (real-time)', {
                             timestamp: new Date().toISOString()
                         });
@@ -1105,8 +1128,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Only update index if it actually changed
                     if (shouldUpdateIndex) {
                         setCurrentPlayerIndex(clampedIndex);
-                        // Update ref after setting state
-                        prevPlayerIndexRef.current = clampedIndex;
+                    // Update ref after setting state
+                    prevPlayerIndexRef.current = clampedIndex;
                     }
                     
                     setAuctionComplete(session.is_complete);
@@ -1281,6 +1304,42 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
+    
+    // Get original player index in the originalPlayerPool (0-based array index)
+    const getOriginalPoolIndex = (player: Player | null): number => {
+        if (!player || originalPlayerPool.length === 0) {
+            return 0;
+        }
+        const index = originalPlayerPool.findIndex(p => p.name === player.name);
+        return index !== -1 ? index : 0;
+    };
+    
+    // Get original player index and total from the full player pool (for display)
+    const getOriginalPlayerInfo = () => {
+        if (!currentPlayer || originalPlayerPool.length === 0) {
+            return { originalIndex: 0, totalPlayers: originalPlayerPool.length || 0 };
+        }
+        
+        // Find the current player in the original pool by name
+        const foundPlayer = originalPlayerPool.find(p => p.name === currentPlayer.name);
+        
+        // If found, use player_order if available (it's already 1-based), otherwise use array index + 1
+        if (foundPlayer) {
+            const displayIndex = foundPlayer.player_order !== undefined 
+                ? foundPlayer.player_order 
+                : originalPlayerPool.findIndex(p => p.name === currentPlayer.name) + 1;
+            return { originalIndex: displayIndex, totalPlayers: originalPlayerPool.length };
+        }
+        
+        // Fallback: use player_order from current player if available
+        if (currentPlayer.player_order !== undefined) {
+            return { originalIndex: currentPlayer.player_order, totalPlayers: originalPlayerPool.length || 0 };
+        }
+        
+        return { originalIndex: 0, totalPlayers: originalPlayerPool.length || 0 };
+    };
+    
+    const { originalIndex, totalPlayers } = getOriginalPlayerInfo();
 
 
     // Get current skipped players - now simply returns from state (loaded from table)
@@ -1951,12 +2010,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             // Otherwise, stay within all players array
             const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
 
+            // Get the next player to find its index in originalPlayerPool
+            const nextPlayer = players[nextIndex];
+            const nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
+
             // Update session with next player index and sold player info
             // This will trigger real-time updates for all users
             // Preserve is_skipped_players_mode flag and save appropriate index
             console.log('[MODAL DEBUG] 🛒 handleBuyPlayer - Setting sold_player_info and moving to next player', {
                 currentIndex: currentPlayerIndex,
                 nextIndex: nextIndex,
+                nextPlayerOriginalIndex: nextPlayerOriginalIndex,
                 soldPlayerInfo: soldPlayerInfo,
                 timestamp: new Date().toISOString()
             });
@@ -1968,12 +2032,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             };
 
             // Save index to the appropriate column based on mode
+            // Always save the index in originalPlayerPool, not the filtered array index
             if (isSkippedPlayersModeRef.current) {
-                // In skipped players mode: save to skipped_players_index
+                // In skipped players mode: save to skipped_players_index (still use filtered index for skipped mode)
                 updateData.skipped_players_index = nextIndex;
             } else {
-                // In all players mode: save to current_player_index
-                updateData.current_player_index = nextIndex;
+                // In all players mode: save to current_player_index using originalPlayerPool index
+                updateData.current_player_index = nextPlayerOriginalIndex;
             }
 
             await supabase
@@ -2028,9 +2093,40 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 return;
             }
 
+            // Check if player has already been sold (bought)
+            if (boughtPlayerNames.has(currentPlayer.name)) {
+                alert(`${currentPlayer.name} has already been bought and cannot be skipped.`);
+                    return;
+                }
+                
+            // Double-check in database to ensure player hasn't been bought
+            const { data: existingPlayer, error: checkError } = await supabase
+                .from('auction_players')
+                .select('id, team_id')
+                .eq('session_id', sessionId)
+                .eq('player_name', currentPlayer.name)
+                .maybeSingle();
+
+            if (checkError) {
+                console.error('Error checking for existing player:', checkError);
+                throw checkError;
+            }
+
+            if (existingPlayer) {
+                // Find which team has this player
+                const { data: existingTeam } = await supabase
+                    .from('auction_teams')
+                    .select('name, team_number')
+                    .eq('id', existingPlayer.team_id)
+                    .single();
+                const teamName = existingTeam?.name || `Team ${existingTeam?.team_number || 'Unknown'}`;
+                alert(`${currentPlayer.name} has already been bought by ${teamName} and cannot be skipped.`);
+                    return;
+                }
+                
             // Get the player pool ID for the current player
             const { data: playerPoolData } = await supabase
-                .from('auction_player_pool')
+                            .from('auction_player_pool')
                 .select('id, player_order')
                 .eq('session_id', sessionId)
                 .eq('name', currentPlayer.name)
@@ -2143,11 +2239,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         .eq('id', sessionId);
                 } else {
                     const nextIndex = currentPlayerIndex + 1;
+                    // Get the next player to find its index in originalPlayerPool
+                    const nextPlayer = players[nextIndex];
+                    const nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
                     setCurrentPlayerIndex(nextIndex);
                     await supabase
                         .from('auction_sessions')
                         .update({
-                            current_player_index: nextIndex,
+                            current_player_index: nextPlayerOriginalIndex, // Save index in originalPlayerPool
                             is_skipped_players_mode: false
                         })
                         .eq('id', sessionId);
@@ -3889,13 +3988,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
-                                <span>Player {currentPlayerIndex + 1} of {players.length}</span>
-                                <span>{remainingPlayers} remaining</span>
+                                <span>Player {originalIndex} of {totalPlayers}</span>
+                                <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
                             <div className="w-full rounded-full h-3" style={{ backgroundColor: '#1F2937' }}>
                                 <div
                                     className="h-3 rounded-full transition-all duration-300"
-                                    style={{ backgroundColor: '#22C55E', width: `${((currentPlayerIndex + 1) / players.length) * 100}%` }}
+                                    style={{ backgroundColor: '#22C55E', width: `${(originalIndex / totalPlayers) * 100}%` }}
                                 ></div>
                             </div>
                         </div>
@@ -4227,13 +4326,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
-                                <span>Player {currentPlayerIndex + 1} of {players.length}</span>
-                                <span>{remainingPlayers} remaining</span>
+                                <span>Player {originalIndex} of {totalPlayers}</span>
+                                <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
                             <div className="w-full rounded-full h-3" style={{ backgroundColor: '#1F2937' }}>
                                 <div
                                     className="h-3 rounded-full transition-all duration-300"
-                                    style={{ backgroundColor: '#22C55E', width: `${((currentPlayerIndex + 1) / players.length) * 100}%` }}
+                                    style={{ backgroundColor: '#22C55E', width: `${(originalIndex / totalPlayers) * 100}%` }}
                                 ></div>
                             </div>
                         </div>
