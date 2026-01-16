@@ -299,6 +299,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [frozenSkippedPlayers, setFrozenSkippedPlayers] = useState<Player[]>([]);
     const [isTopPlayersSheetOpen, setIsTopPlayersSheetOpen] = useState(false);
     const [isTeamDynamicsSheetOpen, setIsTeamDynamicsSheetOpen] = useState(false);
+    const [teamDynamicsTab, setTeamDynamicsTab] = useState<'list' | 'select'>('list'); // Tab state for Team Dynamics sheet
     const [isPlayerListSheetOpen, setIsPlayerListSheetOpen] = useState(false);
     const [playerListFilter, setPlayerListFilter] = useState<'All' | 'Sold' | 'Unsold'>('All');
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('All');
@@ -5058,62 +5059,93 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 onClose={() => {
                     setIsTeamDynamicsSheetOpen(false);
                     setSelectedTeamFilters(new Set()); // Reset filters when closing
+                    setTeamDynamicsTab('list'); // Reset to list tab when closing
                 }}
                 title="Team Dynamics"
             >
-                <div className="space-y-4">
-                    {/* Team Filter */}
-                    <div className="rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                        <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter Teams:</div>
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                onClick={() => setSelectedTeamFilters(new Set())}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
-                                    ? 'text-white'
-                                    : 'border'
-                                    }`}
-                                style={selectedTeamFilters.size === 0
-                                    ? { backgroundColor: '#E11D48' }
-                                    : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
-                                }
-                            >
-                                All
-                            </button>
-                            {teams.map(team => (
+                {/* Tabs */}
+                <div className="flex gap-2 mb-4 border-b" style={{ borderColor: '#1F2937' }}>
+                    <button
+                        onClick={() => setTeamDynamicsTab('list')}
+                        className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
+                            teamDynamicsTab === 'list' ? 'text-white border-b-2' : 'text-gray-400'
+                        }`}
+                        style={teamDynamicsTab === 'list' 
+                            ? { borderBottomColor: '#3B82F6' }
+                            : {}
+                        }
+                    >
+                        Team List
+                    </button>
+                    <button
+                        onClick={() => setTeamDynamicsTab('select')}
+                        className={`flex-1 py-2 px-4 text-sm font-medium transition-colors ${
+                            teamDynamicsTab === 'select' ? 'text-white border-b-2' : 'text-gray-400'
+                        }`}
+                        style={teamDynamicsTab === 'select' 
+                            ? { borderBottomColor: '#3B82F6' }
+                            : {}
+                        }
+                    >
+                        Select Team
+                    </button>
+                </div>
+
+                {/* Tab Content */}
+                {teamDynamicsTab === 'list' ? (
+                    <div className="space-y-4">
+                        {/* Team Filter */}
+                        <div className="rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter Teams:</div>
+                            <div className="flex flex-wrap gap-2">
                                 <button
-                                    key={team.id}
-                                    onClick={() => {
-                                        const newFilters = new Set(selectedTeamFilters);
-                                        if (newFilters.has(team.id)) {
-                                            newFilters.delete(team.id);
-                                        } else {
-                                            newFilters.add(team.id);
-                                        }
-                                        setSelectedTeamFilters(newFilters);
-                                    }}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
+                                    onClick={() => setSelectedTeamFilters(new Set())}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
                                         ? 'text-white'
                                         : 'border'
                                         }`}
-                                    style={selectedTeamFilters.has(team.id)
+                                    style={selectedTeamFilters.size === 0
                                         ? { backgroundColor: '#E11D48' }
                                         : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
                                     }
                                 >
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedTeamFilters.has(team.id)}
-                                        onChange={() => { }} // Handled by button onClick
-                                        className="w-3 h-3"
-                                    />
-                                    <span className="truncate max-w-[80px]">{team.name}</span>
+                                    All
                                 </button>
-                            ))}
+                                {teams.map(team => (
+                                    <button
+                                        key={team.id}
+                                        onClick={() => {
+                                            const newFilters = new Set(selectedTeamFilters);
+                                            if (newFilters.has(team.id)) {
+                                                newFilters.delete(team.id);
+                                            } else {
+                                                newFilters.add(team.id);
+                                            }
+                                            setSelectedTeamFilters(newFilters);
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
+                                            ? 'text-white'
+                                            : 'border'
+                                            }`}
+                                        style={selectedTeamFilters.has(team.id)
+                                            ? { backgroundColor: '#E11D48' }
+                                            : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
+                                        }
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedTeamFilters.has(team.id)}
+                                            onChange={() => { }} // Handled by button onClick
+                                            className="w-3 h-3"
+                                        />
+                                        <span className="truncate max-w-[80px]">{team.name}</span>
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
 
-                    {/* Teams List */}
-                    <div className="space-y-3">
+                        {/* Teams List */}
+                        <div className="space-y-3">
                         {teams
                             .filter(team => selectedTeamFilters.size === 0 || selectedTeamFilters.has(team.id))
                             .map(team => {
@@ -5239,8 +5271,179 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     </div>
                                 );
                             })}
+                        </div>
                     </div>
-                </div>
+                ) : (
+                    /* Select Team Tab - Team Cards Grid */
+                    <div className="space-y-4">
+                        <div className="text-sm mb-2" style={{ color: '#9CA3AF' }}>
+                            Select a team to bid on the current player
+                        </div>
+                        <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2`}>
+                            {teams.map(team => {
+                                // Calculate maximum bid this team can make for current player
+                                // They need to reserve minimum bid for remaining players
+                                // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+                                const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
+                                const maxBid = team.budget - minimumRequiredForRemaining;
+
+                                // Calculate what the new bid would be if this team is selected
+                                // Use current bid if it's >= minimum, otherwise calculate increment
+                                const minimumBid = getMinimumBid();
+                                let newBid: number;
+                                if (currentBid >= minimumBid) {
+                                    // Use current bid (could be custom bid)
+                                    newBid = currentBid;
+                                } else {
+                                    // Calculate increment
+                                    const increment = getBidIncrement(currentBid);
+                                    newBid = currentBid + increment;
+                                }
+
+                                // Check if team can afford the new bid and if it's within their max bid
+                                // Use a small tolerance (0.01) to handle floating point precision issues
+                                const canAfford = team.budget >= newBid;
+                                const withinMaxBid = newBid <= maxBid + 0.01;
+                                const hasSpace = team.players.length < getPlayersPerTeam();
+
+                                // Check category limits
+                                const currentPlayerCategory = currentPlayer?.category;
+                                let withinCategoryLimit = true;
+                                if (currentPlayerCategory && auctionSettings?.category_limits && auctionSettings.category_limits[currentPlayerCategory]) {
+                                    const categoryLimit = auctionSettings.category_limits[currentPlayerCategory];
+                                    // Count how many players of this category the team already has
+                                    // Use originalPlayerPool to get category info, not the current players array
+                                    // (which might be filtered to skipped players only)
+                                    const categoryCount = team.players.filter(p => {
+                                        // Need to get the category from the original player pool
+                                        const playerInPool = originalPlayerPool.find(pl => pl.name === p.name);
+                                        return playerInPool?.category === currentPlayerCategory;
+                                    }).length;
+                                    withinCategoryLimit = categoryCount < categoryLimit;
+                                }
+
+                                const isDisabled = !canAfford || !hasSpace || !withinMaxBid || maxBid < getMinimumBid() || !withinCategoryLimit;
+
+                                const isViewOnly = !canEdit;
+                                const finalDisabled = isDisabled || isViewOnly;
+
+                                // Determine team status for coloring
+                                const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
+                                const isSelected = selectedTeamId === team.id;
+
+                                // Status-based colors
+                                let backgroundColor = '#111827';
+                                let borderColor = '#1F2937';
+
+                                if (isSelected) {
+                                    // Red for selected team
+                                    backgroundColor = '#7F1D1D';
+                                    borderColor = '#DC2626';
+                                } else if (finalDisabled) {
+                                    // Red for cannot bid (no budget or team full)
+                                    backgroundColor = '#111827';
+                                    borderColor = '#DC2626';
+                                } else if (isLowBudget) {
+                                    // Yellow/Orange for low budget warning
+                                    backgroundColor = '#78350F';
+                                    borderColor = '#F59E0B';
+                                } else if (canAfford && hasSpace && withinMaxBid) {
+                                    // Blue for can bid
+                                    backgroundColor = '#1E3A8A';
+                                    borderColor = '#3B82F6';
+                                } else {
+                                    // Default gray
+                                    backgroundColor = '#111827';
+                                    borderColor = '#1F2937';
+                                }
+
+                                return (
+                                    <button
+                                        key={team.id}
+                                        onClick={() => {
+                                            if (!finalDisabled) {
+                                                handleTeamSelection(team.id);
+                                                setIsTeamDynamicsSheetOpen(false); // Close sheet after selection
+                                            }
+                                        }}
+                                        disabled={finalDisabled}
+                                        className={`${teams.length > 10 ? 'p-2 md:p-2.5' : 'p-2 md:p-2.5'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                            ? 'shadow-md' // Active - will add custom style
+                                            : finalDisabled
+                                                ? 'opacity-50 cursor-not-allowed'
+                                                : ''
+                                            }`}
+                                        style={{ backgroundColor, borderColor }}
+                                    >
+                                        <div className="flex items-start gap-1.5 mb-2 w-full">
+                                            {(() => {
+                                                const logoUrl = getTeamLogo(team.logoUrl);
+                                                const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
+                                                const logoSize = teams.length > 10 ? 36 : 32;
+                                                if (isProxyUrl) {
+                                                    return (
+                                                        <img
+                                                            key={`team-select-${team.id}-${sessionName || 'default'}`}
+                                                            src={logoUrl}
+                                                            alt={`${team.name} logo`}
+                                                            width={logoSize}
+                                                            height={logoSize}
+                                                            className="object-contain flex-shrink-0 mt-0.5"
+                                                        />
+                                                    );
+                                                }
+                                                return (
+                                                    <Image
+                                                        key={`team-select-${team.id}-${sessionName || 'default'}`}
+                                                        src={logoUrl}
+                                                        alt={`${team.name} logo`}
+                                                        width={logoSize}
+                                                        height={logoSize}
+                                                        className="object-contain flex-shrink-0 mt-0.5"
+                                                        unoptimized
+                                                    />
+                                                );
+                                            })()}
+                                            <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                        </div>
+                                        <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                            Budget: ₹{team.budget.toLocaleString()}
+                                        </div>
+                                        <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                            Players: {team.players.length}/{getPlayersPerTeam()}
+                                        </div>
+                                        {/* Display category limits below Players */}
+                                        {auctionSettings?.category_limits && Object.keys(auctionSettings.category_limits).length > 0 && (
+                                            <div className={`${teams.length > 10 ? 'text-xs' : 'text-xs'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                {Object.entries(auctionSettings.category_limits).map(([category, limit], index) => {
+                                                    // Count how many players of this category the team already has
+                                                    // Use originalPlayerPool to get category info, not the current players array
+                                                    // (which might be filtered to skipped players only)
+                                                    const categoryCount = team.players.filter(p => {
+                                                        const playerInPool = originalPlayerPool.find(pl => pl.name === p.name);
+                                                        return playerInPool?.category === category;
+                                                    }).length;
+                                                    return (
+                                                        <span key={category}>
+                                                            {category}: {categoryCount}/{limit}
+                                                            {index < Object.keys(auctionSettings.category_limits!).length - 1 && '  '}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {maxBid >= getMinimumBid() && (
+                                            <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
+                                                Max Bid: ₹{maxBid.toLocaleString()}
+                                            </div>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </BottomSheet>
 
 
