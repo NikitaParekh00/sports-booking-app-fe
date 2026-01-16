@@ -262,8 +262,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         const otherCountAfterBuy = isCurrentPlayerMVP ? currentOtherCount : currentOtherCount + 1;
         
         // Calculate remaining slots needed
+        // Teams need: 2 MVP players + 6 other players = 8 total players
         const remainingMVPSlots = Math.max(0, 2 - mvpCountAfterBuy);
-        const remainingOtherSlots = Math.max(0, 8 - otherCountAfterBuy);
+        const remainingOtherSlots = Math.max(0, 6 - otherCountAfterBuy);
         
         // Calculate minimum required
         const mvpMinimum = remainingMVPSlots * 200000; // ₹200,000 per MVP
@@ -5390,7 +5391,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             {teams.map(team => {
                                 // Calculate maximum bid this team can make for current player
                                 // They need to reserve minimum bid for remaining players
-                                // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+                                // Teams need: 2 MVP players (₹200,000 each) + 6 other players (regular minimum bid each)
                                 const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
                                 const maxBid = team.budget - minimumRequiredForRemaining;
 
