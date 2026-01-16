@@ -1085,16 +1085,69 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     }
                                 });
                         } else if (!shouldBeInSkippedMode && isSkippedPlayersModeRef.current) {
-                            // Database says false but we're in skipped mode
-                            // This could be:
-                            // 1. A race condition (we just set it to true but subscription fired before update)
-                            // 2. Another admin explicitly switched it back
-                            // 3. The database update failed
-
-                            console.log('Real-time subscription: Database says false, but we are in skipped mode. Ignoring to prevent race condition.');
-                            // Don't auto-switch back - let the user explicitly switch via button
-                            // This prevents the flickering issue where it switches back immediately
-                            return;
+                            // Database says false but we're in skipped mode - switch back to all players
+                            console.log('Real-time subscription: Switching back to all players mode');
+                            
+                            // Double-check we're still in skipped mode (race condition protection)
+                            if (!isSkippedPlayersModeRef.current) {
+                                console.log('Real-time subscription: Already switched back, skipping reload');
+                                return;
+                            }
+                            
+                            // Switch back to all players - reload from original player pool
+                            supabase
+                                .from('auction_player_pool')
+                                .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                                .eq('session_id', sessionId)
+                                .order('player_order', { ascending: true })
+                                .then(({ data: playerPoolData }) => {
+                                    console.log('Real-time subscription: Loaded all players', playerPoolData?.length);
+                                    
+                                    // Double-check again before setting (race condition protection)
+                                    if (!isSkippedPlayersModeRef.current) {
+                                        console.log('Real-time subscription: Mode changed while loading, skipping set');
+                                        return;
+                                    }
+                                    
+                                    if (playerPoolData) {
+                                        const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
+                                            name: p.name,
+                                            photo: p.photo || undefined,
+                                            age: p.age || undefined,
+                                            played_s1: p.played_s1 || undefined,
+                                            experience: p.experience || undefined,
+                                            active_sport: p.active_sport || undefined,
+                                            skill: p.skill || undefined,
+                                            batting_hand: p.batting_hand || undefined,
+                                            bowling_hand: p.bowling_hand || undefined,
+                                            wing: p.wing || undefined,
+                                            flat_no: p.flat_no || undefined,
+                                            phone: p.phone || undefined,
+                                            category: p.category || undefined,
+                                            player_order: p.player_order || undefined
+                                        }));
+                                        
+                                        console.log('Real-time subscription: Setting all players', mappedPlayers.length);
+                                        setPlayers(mappedPlayers);
+                                        setOriginalPlayerPool(mappedPlayers);
+                                        setIsSkippedPlayersMode(false);
+                                        // Update ref immediately to prevent race conditions
+                                        isSkippedPlayersModeRef.current = false;
+                                        playersRef.current = mappedPlayers;
+                                        
+                                        // Restore the correct index based on current_player_index from database
+                                        // current_player_index is an index in originalPlayerPool
+                                        const savedIndex = session.current_player_index ?? 0;
+                                        let actualIndex = 0;
+                                        if (savedIndex >= 0 && savedIndex < mappedPlayers.length) {
+                                            actualIndex = savedIndex;
+                                        } else if (savedIndex >= mappedPlayers.length) {
+                                            actualIndex = mappedPlayers.length > 0 ? mappedPlayers.length - 1 : 0;
+                                        }
+                                        setCurrentPlayerIndex(actualIndex);
+                                        prevPlayerIndexRef.current = actualIndex;
+                                    }
+                                });
                             }
                     }
 
