@@ -180,7 +180,7 @@ export default function TournamentDetailPage() {
                 <div className="max-w-6xl mx-auto px-4 py-4">
                     <button
                         onClick={() => router.push('/scoring/tournaments')}
-                        className="flex items-center gap-2 text-gray-600 mb-4"
+                        className="flex items-center gap-2 text-gray-600 mb-4 text-sm md:text-base"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -188,29 +188,38 @@ export default function TournamentDetailPage() {
                         Back to Tournaments
                     </button>
 
-                    <div className="flex items-start justify-between">
-                        <div>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-3 mb-2">
-                                <span className="text-4xl">{sportIcons[tournament.sport]}</span>
-                                <div>
-                                    <h1 className="text-2xl font-semibold text-gray-900">{tournament.name}</h1>
-                                    <p className="text-gray-600 text-sm mt-1">{tournament.description || 'No description'}</p>
+                                <span className="text-3xl md:text-4xl flex-shrink-0">{sportIcons[tournament.sport]}</span>
+                                <div className="min-w-0 flex-1">
+                                    <h1 className="text-xl md:text-2xl font-semibold text-gray-900 truncate">{tournament.name}</h1>
+                                    <p className="text-gray-600 text-xs md:text-sm mt-1 line-clamp-2">{tournament.description || 'No description'}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-4 mt-3 text-sm text-gray-600">
-                                <div>📍 {tournament.location || 'No location'}</div>
-                                <div>📅 {new Date(tournament.start_date).toLocaleDateString()}</div>
-                                <div>👥 {participants.length} / {tournament.max_participants} participants</div>
+                            <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-3 text-xs md:text-sm text-gray-600">
+                                <div className="flex items-center gap-1">
+                                    <span>📍</span>
+                                    <span className="truncate">{tournament.location || 'No location'}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span>📅</span>
+                                    <span>{new Date(tournament.start_date).toLocaleDateString()}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <span>👥</span>
+                                    <span>{participants.length} / {tournament.max_participants} participants</span>
+                                </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(tournament.status)}`}>
+                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                            <div className={`px-2 md:px-3 py-1 rounded-full text-xs md:text-sm font-medium ${getStatusColor(tournament.status)}`}>
                                 {tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
                             </div>
                             {tournament.status === 'upcoming' && (
                                 <button
                                     onClick={handleStartTournament}
-                                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                                    className="bg-green-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-md hover:bg-green-700 text-xs md:text-sm whitespace-nowrap"
                                 >
                                     Start Tournament
                                 </button>
@@ -221,9 +230,9 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-gray-200 bg-white sticky top-[140px] z-10">
+            <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10">
                 <div className="max-w-6xl mx-auto px-4">
-                    <div className="flex gap-6 overflow-x-auto">
+                    <div className="flex gap-3 md:gap-6 overflow-x-auto scrollbar-hide -mb-px">
                         {[
                             { id: 'overview', label: 'Overview' },
                             { id: 'participants', label: `Participants (${participants.length})` },
@@ -235,7 +244,7 @@ export default function TournamentDetailPage() {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as TabType)}
-                                className={`py-4 px-2 border-b-2 font-medium text-sm transition-colors ${
+                                className={`py-3 md:py-4 px-2 border-b-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                                     activeTab === tab.id
                                         ? 'border-red-600 text-red-600'
                                         : 'border-transparent text-gray-600 hover:text-gray-900'
@@ -249,7 +258,7 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Content */}
-            <div className="max-w-6xl mx-auto px-4 py-6">
+            <div className="max-w-6xl mx-auto px-4 py-4 md:py-6">
                 {activeTab === 'overview' && (
                     <TournamentOverview tournament={tournament} participants={participants} />
                 )}
@@ -293,29 +302,29 @@ function TournamentOverview({ tournament, participants }: { tournament: Tourname
     return (
         <div className="space-y-6">
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-600 mb-1">Total Participants</div>
-                    <div className="text-2xl font-semibold text-gray-900">{participants.length}</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
+                    <div className="text-xs md:text-sm text-gray-600 mb-1">Total Participants</div>
+                    <div className="text-xl md:text-2xl font-semibold text-gray-900">{participants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-600 mb-1">Confirmed</div>
-                    <div className="text-2xl font-semibold text-green-600">{confirmedParticipants.length}</div>
+                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
+                    <div className="text-xs md:text-sm text-gray-600 mb-1">Confirmed</div>
+                    <div className="text-xl md:text-2xl font-semibold text-green-600">{confirmedParticipants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-600 mb-1">Eliminated</div>
-                    <div className="text-2xl font-semibold text-red-600">{eliminatedParticipants.length}</div>
+                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
+                    <div className="text-xs md:text-sm text-gray-600 mb-1">Eliminated</div>
+                    <div className="text-xl md:text-2xl font-semibold text-red-600">{eliminatedParticipants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <div className="text-sm text-gray-600 mb-1">Entry Fee</div>
-                    <div className="text-2xl font-semibold text-gray-900">₹{tournament.entry_fee}</div>
+                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
+                    <div className="text-xs md:text-sm text-gray-600 mb-1">Entry Fee</div>
+                    <div className="text-xl md:text-2xl font-semibold text-gray-900">₹{tournament.entry_fee}</div>
                 </div>
             </div>
 
             {/* Tournament Info */}
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Tournament Information</h2>
-                <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
+                <h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4">Tournament Information</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
                     <div>
                         <div className="text-gray-600 mb-1">Format</div>
                         <div className="font-medium text-gray-900">
@@ -561,24 +570,24 @@ function ParticipantsTab({
                         <table className="w-full">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Phone</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                                 {participants.map((participant, index) => (
                                     <tr key={participant.id} className="hover:bg-gray-50">
-                                        <td className="px-4 py-3 text-sm text-gray-900">{index + 1}</td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">{index + 1}</td>
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
                                             {editingId === participant.id ? (
                                                 <input
                                                     type="text"
                                                     value={editName}
                                                     onChange={(e) => setEditName(e.target.value)}
-                                                    className="w-full px-2 py-1 border border-gray-300 rounded"
+                                                    className="w-full px-2 py-1 border border-gray-300 rounded text-xs md:text-sm"
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             handleEditParticipant(participant.id);
@@ -601,12 +610,12 @@ function ParticipantsTab({
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-600">{participant.phone || '-'}</td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-600 hidden sm:table-cell">{participant.phone || '-'}</td>
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
                                             <select
                                                 value={participant.status}
                                                 onChange={(e) => handleUpdateStatus(participant.id, e.target.value)}
-                                                className="text-sm border border-gray-300 rounded px-2 py-1"
+                                                className="text-xs md:text-sm border border-gray-300 rounded px-1 md:px-2 py-1 w-full"
                                             >
                                                 <option value="registered">Registered</option>
                                                 <option value="confirmed">Confirmed</option>
@@ -614,10 +623,10 @@ function ParticipantsTab({
                                                 <option value="winner">Winner</option>
                                             </select>
                                         </td>
-                                        <td className="px-4 py-3 text-sm">
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
                                             <button
                                                 onClick={() => handleRemoveParticipant(participant.id)}
-                                                className="text-red-600 hover:text-red-700"
+                                                className="text-red-600 hover:text-red-700 text-xs md:text-sm"
                                             >
                                                 Remove
                                             </button>

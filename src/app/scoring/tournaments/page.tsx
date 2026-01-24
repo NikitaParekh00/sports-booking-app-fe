@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabaseClient";
+import PhoneInput from "@/components/PhoneInput";
+import { opponentManager } from "@/lib/opponentManagement";
 
 const sports = [
     { id: "cricket", name: "Cricket", icon: "🏏" },
@@ -82,13 +84,13 @@ export default function TournamentsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-white p-4">
+        <div className="min-h-screen bg-white p-4 md:p-6">
             <div className="max-w-4xl mx-auto">
-                <div className="flex items-center justify-between mb-6">
-                    <h1 className="text-2xl font-semibold text-gray-900">Tournaments</h1>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                    <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Tournaments</h1>
                     <button
                         onClick={() => setShowCreateForm(true)}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm md:text-base w-full sm:w-auto"
                     >
                         Create Tournament
                     </button>
@@ -154,6 +156,12 @@ export default function TournamentsPage() {
 }
 
 function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => void }) {
+    // Pickleball-specific defaults
+    const isPickleball = sport === 'pickleball';
+    const defaultPoints = isPickleball ? 11 : 21;
+    const defaultMaxPoints = isPickleball ? 15 : 30;
+    const defaultSets = isPickleball ? 3 : 3;
+    
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -163,7 +171,16 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
         max_participants: 16,
         entry_fee: 0,
         prize_pool: 0,
+        format: 'single_elimination',
+        sets_per_match: defaultSets,
+        points_per_set: defaultPoints,
+        win_by_two: true, // Always true for pickleball
+        max_points: defaultMaxPoints,
+        seeding_method: 'random',
     });
+    const [participants, setParticipants] = useState<Array<{ name: string; phone: string }>>([]);
+    const [newParticipantName, setNewParticipantName] = useState('');
+    const [newParticipantPhone, setNewParticipantPhone] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const supabase = createClient();
 
@@ -196,16 +213,66 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                 return;
             }
 
-            const { error } = await supabase
+            // Ensure numeric fields are valid numbers, not NaN
+            const tournamentData = {
+                name: formData.name.trim(),
+                description: formData.description.trim(),
+                start_date: formData.start_date,
+                end_date: formData.end_date,
+                location: formData.location.trim(),
+                max_participants: Number(formData.max_participants) || 16,
+                entry_fee: Number(formData.entry_fee) || 0,
+                prize_pool: Number(formData.prize_pool) || 0,
+                format: formData.format,
+                sets_per_match: Number(formData.sets_per_match) || 3,
+                points_per_set: Number(formData.points_per_set) || 21,
+                win_by_two: formData.win_by_two,
+                max_points: Number(formData.max_points) || 30,
+                seeding_method: formData.seeding_method,
+                created_by: userData.user_id,
+                sport,
+                status: 'upcoming',
+            };
+
+            // Create tournament
+            const { data: tournament, error: tournamentError } = await supabase
                 .from('tournaments')
-                .insert({
-                    ...formData,
-                    created_by: userData.user_id,
-                    sport,
-                    status: 'upcoming',
+                .insert(tournamentData)
+                .select()
+                .single();
+
+            if (tournamentError) throw tournamentError;
+
+            // Add participants if any were provided
+            if (participants.length > 0 && tournament) {
+                const participantPromises = participants.map(async (participant) => {
+                    let userId = null;
+                    if (participant.phone) {
+                        const phoneValidation = opponentManager.validatePhoneNumber(participant.phone);
+                        if (phoneValidation.isValid) {
+                            const opponentInfo = await opponentManager.findOrCreateOpponent(participant.phone, participant.name);
+                            userId = opponentInfo.user_id;
+                        }
+                    }
+
+                    return supabase
+                        .from('tournament_participants')
+                        .insert({
+                            tournament_id: tournament.id,
+                            user_id: userId,
+                            player_name: participant.name,
+                            phone: participant.phone ? `+91-${participant.phone.replace(/\D/g, '')}` : null,
+                            status: 'registered',
+                        });
                 });
 
-            if (error) throw error;
+                const results = await Promise.all(participantPromises);
+                const errors = results.filter(r => r.error);
+                if (errors.length > 0) {
+                    console.error('Some participants failed to add:', errors);
+                    // Continue anyway - tournament is created
+                }
+            }
 
             alert('Tournament created successfully!');
             onBack();
@@ -218,20 +285,20 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
     };
 
     return (
-        <div className="min-h-screen bg-white p-4">
-            <div className="max-w-md mx-auto">
+        <div className="min-h-screen bg-white p-4 md:p-6">
+            <div className="max-w-4xl mx-auto">
                 <div className="mb-6">
                     <button
                         onClick={onBack}
-                        className="flex items-center gap-2 text-gray-600 mb-4"
+                        className="flex items-center gap-2 text-gray-600 mb-4 text-sm md:text-base"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                         Back to Tournaments
                     </button>
-                    <h1 className="text-2xl font-semibold text-gray-900">Create Tournament</h1>
-                    <p className="text-gray-600 mt-1">
+                    <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Create Tournament</h1>
+                    <p className="text-gray-600 mt-1 text-sm md:text-base">
                         {sports.find(s => s.id === sport)?.name}
                     </p>
                 </div>
@@ -262,7 +329,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Start Date
@@ -272,7 +339,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 required
                                 value={formData.start_date}
                                 onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                             />
                         </div>
                         <div>
@@ -284,7 +351,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 required
                                 value={formData.end_date}
                                 onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                             />
                         </div>
                     </div>
@@ -302,7 +369,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                         />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
                                 Max Participants
@@ -311,8 +378,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 type="number"
                                 min="2"
                                 value={formData.max_participants}
-                                onChange={(e) => setFormData({ ...formData, max_participants: parseInt(e.target.value) })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const value = e.target.value === '' ? 16 : parseInt(e.target.value) || 16;
+                                    setFormData({ ...formData, max_participants: value });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                             />
                         </div>
                         <div>
@@ -323,8 +393,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 type="number"
                                 min="0"
                                 value={formData.entry_fee}
-                                onChange={(e) => setFormData({ ...formData, entry_fee: parseFloat(e.target.value) })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                                    setFormData({ ...formData, entry_fee: value });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                             />
                         </div>
                         <div>
@@ -335,16 +408,245 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 type="number"
                                 min="0"
                                 value={formData.prize_pool}
-                                onChange={(e) => setFormData({ ...formData, prize_pool: parseFloat(e.target.value) })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                                    setFormData({ ...formData, prize_pool: value });
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                             />
                         </div>
+                    </div>
+
+                    {/* Tournament Format Section */}
+                    <div className="border-t border-gray-200 pt-6 mt-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Tournament Format</h2>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Tournament Type *
+                                </label>
+                                <select
+                                    value={formData.format}
+                                    onChange={(e) => setFormData({ ...formData, format: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    required
+                                >
+                                    <option value="single_elimination">Single Elimination</option>
+                                    <option value="double_elimination">Double Elimination</option>
+                                    <option value="round_robin">Round Robin</option>
+                                    <option value="round_robin_knockout">Round Robin + Knockout</option>
+                                    <option value="swiss">Swiss System</option>
+                                </select>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {formData.format === 'single_elimination' && (isPickleball 
+                                        ? 'Players/teams are eliminated after one loss. Standard for most pickleball tournaments.'
+                                        : 'Players are eliminated after one loss')}
+                                    {formData.format === 'double_elimination' && (isPickleball
+                                        ? 'Players/teams need two losses to be eliminated. More competitive format.'
+                                        : 'Players need two losses to be eliminated')}
+                                    {formData.format === 'round_robin' && (isPickleball
+                                        ? 'All players/teams play against each other. Great for smaller tournaments.'
+                                        : 'All players play against each other')}
+                                    {formData.format === 'round_robin_knockout' && (isPickleball
+                                        ? 'Round robin stage to determine seeding, followed by knockout playoffs.'
+                                        : 'Round robin stage followed by knockout')}
+                                    {formData.format === 'swiss' && (isPickleball
+                                        ? 'Players/teams with similar win-loss records are paired each round.'
+                                        : 'Players with similar records are paired')}
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Games per Match {isPickleball && '(Pickleball)'}
+                                    </label>
+                                    <select
+                                        value={formData.sets_per_match}
+                                        onChange={(e) => setFormData({ ...formData, sets_per_match: parseInt(e.target.value) })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    >
+                                        <option value={3}>Best of 3 {isPickleball && '(Standard)'}</option>
+                                        <option value={5}>Best of 5</option>
+                                    </select>
+                                    {isPickleball && (
+                                        <p className="text-xs text-gray-500 mt-1">Pickleball matches are typically best of 3 games</p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Points per Game {isPickleball && '(Pickleball)'}
+                                    </label>
+                                    {isPickleball ? (
+                                        <select
+                                            value={formData.points_per_set}
+                                            onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        >
+                                            <option value={11}>11 points (Standard)</option>
+                                            <option value={15}>15 points</option>
+                                            <option value={21}>21 points</option>
+                                        </select>
+                                    ) : (
+                                        <select
+                                            value={formData.points_per_set}
+                                            onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        >
+                                            <option value={15}>15 points</option>
+                                            <option value={21}>21 points</option>
+                                        </select>
+                                    )}
+                                    {isPickleball && (
+                                        <p className="text-xs text-gray-500 mt-1">Standard pickleball games are played to 11 points (win by 2)</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Maximum Points (Cap)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={isPickleball ? "13" : "21"}
+                                        max={isPickleball ? "21" : "30"}
+                                        value={formData.max_points}
+                                        onChange={(e) => setFormData({ ...formData, max_points: parseInt(e.target.value) || defaultMaxPoints })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        {isPickleball 
+                                            ? "Maximum points in a game (typically 15 for 11-point games, prevents infinite deuce)"
+                                            : "Maximum points allowed in a set (prevents infinite games)"}
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Seeding Method
+                                    </label>
+                                    <select
+                                        value={formData.seeding_method}
+                                        onChange={(e) => setFormData({ ...formData, seeding_method: e.target.value })}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    >
+                                        <option value="random">Random</option>
+                                        <option value="manual">Manual</option>
+                                        <option value="ranking">By Ranking</option>
+                                        <option value="registration_order">Registration Order</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.win_by_two}
+                                        onChange={(e) => setFormData({ ...formData, win_by_two: e.target.checked })}
+                                        className="rounded border-gray-300"
+                                        disabled={isPickleball}
+                                    />
+                                    <span className="text-sm text-gray-700">
+                                        Win by 2 points {isPickleball && '(Required for Pickleball)'}
+                                    </span>
+                                </label>
+                                <p className="text-xs text-gray-500 mt-1 ml-6">
+                                    {isPickleball 
+                                        ? "Pickleball requires winning by 2 points (e.g., 11-9, not 11-10). If score reaches cap, next point wins."
+                                        : "If enabled, player must win by 2 points (e.g., 21-19, not 21-20)"}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Participants Section */}
+                    <div className="border-t border-gray-200 pt-6 mt-6">
+                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Participants (Optional)</h2>
+                        <p className="text-sm text-gray-600 mb-4">You can add participants now or later from the tournament page.</p>
+                        
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Participant Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={newParticipantName}
+                                        onChange={(e) => setNewParticipantName(e.target.value)}
+                                        placeholder="Enter name"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Phone Number (Optional)
+                                    </label>
+                                    <PhoneInput
+                                        value={newParticipantPhone}
+                                        onChange={setNewParticipantPhone}
+                                        placeholder="9876543210"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (newParticipantName.trim()) {
+                                        if (participants.length >= formData.max_participants) {
+                                            alert(`Maximum ${formData.max_participants} participants allowed.`);
+                                            return;
+                                        }
+                                        setParticipants([...participants, { name: newParticipantName.trim(), phone: newParticipantPhone }]);
+                                        setNewParticipantName('');
+                                        setNewParticipantPhone('');
+                                    }
+                                }}
+                                className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 text-sm"
+                            >
+                                Add Participant
+                            </button>
+                        </div>
+
+                        {participants.length > 0 && (
+                            <div className="mt-4">
+                                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                                    Added Participants ({participants.length})
+                                </h3>
+                                <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-48 overflow-y-auto">
+                                    {participants.map((participant, index) => (
+                                        <div key={index} className="flex items-center justify-between p-3">
+                                            <div>
+                                                <div className="text-sm font-medium text-gray-900">{participant.name}</div>
+                                                {participant.phone && (
+                                                    <div className="text-xs text-gray-500">{participant.phone}</div>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setParticipants(participants.filter((_, i) => i !== index));
+                                                }}
+                                                className="text-red-600 hover:text-red-700 text-sm"
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <button
                         type="submit"
                         disabled={isLoading}
-                        className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full bg-blue-600 text-white py-3 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed mt-6"
                     >
                         {isLoading ? 'Creating...' : 'Create Tournament'}
                     </button>

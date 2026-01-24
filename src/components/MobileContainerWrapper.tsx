@@ -11,9 +11,10 @@ export default function MobileContainerWrapper({
     const isAuctionPage = pathname?.startsWith('/auction');
     const isOwnerPage = pathname?.startsWith('/owner');
     const isAdminPage = pathname?.startsWith('/admin');
+    const isTournamentsPage = pathname?.startsWith('/scoring/tournaments');
 
-    if (isAuctionPage || isOwnerPage || isAdminPage) {
-        // For auction, owner, and admin pages, render without mobile container
+    if (isAuctionPage || isOwnerPage || isAdminPage || isTournamentsPage) {
+        // For auction, owner, admin, and tournaments pages, render without mobile container (web layout)
         return <>{children}</>;
     }
 
