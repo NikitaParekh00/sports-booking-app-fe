@@ -743,6 +743,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         }
                     }
                     setCurrentPlayerIndex(skippedIndex);
+                    // Sync prevPlayerIndexRef on initial load
+                    if (isInitialLoadRef.current) {
+                        prevPlayerIndexRef.current = skippedIndex;
+                    }
                     
                     // Ensure database reflects the skipped players mode state
                     supabase
@@ -779,6 +783,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         actualPlayerIndex = mappedPlayers.length > 0 ? mappedPlayers.length - 1 : 0;
                     }
                     setCurrentPlayerIndex(actualPlayerIndex);
+                    // Sync prevPlayerIndexRef on initial load
+                    if (isInitialLoadRef.current) {
+                        prevPlayerIndexRef.current = actualPlayerIndex;
+                    }
                     
                     // Ensure database reflects the all players mode state
                     supabase
@@ -898,10 +906,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Reset bid to minimum when player index changes
     useEffect(() => {
-        // Skip on initial load
+        // Skip on initial load - just sync the ref and return
         if (isInitialLoadRef.current) {
             prevPlayerIndexRef.current = currentPlayerIndex;
             isInitialLoadRef.current = false;
+            return;
+        }
+        
+        // If prevPlayerIndexRef hasn't been initialized yet, initialize it now
+        // This can happen if currentPlayerIndex was set before this effect ran
+        if (prevPlayerIndexRef.current === -1 && currentPlayerIndex >= 0) {
+            prevPlayerIndexRef.current = currentPlayerIndex;
             return;
         }
 
@@ -1299,24 +1314,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     
                     setAuctionComplete(session.is_complete);
 
-                    // If player index changed, reset bid to minimum (don't use old bid from database)
-                    // Use clampedIndex for comparison to handle skipped mode correctly
+                    // Always read bid from database - it's the source of truth
+                    // Skip if we're currently updating the bid ourselves to prevent overwriting our own changes
+                    if (!isUpdatingBidRef.current && session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
+                        const newBidAmount = Number(session.current_bid_amount);
+                        // Only update if the value is actually different to prevent unnecessary re-renders
+                        if (newBidAmount !== currentBid) {
+                            setCurrentBid(newBidAmount);
+                        }
+                    }
+                    
+                    // If player index actually changed, clear selected team
                     const effectiveNewIndex = shouldUpdateIndex ? clampedIndex : currentPlayerIndex;
                     if (effectiveNewIndex !== prevIndex) {
-                        // Player index changed, reset to minimum bid
-                        const newMinimum = getMinimumBid();
-                        setCurrentBid(newMinimum);
                         setSelectedTeamId(null);
-                    } else {
-                        // Player index didn't change, so this is a bid update
-                        // Skip if we're currently updating the bid ourselves to prevent overwriting our own changes
-                        if (!isUpdatingBidRef.current && session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
-                            const newBidAmount = Number(session.current_bid_amount);
-                            // Only update if the value is actually different to prevent unnecessary re-renders
-                            if (newBidAmount !== currentBid) {
-                                setCurrentBid(newBidAmount);
-                            }
-                        }
                     }
                     // Update selected team if it changed
                     // Skip if we're currently updating the bid ourselves to prevent overwriting our own changes
