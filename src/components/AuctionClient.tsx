@@ -38,6 +38,11 @@ interface Team {
 const TOTAL_AMOUNT = 111000;
 const TEAMS_COUNT = 8;
 
+// Helper function to format numbers in Indian numbering system (1,00,000 instead of 100,000)
+const formatIndianNumber = (num: number): string => {
+    return num.toLocaleString('en-IN');
+};
+
 // Default values (used as fallback ONLY if settings not loaded and database has no value)
 // These should rarely be used - always prefer database values
 const DEFAULT_MINIMUM_BID = 2000; // Fallback only - will be overridden by database
@@ -220,15 +225,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     // Header minimize/expand state
     const [isHeaderOpen, setIsHeaderOpen] = useState(true);
 
-    // Helper functions to get current settings values (with fallback to defaults)
-    const getMinimumBid = (): number => {
-        // For MVP category, base price is always 200000
-        if (currentPlayer?.category === 'MVP') {
-            return 200000;
+    // Helper function to get minimum bid for a specific player
+    const getMinimumBidForPlayer = (player: Player | null | undefined): number => {
+        // For ICON category, base price is always ₹10,00,000 (10 lakhs)
+        if (player?.category === 'ICON') {
+            return 1000000;
         }
         // For other categories, use database value, fallback to DEFAULT_MINIMUM_BID if not set or invalid
         const minBid = auctionSettings?.minimum_bid;
         return (minBid != null && minBid > 0) ? minBid : DEFAULT_MINIMUM_BID;
+    };
+
+    // Helper functions to get current settings values (with fallback to defaults)
+    const getMinimumBid = (): number => {
+        return getMinimumBidForPlayer(currentPlayer);
     };
     
     // Get the regular minimum bid from database (for calculating remaining player requirements)
@@ -239,38 +249,38 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
     
     // Calculate minimum required budget for remaining players
-    // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+    // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
     const calculateMinimumRequiredForRemaining = (team: Team): number => {
-        // Count current MVP and other players
+        // Count current ICON and other players
         // Use originalPlayerPool to get category info, not the current players array
         // (which might be filtered to skipped players only)
-        let currentMVPCount = 0;
+        let currentICONCount = 0;
         let currentOtherCount = 0;
         
         team.players.forEach(player => {
             const playerInPool = originalPlayerPool.find(p => p.name === player.name);
-            if (playerInPool?.category === 'MVP') {
-                currentMVPCount++;
+            if (playerInPool?.category === 'ICON') {
+                currentICONCount++;
             } else {
                 currentOtherCount++;
             }
         });
         
         // If buying current player, account for it
-        const isCurrentPlayerMVP = currentPlayer?.category === 'MVP';
-        const mvpCountAfterBuy = isCurrentPlayerMVP ? currentMVPCount + 1 : currentMVPCount;
-        const otherCountAfterBuy = isCurrentPlayerMVP ? currentOtherCount : currentOtherCount + 1;
+        const isCurrentPlayerICON = currentPlayer?.category === 'ICON';
+        const iconCountAfterBuy = isCurrentPlayerICON ? currentICONCount + 1 : currentICONCount;
+        const otherCountAfterBuy = isCurrentPlayerICON ? currentOtherCount : currentOtherCount + 1;
         
         // Calculate remaining slots needed
-        // Teams need: 2 MVP players + 6 other players = 8 total players
-        const remainingMVPSlots = Math.max(0, 2 - mvpCountAfterBuy);
-        const remainingOtherSlots = Math.max(0, 6 - otherCountAfterBuy);
+        // Teams need: 1 ICON player + 9 other players = 10 total players
+        const remainingICONSlots = Math.max(0, 1 - iconCountAfterBuy);
+        const remainingOtherSlots = Math.max(0, 9 - otherCountAfterBuy);
         
         // Calculate minimum required
-        const mvpMinimum = remainingMVPSlots * 200000; // ₹200,000 per MVP
+        const iconMinimum = remainingICONSlots * 1000000; // ₹10,00,000 per ICON
         const otherMinimum = remainingOtherSlots * getRegularMinimumBid();
         
-        return mvpMinimum + otherMinimum;
+        return iconMinimum + otherMinimum;
     };
 
     const getPlayersPerTeam = (): number => {
@@ -278,6 +288,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
 
     const getBidIncrement = (currentBid: number): number => {
+        // For ICON category players, increment is always ₹2,00,000 (2 lakhs)
+        if (currentPlayer?.category === 'ICON') {
+            return 200000;
+        }
+        // For other categories, use database settings
         return getBidIncrementFromSettings(currentBid, auctionSettings);
     };
 
@@ -1922,12 +1937,32 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Clear player bids and selected team when player changes
     // DO NOT reset bid here - bid is only reset when user clicks "Skip" or "Buy Player"
+    // BUT: If current bid doesn't match the minimum for this player category, adjust it
+    // (e.g., if switching from ICON ₹10,00,000 to non-ICON ₹1,00,000, or vice versa)
     useEffect(() => {
         if (currentPlayer && sessionId && auctionSettings) {
             // Clear bids for new player
             setPlayerBids(new Map());
             // Clear selected team
             setSelectedTeamId(null);
+
+            // Get the minimum bid for this player category
+            const minimumForThisPlayer = getMinimumBid();
+            setCurrentBid(prevBid => {
+                // If bid doesn't match the minimum for this player category, reset it
+                // This handles switching between ICON (₹10,00,000) and non-ICON (₹1,00,000) players
+                if (prevBid !== minimumForThisPlayer) {
+                    // Update database to sync
+                    if (canEdit) {
+                        supabase
+                            .from('auction_sessions')
+                            .update({ current_bid_amount: minimumForThisPlayer })
+                            .eq('id', sessionId);
+                    }
+                    return minimumForThisPlayer;
+                }
+                return prevBid;
+            });
 
             console.log('[MODAL DEBUG] 🔄 Player changed - clearing sold_player_info in useEffect', {
                 currentPlayerIndex: currentPlayerIndex,
@@ -1936,7 +1971,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 sessionId: sessionId
             });
         }
-    }, [currentPlayerIndex, currentPlayer, sessionId, auctionSettings]);
+    }, [currentPlayerIndex, currentPlayer, sessionId, auctionSettings, canEdit, supabase]);
 
     // Modal state is now handled via real-time subscription (no polling needed)
 
@@ -1967,7 +2002,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
         // Calculate maximum bid this team can make for current player
         // They need to reserve minimum bid for remaining players
-        // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
         const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
         const maxBid = team.budget - minimumRequiredForRemaining;
 
@@ -2017,22 +2052,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             return;
         }
         if (!canAfford) {
-            alert(`Team ${team.name} doesn't have enough budget! Current budget: ₹${team.budget.toLocaleString()}, Required: ₹${newBid.toLocaleString()}`);
+            alert(`Team ${team.name} doesn't have enough budget! Current budget: ₹${formatIndianNumber(team.budget)}, Required: ₹${formatIndianNumber(newBid)}`);
             return;
         }
         if (!withinMaxBid) {
             // Calculate remaining slots for display
             const remainingSlots = getPlayersPerTeam() - team.players.length - 1;
             alert(
-                `Team ${team.name} cannot bid ₹${newBid.toLocaleString()} on this player.\n\n` +
-                `After this bid, the team will have ₹${(team.budget - newBid).toLocaleString()} remaining, ` +
-                `but needs at least ₹${minimumRequiredForRemaining.toLocaleString()} to buy the remaining players (2 MVP + 8 others).\n\n` +
-                `Maximum allowed bid: ₹${maxBid.toLocaleString()}`
+                `Team ${team.name} cannot bid ₹${formatIndianNumber(newBid)} on this player.\n\n` +
+                `After this bid, the team will have ₹${formatIndianNumber(team.budget - newBid)} remaining, ` +
+                `but needs at least ₹${formatIndianNumber(minimumRequiredForRemaining)} to buy the remaining players (1 ICON + 9 others).\n\n` +
+                `Maximum allowed bid: ₹${formatIndianNumber(maxBid)}`
             );
             return;
         }
         if (maxBid < getMinimumBid()) {
-            alert(`Team ${team.name} doesn't have enough budget to make even the minimum bid of ₹${getMinimumBid().toLocaleString()}!`);
+            alert(`Team ${team.name} doesn't have enough budget to make even the minimum bid of ₹${formatIndianNumber(getMinimumBid())}!`);
             return;
         }
         if (!withinCategoryLimit) {
@@ -2225,7 +2260,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         }
 
         // Calculate minimum required budget for remaining players
-        // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
         const minimumRequiredBudget = calculateMinimumRequiredForRemaining(team);
         const maxBid = team.budget - minimumRequiredBudget;
 
@@ -2235,10 +2270,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         const remainingPlayersNeeded = playersPerTeam - team.players.length - 1; // For display in alert
         if (remainingPlayersNeeded > 0 && budgetAfterBid < minimumRequiredBudget) {
             alert(
-                `Team ${team.name} cannot bid ₹${currentBid.toLocaleString()} on this player.\n\n` +
-                `After this bid, the team will have ₹${budgetAfterBid.toLocaleString()} remaining, ` +
-                `but needs at least ₹${minimumRequiredBudget.toLocaleString()} to buy the remaining players (2 MVP + 8 others).\n\n` +
-                `Maximum allowed bid: ₹${maxBid.toLocaleString()}`
+                `Team ${team.name} cannot bid ₹${formatIndianNumber(currentBid)} on this player.\n\n` +
+                `After this bid, the team will have ₹${formatIndianNumber(budgetAfterBid)} remaining, ` +
+                `but needs at least ₹${formatIndianNumber(minimumRequiredBudget)} to buy the remaining players (1 ICON + 9 others).\n\n` +
+                `Maximum allowed bid: ₹${formatIndianNumber(maxBid)}`
             );
             return;
         }
@@ -2246,8 +2281,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         // Also check if current bid exceeds max bid
         if (currentBid > maxBid) {
             alert(
-                `Team ${team.name} cannot bid ₹${currentBid.toLocaleString()} on this player.\n\n` +
-                `Maximum allowed bid: ₹${maxBid.toLocaleString()} (to reserve budget for remaining players: 2 MVP + 8 others)`
+                `Team ${team.name} cannot bid ₹${formatIndianNumber(currentBid)} on this player.\n\n` +
+                `Maximum allowed bid: ₹${formatIndianNumber(maxBid)} (to reserve budget for remaining players: 1 ICON + 9 others)`
             );
             return;
         }
@@ -2410,7 +2445,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setShowSuccessModal(true);
 
             // Reset UI state and update database
-            const newMinimum = getMinimumBid();
+            // Use nextPlayer to get the minimum bid for the NEXT player (not current player)
+            const newMinimum = getMinimumBidForPlayer(nextPlayer);
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
             
@@ -2580,8 +2616,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             } else {
                 // Move to next player
                 // If in skipped players mode, ensure we stay within skipped players array
+                let nextPlayer: Player | undefined;
                 if (isSkippedPlayersMode) {
                     const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+                    nextPlayer = players[nextIndex];
                     setCurrentPlayerIndex(nextIndex);
                     await supabase
                         .from('auction_sessions')
@@ -2593,7 +2631,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 } else {
                     const nextIndex = currentPlayerIndex + 1;
                     // Get the next player to find its index in originalPlayerPool
-                    const nextPlayer = players[nextIndex];
+                    nextPlayer = players[nextIndex];
                     const nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
                     setCurrentPlayerIndex(nextIndex);
                     await supabase
@@ -2604,21 +2642,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         })
                         .eq('id', sessionId);
                 }
-            }
 
-            // Reset UI state and update database
-            const newMinimum = getMinimumBid();
-            setCurrentBid(newMinimum);
-            setSelectedTeamId(null);
-            
-            // Update database to sync bid reset
-            await supabase
-                .from('auction_sessions')
-                .update({
-                    current_bid_amount: newMinimum,
-                    current_bid_team_id: null
-                })
-                .eq('id', sessionId);
+                // Reset UI state and update database
+                // Use nextPlayer to get the minimum bid for the NEXT player (not current player)
+                const newMinimum = getMinimumBidForPlayer(nextPlayer);
+                setCurrentBid(newMinimum);
+                setSelectedTeamId(null);
+                
+                // Update database to sync bid reset
+                await supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_bid_amount: newMinimum,
+                        current_bid_team_id: null
+                    })
+                    .eq('id', sessionId);
+            }
         } catch (error) {
             console.error('Error skipping player:', error);
             alert('Failed to save auction state. Please try again.');
@@ -3942,7 +3981,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                             {/* Amount */}
                             <p className="text-2xl md:text-3xl font-bold text-red-600 mb-8">
-                                for ₹{successMessage.amount.toLocaleString()}
+                                for ₹{formatIndianNumber(successMessage.amount)}
                             </p>
                         </div>
 
@@ -4158,7 +4197,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // They need to reserve minimum bid for remaining players
-                                        // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+                                        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
                                         const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
                                         const maxBid = team.budget - minimumRequiredForRemaining;
 
@@ -4282,7 +4321,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
                                                 <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
-                                                    Budget: ₹{team.budget.toLocaleString()}
+                                                    Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
                                                 <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
@@ -4309,7 +4348,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                                 {maxBid >= getMinimumBid() && (
                                                     <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
-                                                        Max Bid: ₹{maxBid.toLocaleString()}
+                                                        Max Bid: ₹{formatIndianNumber(maxBid)}
                                                     </div>
                                                 )}
                                                 {!hasSpace && (
@@ -4462,45 +4501,41 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                             </div>
 
-                                            {/* Basic Info Badges - Row 2: Bat and Bowl */}
+                                            {/* Basic Info Badges - Row 2: Bat */}
                                             <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
                                                 {currentPlayer.batting_hand && (
                                                     <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         Bat: {currentPlayer.batting_hand}
                                                     </span>
                                                 )}
-                                                {currentPlayer.bowling_hand && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Bowl: {currentPlayer.bowling_hand}
-                                                    </span>
-                                                )}
                                             </div>
 
-                                            {/* Player Details - Contact & Location Info */}
-                                            <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
-                                                {/* Wing */}
-                                                {currentPlayer.wing && (
-                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Wing</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing}</div>
-                                                    </div>
-                                                )}
-
-                                                {/* Membership No */}
-                                                {currentPlayer.flat_no && (
-                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                                    </div>
-                                                )}
+                                            {/* Player Stats - Matches, Runs, Wickets Table */}
+                                            <div className="mb-3 overflow-x-auto">
+                                                <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Matches</th>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Runs</th>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wickets</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <tr>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '0'}</td>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.wing || '0'}</td>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.flat_no || '0'}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
                                             </div>
 
                                             {/* Player Details - Additional Info */}
-                                            <div className="grid grid-cols-3 gap-1.5 md:gap-2">
-                                                {/* Experience */}
+                                            <div className="flex flex-wrap gap-1.5 md:gap-2">
+                                                {/* Membership No (was Experience) */}
                                                 {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Experience</div>
+                                                    <div className="rounded-lg p-2 md:p-2.5 w-auto inline-block" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Membership No</div>
                                                         <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.experience}</div>
                                                     </div>
                                                 )}
@@ -4561,7 +4596,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             −
                                         </button>
                                         <div className="flex flex-col items-center gap-2">
-                                            <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{currentBid.toLocaleString()}</div>
+                                            <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{formatIndianNumber(currentBid)}</div>
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
@@ -4658,7 +4693,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     </div>
 
                                     <div className="text-sm text-center mb-2" style={{ color: '#9CA3AF' }}>
-                                        Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
+                                        Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                 </div>
 
@@ -4792,41 +4827,40 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                             </div>
 
-                                            {/* Basic Info Badges - Row 2: Bat and Bowl */}
+                                            {/* Basic Info Badges - Row 2: Bat */}
                                             <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
                                                 {currentPlayer.batting_hand && (
                                                     <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         Bat: {currentPlayer.batting_hand}
                                                     </span>
                                                 )}
-                                                {currentPlayer.bowling_hand && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Bowl: {currentPlayer.bowling_hand}
-                                                    </span>
-                                                )}
                                             </div>
 
-                                            {/* Player Details - Contact & Location Info */}
-                                            <div className="grid grid-cols-2 gap-1.5 md:gap-2 mb-1.5">
-                                                {currentPlayer.wing && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Wing</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.wing}</div>
-                                                    </div>
-                                                )}
-                                                {currentPlayer.flat_no && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no}</div>
-                                                    </div>
-                                                )}
+                                            {/* Player Stats - Matches, Runs, Wickets Table */}
+                                            <div className="mb-3 overflow-x-auto">
+                                                <table className="w-full border-collapse" style={{ backgroundColor: '#1F2937', border: '2px solid #374151' }}>
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Matches</th>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Runs</th>
+                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151' }}>Wickets</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        <tr>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '0'}</td>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.wing || '0'}</td>
+                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no || '0'}</td>
+                                                        </tr>
+                                                    </tbody>
+                                                </table>
                                             </div>
 
                                             {/* Player Details - Additional Info */}
-                                            <div className="grid grid-cols-3 gap-1.5 md:gap-2">
+                                            <div className="flex flex-wrap gap-1.5 md:gap-2">
                                                 {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Experience</div>
+                                                    <div className="rounded-lg p-2 md:p-2.5 border w-auto inline-block" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Membership No</div>
                                                         <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
                                                     </div>
                                                 )}
@@ -4884,7 +4918,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </button>
                                         <div className="flex flex-col items-center gap-2">
                                             <div className="text-4xl md:text-5xl font-bold" style={{ color: '#22C55E' }}>
-                                                ₹{currentBid.toLocaleString()}
+                                                ₹{formatIndianNumber(currentBid)}
                                             </div>
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
@@ -4952,7 +4986,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </button>
                                     </div>
                                     <div className="text-center text-sm mb-4" style={{ color: '#9CA3AF' }}>
-                                        Min: ₹{currentMinimumBid.toLocaleString()} | Increase: ₹{getBidIncrement(currentBid).toLocaleString()}
+                                        Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                     {/* Custom Bid Input - Hidden on mobile */}
                                     <div className="mb-4 hidden md:block">
@@ -4977,7 +5011,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 onFocus={(e) => {
                                                     e.currentTarget.style.borderColor = '#E11D48';
                                                 }}
-                                                placeholder={currentMinimumBid.toLocaleString()}
+                                                placeholder={formatIndianNumber(currentMinimumBid)}
                                             />
                                         </div>
                                     </div>
@@ -5021,7 +5055,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
-                                        // Teams need: 2 MVP players (₹200,000 each) + 8 other players (regular minimum bid each)
+                                        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
                                         const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
                                         const maxBid = team.budget - minimumRequiredForRemaining;
                                         const increment = getBidIncrement(currentBid);
@@ -5113,14 +5147,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
                                                 <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
-                                                    Budget: ₹{team.budget.toLocaleString()}
+                                                    Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
                                                 <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
                                                     <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
-                                                        Max Bid: ₹{maxBid.toLocaleString()}
+                                                        Max Bid: ₹{formatIndianNumber(maxBid)}
                                                     </div>
                                                 )}
                                             </button>
@@ -5273,7 +5307,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-sm font-medium" style={{ color: '#9CA3AF' }}>Remaining</div>
-                                                <div className="text-lg font-bold" style={{ color: '#E5E7EB' }}>₹{team.budget.toLocaleString()}</div>
+                                                <div className="text-lg font-bold" style={{ color: '#E5E7EB' }}>₹{formatIndianNumber(team.budget)}</div>
                                             </div>
                                         </div>
 
@@ -5338,7 +5372,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                             <span style={{ color: '#E5E7EB' }}>
                                                                 {player.name}
                                                             </span>
-                                                            <span className="text-xs" style={{ color: '#9CA3AF' }}>₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                            <span className="text-xs" style={{ color: '#9CA3AF' }}>₹{player.bidAmount ? formatIndianNumber(player.bidAmount) : '0'}</span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -5363,7 +5397,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             {teams.map(team => {
                                 // Calculate maximum bid this team can make for current player
                                 // They need to reserve minimum bid for remaining players
-                                // Teams need: 2 MVP players (₹200,000 each) + 6 other players (regular minimum bid each)
+                                // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
                                 const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
                                 const maxBid = team.budget - minimumRequiredForRemaining;
 
@@ -5488,7 +5522,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                         </div>
                                         <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
-                                            Budget: ₹{team.budget.toLocaleString()}
+                                            Budget: ₹{formatIndianNumber(team.budget)}
                                         </div>
                                         <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                             Players: {team.players.length}/{getPlayersPerTeam()}
@@ -5515,7 +5549,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         )}
                                         {maxBid >= getMinimumBid() && (
                                             <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
-                                                Max Bid: ₹{maxBid.toLocaleString()}
+                                                Max Bid: ₹{formatIndianNumber(maxBid)}
                                             </div>
                                         )}
                                     </button>
@@ -5576,7 +5610,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                         </div>
                                                         <span className="font-semibold text-base" style={{ color: '#E5E7EB' }}>{player.name}</span>
                                                     </div>
-                                                    <span className="text-base font-bold" style={{ color: '#22C55E' }}>₹{player.bidAmount?.toLocaleString() || '0'}</span>
+                                                    <span className="text-base font-bold" style={{ color: '#22C55E' }}>₹{player.bidAmount ? formatIndianNumber(player.bidAmount) : '0'}</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 text-sm ml-11" style={{ color: '#9CA3AF' }}>
                                                     {(() => {
@@ -5831,7 +5865,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     <div className="font-semibold" style={{ color: '#E5E7EB' }}>{player.name}</div>
                                                     {isSold && playerTeam && (
                                                         <div className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
-                                                            Sold to {playerTeam.name} for ₹{bidAmount?.toLocaleString() || '0'}
+                                                            Sold to {playerTeam.name} for ₹{bidAmount ? formatIndianNumber(bidAmount) : '0'}
                                                         </div>
                                                     )}
                                                     {!isSold && (
