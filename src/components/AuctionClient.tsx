@@ -672,14 +672,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Always use minimum_bid from database settings only
                     // Only use session bid if it's higher than minimum (meaning there's an active bid)
                     const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
-                    if (sessionBid && sessionBid > loadedSettings.minimum_bid) {
-                        // There's an active bid higher than minimum, use it
+                    if (sessionBid && sessionBid >= loadedSettings.minimum_bid) {
+                        // There's an active bid (equal to or higher than minimum), use it
                         setCurrentBid(sessionBid);
                     } else {
                         // Use minimum_bid from database settings only
                         setCurrentBid(loadedSettings.minimum_bid);
                         // Update the database to reflect the correct minimum bid from settings
-                        if (sessionId) {
+                        // Only update if user can edit - view-only users shouldn't modify database
+                        if (sessionId && canEdit) {
                             supabase
                                 .from('auction_sessions')
                                 .update({ current_bid_amount: loadedSettings.minimum_bid })
@@ -928,7 +929,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         }
 
         // If player index changed, reset bid to minimum
-        if (prevPlayerIndexRef.current !== currentPlayerIndex) {
+        // Only do this if user can edit - view-only users should not reset bids
+        if (prevPlayerIndexRef.current !== currentPlayerIndex && canEdit) {
             const newMinimum = getMinimumBid();
 
             // Mark that we're updating the bid ourselves to prevent subscription from overwriting
