@@ -486,7 +486,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 const initialPlayerIndex = finalSession.current_player_index;
                 // Don't set currentPlayerIndex yet - we need to load players first
                 // Then we'll find the correct index in the players array
-                prevPlayerIndexRef.current = initialPlayerIndex;
+                // Don't set prevPlayerIndexRef here - it will be set when currentPlayerIndex is set
+                // This ensures they match exactly
                 isInitialLoadRef.current = true;
                 setAuctionComplete(finalSession.is_complete);
 
@@ -742,11 +743,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             }
                         }
                     }
-                    setCurrentPlayerIndex(skippedIndex);
-                    // Sync prevPlayerIndexRef on initial load
+                    // Sync prevPlayerIndexRef BEFORE setting currentPlayerIndex to prevent race condition
                     if (isInitialLoadRef.current) {
                         prevPlayerIndexRef.current = skippedIndex;
                     }
+                    setCurrentPlayerIndex(skippedIndex);
                     
                     // Ensure database reflects the skipped players mode state
                     supabase
@@ -782,11 +783,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         // Index is out of bounds, use last valid index
                         actualPlayerIndex = mappedPlayers.length > 0 ? mappedPlayers.length - 1 : 0;
                     }
-                    setCurrentPlayerIndex(actualPlayerIndex);
-                    // Sync prevPlayerIndexRef on initial load
+                    // Sync prevPlayerIndexRef BEFORE setting currentPlayerIndex to prevent race condition
+                    // This ensures they match when the useEffect runs
                     if (isInitialLoadRef.current) {
                         prevPlayerIndexRef.current = actualPlayerIndex;
                     }
+                    setCurrentPlayerIndex(actualPlayerIndex);
                     
                     // Ensure database reflects the all players mode state
                     supabase
@@ -906,17 +908,30 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Reset bid to minimum when player index changes
     useEffect(() => {
-        // Skip on initial load - just sync the ref and return
+        // Skip on initial load - just mark as done and return
+        // NEVER reset bid on initial load - it should come from loadAuctionState
+        // prevPlayerIndexRef is already set correctly in loadAuctionState before setCurrentPlayerIndex
         if (isInitialLoadRef.current) {
-            prevPlayerIndexRef.current = currentPlayerIndex;
-            isInitialLoadRef.current = false;
+            // DON'T update prevPlayerIndexRef here - it's already set correctly in loadAuctionState
+            // If it's still -1, that means loadAuctionState hasn't run yet, so wait for it
+            // Only mark as done if prevPlayerIndexRef was set (meaning loadAuctionState completed)
+            if (prevPlayerIndexRef.current !== -1) {
+                isInitialLoadRef.current = false;
+            }
             return;
         }
         
         // If prevPlayerIndexRef hasn't been initialized yet, initialize it now
         // This can happen if currentPlayerIndex was set before this effect ran
+        // BUT: Only do this if we're NOT on initial load (to avoid overwriting the correct value set in loadAuctionState)
+        // Actually, if we get here, isInitialLoadRef.current is already false, so this is safe
         if (prevPlayerIndexRef.current === -1 && currentPlayerIndex >= 0) {
             prevPlayerIndexRef.current = currentPlayerIndex;
+            return;
+        }
+        
+        // If they match, no player change - just update ref and return
+        if (prevPlayerIndexRef.current === currentPlayerIndex) {
             return;
         }
 
@@ -943,60 +958,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             }
         }
 
-        // If player index changed, reset bid to minimum
-        // Only do this if user can edit - view-only users should not reset bids
-        if (prevPlayerIndexRef.current !== currentPlayerIndex && canEdit) {
-            const newMinimum = getMinimumBid();
-
-            // Mark that we're updating the bid ourselves to prevent subscription from overwriting
-            isUpdatingBidRef.current = true;
-            setCurrentBid(newMinimum);
-            setSelectedTeamId(null);
-
-            // Update database to keep bid in sync
-            // Save the appropriate index based on mode
-            if (sessionId) {
-                const currentPlayer = playersRef.current[currentPlayerIndex];
-                const updateData: any = {
-                    current_bid_amount: newMinimum,
-                    current_bid_team_id: null,
-                    is_skipped_players_mode: isSkippedPlayersModeRef.current
-                };
-
-                // Save index to the appropriate column based on mode
-                if (isSkippedPlayersModeRef.current) {
-                    // In skipped players mode: save to skipped_players_index (index in skipped players array)
-                    updateData.skipped_players_index = currentPlayerIndex;
-                    // Do NOT update current_player_index - keep it as is
-                } else {
-                    // In all players mode: save to current_player_index (index in originalPlayerPool)
-                    const originalIndex = currentPlayer ? getOriginalPoolIndex(currentPlayer) : currentPlayerIndex;
-                    updateData.current_player_index = originalIndex;
-                    // Do NOT update skipped_players_index - keep it as is
-                }
-                
-                supabase
-                    .from('auction_sessions')
-                    .update(updateData)
-                    .eq('id', sessionId)
-                    .then(({ error }) => {
-                        if (error) {
-                            console.error('Error updating bid in database:', error);
-                        }
-                        // Reset flag after database update completes
-                        setTimeout(() => {
-                            isUpdatingBidRef.current = false;
-                        }, 300);
-                    });
-            } else {
-                // Reset flag immediately if no session
-                setTimeout(() => {
-                    isUpdatingBidRef.current = false;
-                }, 300);
-            }
-
-            prevPlayerIndexRef.current = currentPlayerIndex;
-        }
+        // Player index changed - just update the ref
+        // DO NOT reset bid here - bid is only reset when user clicks "Skip" or "Buy Player"
+        prevPlayerIndexRef.current = currentPlayerIndex;
     }, [currentPlayerIndex, auctionSettings, sessionId, supabase, isSkippedPlayersMode, players.length]);
 
     // Real-time subscription for auction updates
@@ -1956,16 +1920,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     const currentMinimumBid = getMinimumBid()
 
-    // Update bid when player changes
+    // Clear player bids and selected team when player changes
+    // DO NOT reset bid here - bid is only reset when user clicks "Skip" or "Buy Player"
     useEffect(() => {
         if (currentPlayer && sessionId && auctionSettings) {
-            const newMinimum = getMinimumBid();
-
-            // Mark that we're updating the bid ourselves to prevent subscription from overwriting
-            isUpdatingBidRef.current = true;
-            setCurrentBid(newMinimum);
-            setPlayerBids(new Map()); // Clear bids for new player
-            setSelectedTeamId(null); // Clear selected team
+            // Clear bids for new player
+            setPlayerBids(new Map());
+            // Clear selected team
+            setSelectedTeamId(null);
 
             console.log('[MODAL DEBUG] 🔄 Player changed - clearing sold_player_info in useEffect', {
                 currentPlayerIndex: currentPlayerIndex,
@@ -1973,29 +1935,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 timestamp: new Date().toISOString(),
                 sessionId: sessionId
             });
-
-            // Update database to reset bid for new player and clear sold_player_info
-            // Note: do NOT clear sold_player_info here; it is cleared only when admin clicks Proceed.
-            supabase
-                .from('auction_sessions')
-                .update({
-                    current_bid_amount: newMinimum,
-                    current_bid_team_id: null,
-                })
-                .eq('id', sessionId)
-                .then(({ error }) => {
-                    if (error) {
-                        console.error('[MODAL DEBUG] ❌ Error updating bid in useEffect:', error);
-                    } else {
-                        console.log('[MODAL DEBUG] ✅ Successfully updated bid in useEffect');
-                    }
-                    // Reset flag after database update completes
-                    setTimeout(() => {
-                        isUpdatingBidRef.current = false;
-                    }, 300);
-                });
         }
-    }, [currentPlayerIndex, currentPlayer, sessionId, supabase, auctionSettings]);
+    }, [currentPlayerIndex, currentPlayer, sessionId, auctionSettings]);
 
     // Modal state is now handled via real-time subscription (no polling needed)
 
@@ -2468,10 +2409,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setSuccessMessage(soldPlayerInfo);
             setShowSuccessModal(true);
 
-            // Reset UI state
+            // Reset UI state and update database
             const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
+            
+            // Update database to sync bid reset
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    current_bid_amount: newMinimum,
+                    current_bid_team_id: null
+                })
+                .eq('id', sessionId);
         } catch (error) {
             console.error('Error buying player:', error);
             alert('Failed to save auction state. Please try again.');
@@ -2656,10 +2606,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 }
             }
 
-            // Reset UI state
+            // Reset UI state and update database
             const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
+            
+            // Update database to sync bid reset
+            await supabase
+                .from('auction_sessions')
+                .update({
+                    current_bid_amount: newMinimum,
+                    current_bid_team_id: null
+                })
+                .eq('id', sessionId);
         } catch (error) {
             console.error('Error skipping player:', error);
             alert('Failed to save auction state. Please try again.');
