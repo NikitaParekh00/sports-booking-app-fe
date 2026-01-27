@@ -789,8 +789,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         skippedIndex = skippedPlayersIndex;
                         } else {
                         // Try to find current player in skipped list
-                        const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
-                        if (currentPlayerName) {
+                    const currentPlayerName = mappedPlayers[initialPlayerIndex]?.name;
+                    if (currentPlayerName) {
                             const foundIndex = skippedFromTable.findIndex(sp => sp.name === currentPlayerName);
                             if (foundIndex !== -1) {
                                 skippedIndex = foundIndex;
@@ -801,7 +801,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     if (isInitialLoadRef.current) {
                         prevPlayerIndexRef.current = skippedIndex;
                     }
-                    setCurrentPlayerIndex(skippedIndex);
+                            setCurrentPlayerIndex(skippedIndex);
                     
                     // Set bid based on current player's category-specific minimum bid
                     const currentPlayerForBid = skippedFromTable[skippedIndex];
@@ -850,9 +850,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         .then(({ error }) => {
                             if (error) {
                                 console.error('Error updating skipped players mode on load:', error);
-                            } else {
+                    } else {
                                 console.log('Successfully updated skipped players mode on load');
-                            }
+                    }
                         });
                 } else {
                     // Show all players normally
@@ -1042,7 +1042,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             // If it's still -1, that means loadAuctionState hasn't run yet, so wait for it
             // Only mark as done if prevPlayerIndexRef was set (meaning loadAuctionState completed)
             if (prevPlayerIndexRef.current !== -1) {
-                isInitialLoadRef.current = false;
+            isInitialLoadRef.current = false;
             }
             return;
         }
@@ -1071,7 +1071,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 return;
             }
         }
-        
+
         // If in unbidded mode (filtered list), ensure index is within bounds
         if (!isSkippedPlayersModeRef.current && playersRef.current.length > 0 && originalPlayerPool.length > 0) {
             const isUnbiddedMode = playersRef.current.length < originalPlayerPool.length;
@@ -1086,7 +1086,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
         // Player index changed - just update the ref
         // DO NOT reset bid here - bid is only reset when user clicks "Skip" or "Buy Player"
-        prevPlayerIndexRef.current = currentPlayerIndex;
+            prevPlayerIndexRef.current = currentPlayerIndex;
     }, [currentPlayerIndex, auctionSettings, sessionId, supabase, isSkippedPlayersMode, players.length]);
 
     // Real-time subscription for auction updates
@@ -1200,8 +1200,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             // Double-check we're still in skipped mode (race condition protection)
                             if (!isSkippedPlayersModeRef.current) {
                                 console.log('Real-time subscription: Already switched back, skipping reload');
-                                return;
-                            }
+                            return;
+                        }
                             
                             // Switch back to all players - reload from original player pool
                             supabase
@@ -1290,10 +1290,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info set (real-time)', {
                                 soldInfo: soldPlayerInfo,
                                 acknowledged: congratulationsAcknowledged,
-                                timestamp: new Date().toISOString()
-                            });
+                            timestamp: new Date().toISOString()
+                        });
                             setSuccessMessage(soldPlayerInfo);
-                            setShowSuccessModal(true);
+                        setShowSuccessModal(true);
                         }
                     }
                     
@@ -1397,7 +1397,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                     // Only update index if it actually changed
                     if (shouldUpdateIndex) {
-                        setCurrentPlayerIndex(clampedIndex);
+                    setCurrentPlayerIndex(clampedIndex);
                     // Update ref after setting state
                     prevPlayerIndexRef.current = clampedIndex;
                     }
@@ -1405,14 +1405,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     setAuctionComplete(session.is_complete);
 
                     // Always read bid from database - it's the source of truth
-                    // Skip if we're currently updating the bid ourselves to prevent overwriting our own changes
-                    if (!isUpdatingBidRef.current && session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
-                        const newBidAmount = Number(session.current_bid_amount);
-                        // Only update if the value is actually different to prevent unnecessary re-renders
-                        if (newBidAmount !== currentBid) {
-                            setCurrentBid(newBidAmount);
+                        // Skip if we're currently updating the bid ourselves to prevent overwriting our own changes
+                        if (!isUpdatingBidRef.current && session.current_bid_amount !== undefined && session.current_bid_amount !== null) {
+                            const newBidAmount = Number(session.current_bid_amount);
+                            // Only update if the value is actually different to prevent unnecessary re-renders
+                            if (newBidAmount !== currentBid) {
+                                setCurrentBid(newBidAmount);
+                            }
                         }
-                    }
                     
                     // If player index actually changed, clear selected team
                     const effectiveNewIndex = shouldUpdateIndex ? clampedIndex : currentPlayerIndex;
@@ -2265,7 +2265,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Sync bidInputValue with currentBid when it changes externally
     useEffect(() => {
-            setBidInputValue(currentBid.toString());
+        setBidInputValue(currentBid.toString());
     }, [currentBid]);
 
     const handleBidInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2496,13 +2496,102 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             };
 
             // Move to next player
-            // If in skipped players mode, ensure we stay within skipped players array
-            // Otherwise, stay within all players array
-            const nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+            let nextIndex: number;
+            let nextPlayer: Player | undefined;
+            let nextPlayerOriginalIndex: number;
+            
+            if (isSkippedPlayersModeRef.current) {
+                // In skipped players mode: reload skipped players list first to get updated list after removal
+                // The current player has been removed, so the list is now shorter
+                const { data: updatedSkippedData } = await supabase
+                    .from('auction_skipped_players')
+                    .select('player_pool_id, player_name, player_order')
+                    .eq('session_id', sessionId)
+                    .order('player_order', { ascending: true });
 
-            // Get the next player to find its index in originalPlayerPool
-            const nextPlayer = players[nextIndex];
-            const nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
+                if (updatedSkippedData && updatedSkippedData.length > 0) {
+                    // Get player pool data to map skipped players
+                    const { data: allPoolData } = await supabase
+                        .from('auction_player_pool')
+                        .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                        .eq('session_id', sessionId);
+
+                    const poolMap = new Map(
+                        (allPoolData || []).map((p: any) => [p.id, p])
+                    );
+
+                    const updatedSkippedList: Player[] = updatedSkippedData
+                        .map((sp: any) => {
+                            const poolPlayer = poolMap.get(sp.player_pool_id);
+                            if (!poolPlayer) return null;
+                            return {
+                                name: poolPlayer.name,
+                                photo: poolPlayer.photo || undefined,
+                                age: poolPlayer.age || undefined,
+                                played_s1: poolPlayer.played_s1 || undefined,
+                                experience: poolPlayer.experience || undefined,
+                                active_sport: poolPlayer.active_sport || undefined,
+                                skill: poolPlayer.skill || undefined,
+                                batting_hand: poolPlayer.batting_hand || undefined,
+                                bowling_hand: poolPlayer.bowling_hand || undefined,
+                                wing: poolPlayer.wing || undefined,
+                                flat_no: poolPlayer.flat_no || undefined,
+                                phone: poolPlayer.phone || undefined,
+                                category: poolPlayer.category || undefined
+                            } as Player;
+                        })
+                        .filter((p): p is Player => p !== null);
+
+                    // Find the next player by finding the player that comes after current player in original pool order
+                    // This ensures we get the correct next player even after the list has been updated
+                    const currentPlayerOriginalIndex = getOriginalPoolIndex(currentPlayer);
+                    let foundNextIndex = 0;
+                    
+                    // Search for the next player in original pool order that's still in the skipped list
+                    for (let i = currentPlayerOriginalIndex + 1; i < originalPlayerPool.length; i++) {
+                        const candidatePlayer = originalPlayerPool[i];
+                        const foundIndex = updatedSkippedList.findIndex(sp => sp.name === candidatePlayer.name);
+                        if (foundIndex !== -1) {
+                            foundNextIndex = foundIndex;
+                            break;
+                        }
+                    }
+                    
+                    // If no next player found in original order, use the first available player
+                    // (this handles edge cases where we're at the end)
+                    if (foundNextIndex === 0 && updatedSkippedList.length > 0) {
+                        const firstPlayerName = updatedSkippedList[0]?.name;
+                        const firstPlayerOriginalIndex = originalPlayerPool.findIndex(p => p.name === firstPlayerName);
+                        // Only use index 0 if it's actually after the current player
+                        if (firstPlayerOriginalIndex <= currentPlayerOriginalIndex && updatedSkippedList.length > 1) {
+                            foundNextIndex = 1;
+                        }
+                    }
+                    
+                    nextIndex = Math.min(foundNextIndex, updatedSkippedList.length - 1);
+                    nextPlayer = updatedSkippedList[nextIndex];
+                    nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : currentPlayerOriginalIndex;
+                    
+                    // Update local state with updated skipped players list
+                    setPlayers(updatedSkippedList);
+                    setSkippedPlayers(updatedSkippedList);
+                    playersRef.current = updatedSkippedList;
+                } else {
+                    // No more skipped players - switch back to all players mode
+                    nextIndex = 0;
+                    nextPlayer = originalPlayerPool[0];
+                    nextPlayerOriginalIndex = 0;
+                    setIsSkippedPlayersMode(false);
+                    isSkippedPlayersModeRef.current = false;
+                    setPlayers(originalPlayerPool);
+                    playersRef.current = originalPlayerPool;
+                }
+            } else {
+                // In all players mode: use simple increment
+                nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
+                nextPlayer = players[nextIndex];
+                nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
+            }
 
             // Update session with next player index and sold player info
             // This will trigger real-time updates for all users
@@ -2522,11 +2611,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             };
 
             // Save index to the appropriate column based on mode
-            // Always save the index in originalPlayerPool, not the filtered array index
-            if (isSkippedPlayersModeRef.current) {
-                // In skipped players mode: save to skipped_players_index (still use filtered index for skipped mode)
+            if (isSkippedPlayersModeRef.current && nextPlayer) {
+                // In skipped players mode: save to skipped_players_index using the updated list index
                 updateData.skipped_players_index = nextIndex;
-            } else {
+            } else if (!isSkippedPlayersModeRef.current) {
                 // In all players mode: save to current_player_index using originalPlayerPool index
                 updateData.current_player_index = nextPlayerOriginalIndex;
             }
@@ -2621,12 +2709,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     .single();
                 const teamName = existingTeam?.name || `Team ${existingTeam?.team_number || 'Unknown'}`;
                 alert(`${currentPlayer.name} has already been bought by ${teamName} and cannot be skipped.`);
-                    return;
-                }
-                
+                return;
+            }
+
             // Get the player pool ID for the current player
             const { data: playerPoolData } = await supabase
-                            .from('auction_player_pool')
+                .from('auction_player_pool')
                 .select('id, player_order')
                 .eq('session_id', sessionId)
                 .eq('name', currentPlayer.name)
@@ -2752,13 +2840,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             is_skipped_players_mode: false
                         })
                         .eq('id', sessionId);
-                }
+            }
 
                 // Reset UI state and update database
                 // Use nextPlayer to get the minimum bid for the NEXT player (not current player)
                 const newMinimum = getMinimumBidForPlayer(nextPlayer);
-                setCurrentBid(newMinimum);
-                setSelectedTeamId(null);
+            setCurrentBid(newMinimum);
+            setSelectedTeamId(null);
                 
                 // Update database to sync bid reset
                 await supabase
@@ -2959,7 +3047,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             try {
                 const response = await fetch('/logo.jpeg');
                 const blob = await response.blob();
-                    const reader = new FileReader();
+                const reader = new FileReader();
 
                 await new Promise<void>((resolve, reject) => {
                     reader.onload = () => {
@@ -3519,7 +3607,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             try {
                 const response = await fetch('/logo.jpeg');
                 const blob = await response.blob();
-                    const reader = new FileReader();
+                const reader = new FileReader();
 
                 await new Promise<void>((resolve, reject) => {
                     reader.onload = () => {
@@ -3950,22 +4038,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     ))}
                                 </div>
                                 {/* Download PDF Button */}
-                                    <button
-                                        onClick={() => generateTeamPDF(team)}
-                                        disabled={pdfGeneratingTeamId === team.id}
+                                <button
+                                    onClick={() => generateTeamPDF(team)}
+                                    disabled={pdfGeneratingTeamId === team.id}
                                     className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {pdfGeneratingTeamId === team.id ? (
-                                            <>
+                                >
+                                    {pdfGeneratingTeamId === team.id ? (
+                                        <>
                                             <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                                                Generating PDF...
-                                            </>
-                                        ) : (
+                                            Generating PDF...
+                                        </>
+                                    ) : (
                                         <>
                                             Download PDF
                                         </>
-                                        )}
-                                    </button>
+                                    )}
+                                </button>
                             </div>
                         ))}
                     </div>
@@ -5318,59 +5406,59 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                 {/* Tab Content */}
                 {teamDynamicsTab === 'list' ? (
-                    <div className="space-y-4">
-                        {/* Team Filter */}
-                        <div className="rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter Teams:</div>
-                            <div className="flex flex-wrap gap-2">
+                <div className="space-y-4">
+                    {/* Team Filter */}
+                    <div className="rounded-lg p-3 border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className="text-xs font-semibold mb-2" style={{ color: '#E5E7EB' }}>Filter Teams:</div>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                onClick={() => setSelectedTeamFilters(new Set())}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
+                                    ? 'text-white'
+                                    : 'border'
+                                    }`}
+                                style={selectedTeamFilters.size === 0
+                                    ? { backgroundColor: '#E11D48' }
+                                    : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
+                                }
+                            >
+                                All
+                            </button>
+                            {teams.map(team => (
                                 <button
-                                    onClick={() => setSelectedTeamFilters(new Set())}
-                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${selectedTeamFilters.size === 0
+                                    key={team.id}
+                                    onClick={() => {
+                                        const newFilters = new Set(selectedTeamFilters);
+                                        if (newFilters.has(team.id)) {
+                                            newFilters.delete(team.id);
+                                        } else {
+                                            newFilters.add(team.id);
+                                        }
+                                        setSelectedTeamFilters(newFilters);
+                                    }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
                                         ? 'text-white'
                                         : 'border'
                                         }`}
-                                    style={selectedTeamFilters.size === 0
+                                    style={selectedTeamFilters.has(team.id)
                                         ? { backgroundColor: '#E11D48' }
                                         : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
                                     }
                                 >
-                                    All
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedTeamFilters.has(team.id)}
+                                        onChange={() => { }} // Handled by button onClick
+                                        className="w-3 h-3"
+                                    />
+                                    <span className="truncate max-w-[80px]">{team.name}</span>
                                 </button>
-                                {teams.map(team => (
-                                    <button
-                                        key={team.id}
-                                        onClick={() => {
-                                            const newFilters = new Set(selectedTeamFilters);
-                                            if (newFilters.has(team.id)) {
-                                                newFilters.delete(team.id);
-                                            } else {
-                                                newFilters.add(team.id);
-                                            }
-                                            setSelectedTeamFilters(newFilters);
-                                        }}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${selectedTeamFilters.has(team.id)
-                                            ? 'text-white'
-                                            : 'border'
-                                            }`}
-                                        style={selectedTeamFilters.has(team.id)
-                                            ? { backgroundColor: '#E11D48' }
-                                            : { backgroundColor: '#1F2937', color: '#9CA3AF', borderColor: '#1F2937' }
-                                        }
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedTeamFilters.has(team.id)}
-                                            onChange={() => { }} // Handled by button onClick
-                                            className="w-3 h-3"
-                                        />
-                                        <span className="truncate max-w-[80px]">{team.name}</span>
-                                    </button>
-                                ))}
-                            </div>
+                            ))}
                         </div>
+                    </div>
 
-                        {/* Teams List */}
-                        <div className="space-y-3">
+                    {/* Teams List */}
+                    <div className="space-y-3">
                         {teams
                             .filter(team => selectedTeamFilters.size === 0 || selectedTeamFilters.has(team.id))
                             .map(team => {
@@ -5496,8 +5584,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     </div>
                                 );
                             })}
-                        </div>
                     </div>
+                </div>
                 ) : (
                     /* Select Team Tab - Team Cards Grid */
                     <div className="space-y-4">
@@ -5856,7 +5944,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             // Use the proper handler to switch to skipped players mode
                                             // This ensures we load skipped players from the database correctly
                                             await handleSwitchToSkippedPlayers();
-                                            
+
                                             // Close the sheet
                                             setIsSkippedPlayersSheetOpen(false);
                                         } catch (error) {
