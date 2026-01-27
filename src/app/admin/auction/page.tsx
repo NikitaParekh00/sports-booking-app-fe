@@ -105,6 +105,7 @@ export default function AuctionAdminPage() {
     allow_multiple_player_assignment: true
   });
   const [categoryColorMappings, setCategoryColorMappings] = useState<Array<{ category: string, color: string }>>([]);
+  const [categoryMinimumBids, setCategoryMinimumBids] = useState<Array<{ category: string, minimumBid: string }>>([]);
   const [categoryLimits, setCategoryLimits] = useState<Array<{ category: string, limit: string }>>([]);
 
   // Check authentication
@@ -1032,6 +1033,16 @@ export default function AuctionAdminPage() {
         } else {
           setCategoryColorMappings([]);
         }
+        // Load category minimum bids
+        if (data.category_minimum_bids && typeof data.category_minimum_bids === 'object') {
+          const minimumBids = Object.entries(data.category_minimum_bids).map(([category, minimumBid]) => ({
+            category,
+            minimumBid: minimumBid ? minimumBid.toString() : ''
+          }));
+          setCategoryMinimumBids(minimumBids);
+        } else {
+          setCategoryMinimumBids([]);
+        }
         // Load category limits
         if (data.category_limits && typeof data.category_limits === 'object') {
           const limits = Object.entries(data.category_limits).map(([category, limit]) => ({
@@ -1061,6 +1072,7 @@ export default function AuctionAdminPage() {
           allow_multiple_player_assignment: true
         });
         setCategoryColorMappings([]);
+        setCategoryMinimumBids([]);
         setCategoryLimits([]);
       }
     } catch (error) {
@@ -1081,6 +1093,17 @@ export default function AuctionAdminPage() {
       categoryColorMappings.forEach(({ category, color }) => {
         if (category.trim()) {
           categoryColorMappingObj[category.trim()] = color;
+        }
+      });
+
+      // Convert category minimum bids array to object (only include non-empty minimum bids)
+      const categoryMinimumBidsObj: Record<string, number> = {};
+      categoryMinimumBids.forEach(({ category, minimumBid }) => {
+        if (category.trim() && minimumBid.trim()) {
+          const minimumBidNum = parseFloat(minimumBid.trim());
+          if (!isNaN(minimumBidNum) && minimumBidNum > 0) {
+            categoryMinimumBidsObj[category.trim()] = minimumBidNum;
+          }
         }
       });
 
@@ -1109,6 +1132,7 @@ export default function AuctionAdminPage() {
         bid_increment_4_threshold: parseFloat(settingsFormData.bid_increment_4_threshold) || 700000,
         bid_increment_4_amount: parseFloat(settingsFormData.bid_increment_4_amount) || 50000,
         category_color_mapping: categoryColorMappingObj,
+        category_minimum_bids: categoryMinimumBidsObj,
         category_limits: categoryLimitsObj,
         default_team_budget: settingsFormData.default_team_budget ? parseFloat(settingsFormData.default_team_budget) : null,
         allow_multiple_player_assignment: settingsFormData.allow_multiple_player_assignment,
@@ -2210,6 +2234,65 @@ export default function AuctionAdminPage() {
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
                         >
                           Add Category Color Mapping
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Category Minimum Bids */}
+                    <div>
+                      <h3 className="text-lg font-semibold mb-3" style={{ color: '#E5E7EB' }}>Category Minimum Bids</h3>
+                      <p className="text-xs mb-4" style={{ color: '#9CA3AF' }}>
+                        Set minimum bid amount for each category. If not set, the default minimum bid will be used.
+                      </p>
+                      <div className="space-y-3">
+                        {categoryMinimumBids.map((mapping, index) => (
+                          <div key={index} className="flex items-center gap-3 p-3 rounded border" style={{ backgroundColor: '#1F2937', borderColor: '#1F2937' }}>
+                            <input
+                              type="text"
+                              value={mapping.category}
+                              onChange={(e) => {
+                                const newMappings = [...categoryMinimumBids];
+                                newMappings[index].category = e.target.value;
+                                setCategoryMinimumBids(newMappings);
+                              }}
+                              className="flex-1 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="Category (e.g., ICON, A+, A, B)"
+                            />
+                            <input
+                              type="number"
+                              value={mapping.minimumBid}
+                              onChange={(e) => {
+                                const newMappings = [...categoryMinimumBids];
+                                newMappings[index].minimumBid = e.target.value;
+                                setCategoryMinimumBids(newMappings);
+                              }}
+                              className="w-32 px-3 py-2 rounded-lg border"
+                              style={{ backgroundColor: '#111827', borderColor: '#1F2937', color: '#E5E7EB' }}
+                              placeholder="Minimum bid (₹)"
+                              min="0"
+                              step="1000"
+                            />
+                            <button
+                              onClick={() => {
+                                const newMappings = categoryMinimumBids.filter((_, i) => i !== index);
+                                setCategoryMinimumBids(newMappings);
+                              }}
+                              className="px-3 py-2 rounded-lg font-medium transition-colors"
+                              style={{ backgroundColor: '#DC2626', color: '#E5E7EB' }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => {
+                            setCategoryMinimumBids([...categoryMinimumBids, { category: '', minimumBid: '' }]);
+                          }}
+                          className="w-full px-4 py-2 rounded-lg font-semibold transition-colors border-2 border-dashed"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        >
+                          Add Category Minimum Bid
                         </button>
                       </div>
                     </div>

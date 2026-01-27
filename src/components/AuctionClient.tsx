@@ -202,6 +202,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         bid_increment_4_threshold: number;
         bid_increment_4_amount: number;
         category_color_mapping?: Record<string, string>;
+        category_minimum_bids?: Record<string, number>;
         category_limits?: Record<string, number>;
     } | null>(null);
     // Initialize with default - will be immediately updated from database settings when loaded
@@ -227,11 +228,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     // Helper function to get minimum bid for a specific player
     const getMinimumBidForPlayer = (player: Player | null | undefined): number => {
-        // For ICON category, base price is always ₹10,00,000 (10 lakhs)
+        // First, check if there's a category-specific minimum bid set in category_minimum_bids
+        if (player?.category && auctionSettings?.category_minimum_bids) {
+            const categoryMinBid = auctionSettings.category_minimum_bids[player.category];
+            if (categoryMinBid != null && categoryMinBid > 0) {
+                return categoryMinBid;
+            }
+        }
+        
+        // For ICON category, if not set in category_minimum_bids, use hardcoded ₹10,00,000 (10 lakhs)
         if (player?.category === 'ICON') {
             return 1000000;
         }
-        // For other categories, use database value, fallback to DEFAULT_MINIMUM_BID if not set or invalid
+        
+        // For other categories, use default minimum_bid from database, fallback to DEFAULT_MINIMUM_BID if not set or invalid
         const minBid = auctionSettings?.minimum_bid;
         return (minBid != null && minBid > 0) ? minBid : DEFAULT_MINIMUM_BID;
     };
@@ -660,11 +670,29 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     .eq('session_id', finalSession.id)
                     .maybeSingle();
 
+                // Declare loadedSettings in broader scope so it can be used later
+                let loadedSettings: {
+                    minimum_bid: number;
+                    players_per_team: number;
+                    default_bid_increment: number;
+                    bid_increment_1_threshold: number;
+                    bid_increment_1_amount: number;
+                    bid_increment_2_threshold: number;
+                    bid_increment_2_amount: number;
+                    bid_increment_3_threshold: number;
+                    bid_increment_3_amount: number;
+                    bid_increment_4_threshold: number;
+                    bid_increment_4_amount: number;
+                    category_color_mapping: Record<string, string>;
+                    category_minimum_bids: Record<string, number>;
+                    category_limits: Record<string, number>;
+                } | null = null;
+
                 if (settingsData && !settingsError) {
                     // Debug: Log the raw database value
                     console.log('[SETTINGS DEBUG] Raw minimum_bid from database:', settingsData.minimum_bid, 'Type:', typeof settingsData.minimum_bid);
 
-                    const loadedSettings = {
+                    loadedSettings = {
                         minimum_bid: (settingsData.minimum_bid != null && !isNaN(Number(settingsData.minimum_bid)) && Number(settingsData.minimum_bid) > 0) ? Number(settingsData.minimum_bid) : DEFAULT_MINIMUM_BID, // Use database value, fallback to default if invalid
                         players_per_team: settingsData.players_per_team || DEFAULT_PLAYERS_PER_TEAM,
                         default_bid_increment: settingsData.default_bid_increment || 5000,
@@ -677,6 +705,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         bid_increment_4_threshold: settingsData.bid_increment_4_threshold || 700000,
                         bid_increment_4_amount: settingsData.bid_increment_4_amount || 50000,
                         category_color_mapping: settingsData.category_color_mapping || {},
+                        category_minimum_bids: settingsData.category_minimum_bids || {},
                         category_limits: settingsData.category_limits || {}
                     };
 
@@ -684,34 +713,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     console.log('[SETTINGS DEBUG] Loaded minimum_bid:', loadedSettings.minimum_bid, 'DEFAULT_MINIMUM_BID:', DEFAULT_MINIMUM_BID);
 
                     setAuctionSettings(loadedSettings);
-
-                    // Always use minimum_bid from database settings only
-                    // Only use session bid if it's higher than minimum (meaning there's an active bid)
-                    const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
-                    if (sessionBid && sessionBid >= loadedSettings.minimum_bid) {
-                        // There's an active bid (equal to or higher than minimum), use it
-                        setCurrentBid(sessionBid);
-                    } else {
-                        // Use minimum_bid from database settings only
-                        setCurrentBid(loadedSettings.minimum_bid);
-                        // Update the database to reflect the correct minimum bid from settings
-                        // Only update if user can edit - view-only users shouldn't modify database
-                        if (sessionId && canEdit) {
-                            supabase
-                                .from('auction_sessions')
-                                .update({ current_bid_amount: loadedSettings.minimum_bid })
-                                .eq('id', sessionId);
-                        }
-                    }
+                    // Note: We'll set the bid after determining the current player to use category-specific minimum bid
                 } else {
                     // Use defaults if settings not found
                     setAuctionSettings(null);
-                    // If no settings, use session bid if available
-                    const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
-                    if (sessionBid) {
-                        setCurrentBid(sessionBid);
-                    }
-                    // Don't set a default - wait for settings to load
+                    // Don't set bid here - will be set after determining current player
                 }
 
                 // Check if we should be in skipped players mode
@@ -764,6 +770,42 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                     setCurrentPlayerIndex(skippedIndex);
                     
+                    // Set bid based on current player's category-specific minimum bid
+                    const currentPlayerForBid = skippedFromTable[skippedIndex];
+                    if (currentPlayerForBid) {
+                        // Calculate minimum bid for this player's category
+                        let minimumBidForPlayer = DEFAULT_MINIMUM_BID; // Default fallback
+                        if (loadedSettings) {
+                            minimumBidForPlayer = loadedSettings.minimum_bid;
+                            if (currentPlayerForBid.category && loadedSettings.category_minimum_bids) {
+                                const categoryMinBid = loadedSettings.category_minimum_bids[currentPlayerForBid.category];
+                                if (categoryMinBid != null && categoryMinBid > 0) {
+                                    minimumBidForPlayer = categoryMinBid;
+                                } else if (currentPlayerForBid.category === 'ICON') {
+                                    minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                                }
+                            } else if (currentPlayerForBid.category === 'ICON') {
+                                minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                            }
+                        } else if (currentPlayerForBid.category === 'ICON') {
+                            minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                        }
+                        
+                        // Use session bid if it's higher than minimum, otherwise use category-specific minimum
+                        const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
+                        if (sessionBid && sessionBid >= minimumBidForPlayer) {
+                            setCurrentBid(sessionBid);
+                        } else {
+                            setCurrentBid(minimumBidForPlayer);
+                            if (sessionId && canEdit) {
+                                supabase
+                                    .from('auction_sessions')
+                                    .update({ current_bid_amount: minimumBidForPlayer })
+                                    .eq('id', sessionId);
+                            }
+                        }
+                    }
+                    
                     // Ensure database reflects the skipped players mode state
                     supabase
                         .from('auction_sessions')
@@ -804,6 +846,42 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         prevPlayerIndexRef.current = actualPlayerIndex;
                     }
                     setCurrentPlayerIndex(actualPlayerIndex);
+                    
+                    // Set bid based on current player's category-specific minimum bid
+                    const currentPlayerForBid = mappedPlayers[actualPlayerIndex];
+                    if (currentPlayerForBid) {
+                        // Calculate minimum bid for this player's category
+                        let minimumBidForPlayer = DEFAULT_MINIMUM_BID; // Default fallback
+                        if (loadedSettings) {
+                            minimumBidForPlayer = loadedSettings.minimum_bid;
+                            if (currentPlayerForBid.category && loadedSettings.category_minimum_bids) {
+                                const categoryMinBid = loadedSettings.category_minimum_bids[currentPlayerForBid.category];
+                                if (categoryMinBid != null && categoryMinBid > 0) {
+                                    minimumBidForPlayer = categoryMinBid;
+                                } else if (currentPlayerForBid.category === 'ICON') {
+                                    minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                                }
+                            } else if (currentPlayerForBid.category === 'ICON') {
+                                minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                            }
+                        } else if (currentPlayerForBid.category === 'ICON') {
+                            minimumBidForPlayer = 1000000; // Hardcoded ICON minimum
+                        }
+                        
+                        // Use session bid if it's higher than minimum, otherwise use category-specific minimum
+                        const sessionBid = sessionBidAmount !== undefined && sessionBidAmount !== null ? Number(sessionBidAmount) : null;
+                        if (sessionBid && sessionBid >= minimumBidForPlayer) {
+                            setCurrentBid(sessionBid);
+                        } else {
+                            setCurrentBid(minimumBidForPlayer);
+                            if (sessionId && canEdit) {
+                                supabase
+                                    .from('auction_sessions')
+                                    .update({ current_bid_amount: minimumBidForPlayer })
+                                    .eq('id', sessionId);
+                            }
+                        }
+                    }
                     
                     // Ensure database reflects the all players mode state
                     supabase
