@@ -56,7 +56,7 @@ export default function AuctionAdminPage() {
   const [sessions, setSessions] = useState<AuctionSession[]>([]);
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [editingSession, setEditingSession] = useState<AuctionSession | null>(null);
-  const [sessionFormData, setSessionFormData] = useState({ name: '', is_complete: false });
+  const [sessionFormData, setSessionFormData] = useState({ name: '', is_complete: false, tournament_logo: '' });
 
   // Teams state
   const [teams, setTeams] = useState<Team[]>([]);
@@ -227,7 +227,8 @@ export default function AuctionAdminPage() {
         .from('auction_sessions')
         .insert([{
           session_name: sessionFormData.name,
-          is_complete: sessionFormData.is_complete
+          is_complete: sessionFormData.is_complete,
+          tournament_logo: sessionFormData.tournament_logo || null
         }])
         .select()
         .single();
@@ -235,7 +236,7 @@ export default function AuctionAdminPage() {
       if (error) throw error;
       alert('Session created successfully!');
       setShowSessionForm(false);
-      setSessionFormData({ name: '', is_complete: false });
+      setSessionFormData({ name: '', is_complete: false, tournament_logo: '' });
       loadSessions();
     } catch (error: any) {
       console.error('Error creating session:', error);
@@ -251,7 +252,8 @@ export default function AuctionAdminPage() {
         .from('auction_sessions')
         .update({
           session_name: sessionFormData.name,
-          is_complete: sessionFormData.is_complete
+          is_complete: sessionFormData.is_complete,
+          tournament_logo: sessionFormData.tournament_logo || null
         })
         .eq('id', editingSession.id);
 
@@ -259,7 +261,7 @@ export default function AuctionAdminPage() {
       alert('Session updated successfully!');
       setEditingSession(null);
       setShowSessionForm(false);
-      setSessionFormData({ name: '', is_complete: false });
+      setSessionFormData({ name: '', is_complete: false, tournament_logo: '' });
       loadSessions();
     } catch (error: any) {
       console.error('Error updating session:', error);
@@ -1219,7 +1221,7 @@ export default function AuctionAdminPage() {
               <button
                 onClick={() => {
                   setEditingSession(null);
-                  setSessionFormData({ name: '', is_complete: false });
+                  setSessionFormData({ name: '', is_complete: false, tournament_logo: '' });
                   setShowSessionForm(true);
                 }}
                 className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
@@ -1246,6 +1248,20 @@ export default function AuctionAdminPage() {
                       placeholder="e.g., MBBL Season 4 - Men"
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Tournament Logo URL (Google Drive or direct link)</label>
+                    <input
+                      type="text"
+                      value={sessionFormData.tournament_logo}
+                      onChange={(e) => setSessionFormData({ ...sessionFormData, tournament_logo: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border"
+                      style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                      placeholder="https://drive.google.com/..."
+                    />
+                    <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
+                      Paste a Google Drive share link or direct image URL. Make sure the file is publicly accessible.
+                    </p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -1267,7 +1283,7 @@ export default function AuctionAdminPage() {
                       onClick={() => {
                         setShowSessionForm(false);
                         setEditingSession(null);
-                        setSessionFormData({ name: '', is_complete: false });
+                        setSessionFormData({ name: '', is_complete: false, tournament_logo: '' });
                       }}
                       className="px-4 py-2 rounded-lg font-semibold transition-colors"
                       style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
@@ -1299,7 +1315,11 @@ export default function AuctionAdminPage() {
                     <button
                       onClick={() => {
                         setEditingSession(session);
-                        setSessionFormData({ name: session.session_name, is_complete: session.is_complete });
+                        setSessionFormData({ 
+                          name: session.session_name, 
+                          is_complete: session.is_complete,
+                          tournament_logo: (session as any).tournament_logo || ''
+                        });
                         setShowSessionForm(true);
                       }}
                       className="px-4 py-2 rounded text-sm md:text-base font-medium transition-colors"

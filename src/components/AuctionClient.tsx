@@ -236,10 +236,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             }
         }
         
-        // For ICON category, if not set in category_minimum_bids, use hardcoded ₹10,00,000 (10 lakhs)
-        if (player?.category === 'ICON') {
-            return 1000000;
-        }
+
         
         // For other categories, use default minimum_bid from database, fallback to DEFAULT_MINIMUM_BID if not set or invalid
         const minBid = auctionSettings?.minimum_bid;
@@ -259,38 +256,78 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
     
     // Calculate minimum required budget for remaining players
-    // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
+    // Uses category_limits and category_minimum_bids from database settings
+    // Total players per team is taken from players_per_team setting
     const calculateMinimumRequiredForRemaining = (team: Team): number => {
-        // Count current ICON and other players
+        if (!auctionSettings) {
+            // If no settings, use default minimum bid for all remaining slots
+            const totalPlayers = getPlayersPerTeam();
+            const remainingSlots = Math.max(0, totalPlayers - team.players.length - (currentPlayer ? 1 : 0));
+            return remainingSlots * getRegularMinimumBid();
+        }
+
+        // Count current players by category
         // Use originalPlayerPool to get category info, not the current players array
         // (which might be filtered to skipped players only)
-        let currentICONCount = 0;
-        let currentOtherCount = 0;
+        const categoryCounts: Record<string, number> = {};
+        let playersWithoutLimitedCategory = 0;
         
         team.players.forEach(player => {
             const playerInPool = originalPlayerPool.find(p => p.name === player.name);
-            if (playerInPool?.category === 'ICON') {
-                currentICONCount++;
+            const category = playerInPool?.category;
+            if (category && auctionSettings.category_limits?.[category]) {
+                // Player has a category that has a limit
+                categoryCounts[category] = (categoryCounts[category] || 0) + 1;
             } else {
-                currentOtherCount++;
+                // Player doesn't have a category with a limit
+                playersWithoutLimitedCategory++;
             }
         });
         
         // If buying current player, account for it
-        const isCurrentPlayerICON = currentPlayer?.category === 'ICON';
-        const iconCountAfterBuy = isCurrentPlayerICON ? currentICONCount + 1 : currentICONCount;
-        const otherCountAfterBuy = isCurrentPlayerICON ? currentOtherCount : currentOtherCount + 1;
+        if (currentPlayer?.category) {
+            const currentCategory = currentPlayer.category;
+            if (auctionSettings.category_limits?.[currentCategory]) {
+                // Current player's category has a limit
+                categoryCounts[currentCategory] = (categoryCounts[currentCategory] || 0) + 1;
+            } else {
+                // Current player's category doesn't have a limit
+                playersWithoutLimitedCategory++;
+            }
+        } else if (currentPlayer) {
+            // Current player has no category
+            playersWithoutLimitedCategory++;
+        }
         
-        // Calculate remaining slots needed
-        // Teams need: 1 ICON player + 9 other players = 10 total players
-        const remainingICONSlots = Math.max(0, 1 - iconCountAfterBuy);
-        const remainingOtherSlots = Math.max(0, 9 - otherCountAfterBuy);
+        // Get category limits and minimum bids from settings
+        const categoryLimits = auctionSettings.category_limits || {};
+        const categoryMinimumBids = auctionSettings.category_minimum_bids || {};
+        const defaultMinimumBid = auctionSettings.minimum_bid || DEFAULT_MINIMUM_BID;
         
-        // Calculate minimum required
-        const iconMinimum = remainingICONSlots * 1000000; // ₹10,00,000 per ICON
-        const otherMinimum = remainingOtherSlots * getRegularMinimumBid();
+        let totalMinimumRequired = 0;
         
-        return iconMinimum + otherMinimum;
+        // Calculate minimum required for each category that has a limit
+        Object.entries(categoryLimits).forEach(([category, limit]) => {
+            const currentCount = categoryCounts[category] || 0;
+            const remainingSlots = Math.max(0, limit - currentCount);
+            
+            // Get minimum bid for this category, fallback to default
+            const categoryMinBid = categoryMinimumBids[category] || defaultMinimumBid;
+            
+            totalMinimumRequired += remainingSlots * categoryMinBid;
+        });
+        
+        // Calculate remaining slots for players without category limits
+        // Total players needed minus players in limited categories
+        const totalPlayers = getPlayersPerTeam();
+        const playersInLimitedCategories = Object.values(categoryCounts).reduce((sum, count) => sum + count, 0);
+        const totalLimitedSlots = Object.values(categoryLimits).reduce((sum, limit) => sum + limit, 0);
+        const remainingUnlimitedSlots = Math.max(0, (totalPlayers - totalLimitedSlots) - playersWithoutLimitedCategory);
+        
+        // Use default minimum bid for unlimited category slots
+        totalMinimumRequired += remainingUnlimitedSlots * defaultMinimumBid;
+        
+        return totalMinimumRequired;
     };
 
     const getPlayersPerTeam = (): number => {
@@ -298,11 +335,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
 
     const getBidIncrement = (currentBid: number): number => {
-        // For ICON category players, increment is always ₹2,00,000 (2 lakhs)
-        if (currentPlayer?.category === 'ICON') {
-            return 200000;
-        }
-        // For other categories, use database settings
+        // Use database settings for bid increment (based on bid amount thresholds)
         return getBidIncrementFromSettings(currentBid, auctionSettings);
     };
 
@@ -2080,7 +2113,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
         // Calculate maximum bid this team can make for current player
         // They need to reserve minimum bid for remaining players
-        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
+        // Uses category_limits and category_minimum_bids from database settings
         const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
         const maxBid = team.budget - minimumRequiredForRemaining;
 
@@ -2139,7 +2172,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             alert(
                 `Team ${team.name} cannot bid ₹${formatIndianNumber(newBid)} on this player.\n\n` +
                 `After this bid, the team will have ₹${formatIndianNumber(team.budget - newBid)} remaining, ` +
-                `but needs at least ₹${formatIndianNumber(minimumRequiredForRemaining)} to buy the remaining players (1 ICON + 9 others).\n\n` +
+                `but needs at least ₹${formatIndianNumber(minimumRequiredForRemaining)} to buy the remaining players.\n\n` +
                 `Maximum allowed bid: ₹${formatIndianNumber(maxBid)}`
             );
             return;
@@ -2338,7 +2371,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         }
 
         // Calculate minimum required budget for remaining players
-        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
+        // Uses category_limits and category_minimum_bids from database settings
         const minimumRequiredBudget = calculateMinimumRequiredForRemaining(team);
         const maxBid = team.budget - minimumRequiredBudget;
 
@@ -2360,7 +2393,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         if (currentBid > maxBid) {
             alert(
                 `Team ${team.name} cannot bid ₹${formatIndianNumber(currentBid)} on this player.\n\n` +
-                `Maximum allowed bid: ₹${formatIndianNumber(maxBid)} (to reserve budget for remaining players: 1 ICON + 9 others)`
+                `Maximum allowed bid: ₹${formatIndianNumber(maxBid)} (to reserve budget for remaining players)`
             );
             return;
         }
@@ -4275,7 +4308,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // They need to reserve minimum bid for remaining players
-                                        // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
+                                        // Uses category_limits and category_minimum_bids from database settings
                                         const minimumRequiredForRemaining = calculateMinimumRequiredForRemaining(team);
                                         const maxBid = team.budget - minimumRequiredForRemaining;
 
