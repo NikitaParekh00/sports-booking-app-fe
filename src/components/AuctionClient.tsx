@@ -264,7 +264,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         let playersWithoutLimitedCategory = 0;
         
         team.players.forEach(player => {
-            const playerInPool = originalPlayerPool.find(p => p.name === player.name);
+            const playerInPool = originalPlayerPoolIndexMap.has(player.name)
+                ? originalPlayerPool[originalPlayerPoolIndexMap.get(player.name)!]
+                : undefined;
             const category = playerInPool?.category;
             if (category && auctionSettings.category_limits?.[category]) {
                 // Player has a category that has a limit
@@ -1754,13 +1756,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const currentPlayer = players[currentPlayerIndex] || null;
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
     
+    // Create a map of player name -> index in originalPlayerPool for O(1) lookup
+    const originalPlayerPoolIndexMap = useMemo(() => {
+        const map = new Map<string, number>();
+        originalPlayerPool.forEach((player, index) => {
+            map.set(player.name, index);
+        });
+        return map;
+    }, [originalPlayerPool]);
+    
     // Get original player index in the originalPlayerPool (0-based array index)
     const getOriginalPoolIndex = (player: Player | null): number => {
         if (!player || originalPlayerPool.length === 0) {
             return 0;
         }
-        const index = originalPlayerPool.findIndex(p => p.name === player.name);
-        return index !== -1 ? index : 0;
+        return originalPlayerPoolIndexMap.get(player.name) ?? 0;
     };
     
     // Get original player index and total from the full player pool (for display)
@@ -1785,7 +1795,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             }
             
             // Find the current player in the original pool by name
-            const foundPlayer = originalPlayerPool.find(p => p.name === currentPlayer.name);
+            const foundPlayer = currentPlayer && originalPlayerPoolIndexMap.has(currentPlayer.name)
+                ? originalPlayerPool[originalPlayerPoolIndexMap.get(currentPlayer.name)!]
+                : undefined;
             
             // If found, use player_order if available (it's already 1-based), otherwise use array index + 1
             if (foundPlayer) {
@@ -2186,6 +2198,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         return getFilteredPlayersList();
     }, [isPlayerListSheetOpen, getFilteredPlayersList]);
 
+    // Create a map of team ID -> team for O(1) lookup instead of O(teams)
+    const teamMap = useMemo(() => {
+        const map = new Map<number, Team>();
+        teams.forEach(team => {
+            map.set(team.id, team);
+        });
+        return map;
+    }, [teams]);
+
+    // Create a map of player name -> team for O(1) lookup instead of O(teams × players)
+    const playerToTeamMap = useMemo(() => {
+        const map = new Map<string, { team: Team; bidAmount: number | undefined }>();
+        teams.forEach(team => {
+            team.players.forEach(player => {
+                map.set(player.name, { team, bidAmount: player.bidAmount });
+            });
+        });
+        return map;
+    }, [teams]);
+
     // Freeze skipped players list when sheet opens
     useEffect(() => {
         if (isSkippedPlayersSheetOpen) {
@@ -2207,7 +2239,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     // Default card styling (no category-based styling)
     const cardStyle = { bg: 'bg-white', border: 'border-2 border-gray-200', shadow: 'shadow-sm' };
 
-    const currentMinimumBid = getMinimumBid()
+    // Memoize minimum bid to avoid recalculating on every render
+    const currentMinimumBid = useMemo(() => getMinimumBid(), [currentPlayer, auctionSettings]);
+    
+    // Memoize skipped players count to avoid recalculating on every render
+    const skippedPlayersCount = useMemo(() => getCurrentSkippedPlayers().length, [getCurrentSkippedPlayers]);
 
     // Clear player bids and selected team when player changes
     // DO NOT reset bid here - bid is only reset when user clicks "Skip" or "Buy Player"
@@ -2252,7 +2288,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     // Track bid when team is selected and bid amount changes
     useEffect(() => {
         if (selectedTeamId && currentBid >= getMinimumBid()) {
-            const team = teams.find(t => t.id === selectedTeamId);
+            const team = selectedTeamId ? teamMap.get(selectedTeamId) : undefined;
             if (team) {
                 setPlayerBids(prev => {
                     const newBids = new Map(prev);
@@ -2271,7 +2307,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const handleTeamSelection = async (teamId: number) => {
         if (!canEdit || !sessionId) return;
 
-        const team = teams.find(t => t.id === teamId);
+        const team = teamId ? teamMap.get(teamId) : undefined;
         if (!team) return;
 
         // Calculate maximum bid this team can make for current player
@@ -4433,10 +4469,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     borderColor: '#F97316',
                                     color: '#FFFFFF'
                                 }}
-                                title={`Skipped Players (${getCurrentSkippedPlayers().length})`}
+                                title={`Skipped Players (${skippedPlayersCount})`}
                             >
-                                <span className="sm:hidden">Skip ({getCurrentSkippedPlayers().length})</span>
-                                <span className="hidden sm:inline">Skipped Players ({getCurrentSkippedPlayers().length})</span>
+                                <span className="sm:hidden">Skip ({skippedPlayersCount})</span>
+                                <span className="hidden sm:inline">Skipped Players ({skippedPlayersCount})</span>
                             </button>
                             {/* Mode switcher buttons - show when in skipped mode or auction is complete */}
                             {(isSkippedPlayersMode || auctionComplete) && canEdit && (
@@ -4946,7 +4982,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
-                                                    const team = teams.find(t => t.id === bidInfo.teamId);
+                                                    const team = bidInfo.teamId ? teamMap.get(bidInfo.teamId) : undefined;
                                                     return (
                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#1F2937' }}>
                                                             {team && (() => {
@@ -5269,7 +5305,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
-                                                    const team = teams.find(t => t.id === bidInfo.teamId);
+                                                    const team = bidInfo.teamId ? teamMap.get(bidInfo.teamId) : undefined;
                                                     return (
                                                         <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ backgroundColor: '#1F2937' }}>
                                                             {team && (() => {
@@ -5964,7 +6000,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                                 <div className="flex items-center gap-2 text-sm ml-11" style={{ color: '#9CA3AF' }}>
                                                     {(() => {
-                                                        const playerTeam = teams.find(t => t.id === player.teamId);
+                                                        const playerTeam = player.teamId ? teamMap.get(player.teamId) : undefined;
                                                         const logoUrl = getTeamLogo(playerTeam?.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
                                                         if (isProxyUrl) {
@@ -6193,11 +6229,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
                                 {memoizedFilteredPlayers.map((player, idx) => {
                                     const isSold = boughtPlayerNames.has(player.name);
-                                    // Get team info for sold players
-                                    const playerTeam = isSold
-                                        ? teams.find(team => team.players.some(p => p.name === player.name))
-                                        : null;
-                                    const bidAmount = playerTeam?.players.find(p => p.name === player.name)?.bidAmount;
+                                    // Get team info for sold players using optimized map lookup
+                                    const playerTeamInfo = isSold ? playerToTeamMap.get(player.name) : null;
+                                    const playerTeam = playerTeamInfo?.team || null;
+                                    const bidAmount = playerTeamInfo?.bidAmount;
 
                                     return (
                                         <div
