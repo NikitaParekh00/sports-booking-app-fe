@@ -35,8 +35,6 @@ interface Team {
     logoUrl?: string; // Custom logo URL from database
 }
 
-const TOTAL_AMOUNT = 111000;
-const TEAMS_COUNT = 8;
 
 // Helper function to format numbers in Indian numbering system (1,00,000 instead of 100,000)
 const formatIndianNumber = (num: number): string => {
@@ -179,15 +177,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
     const [players, setPlayers] = useState<Player[]>([]);
     const imageRef = useRef<HTMLImageElement | null>(null);
-    const [teams, setTeams] = useState<Team[]>(() => {
-        return Array.from({ length: TEAMS_COUNT }, (_, i) => ({
-            id: i + 1,
-            name: `Team ${i + 1}`,
-            budget: TOTAL_AMOUNT,
-            players: [],
-            ownerName: undefined,
-        }));
-    });
+    const [teams, setTeams] = useState<Team[]>([]);
     const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
     const [auctionSettings, setAuctionSettings] = useState<{
         minimum_bid: number;
@@ -518,21 +508,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         setSessionName(newSession.session_name); // Store session name for logo mapping
                         setTournamentLogo((newSession as any).tournament_logo || null); // Store tournament logo from database
 
-                        // Create initial teams
-                        const teamsData = Array.from({ length: TEAMS_COUNT }, (_, i) => ({
-                            session_id: finalSession!.id,
-                            team_number: i + 1,
-                            name: `Team ${i + 1}`,
-                            budget: TOTAL_AMOUNT
-                        }));
-
-                        const { error: teamsError } = await supabase.from('auction_teams').insert(teamsData);
-                        if (teamsError) {
-                            console.error('Error creating teams:', teamsError);
-                            throw new Error(`Failed to create teams: ${teamsError.message}`);
-                        }
-
-                        // Initial player pool will be created separately via database inserts
+                        // NOTE: Initial teams are now expected to be created via admin dashboard / migrations.
+                        // This block previously auto-created teams with hardcoded TOTAL_AMOUNT and TEAMS_COUNT.
                     }
                 }
 
@@ -981,13 +958,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             // Map teams using the pre-built Map (O(teams) instead of O(teams × players))
             const mappedTeams: Team[] = teamsData.map((team: DbTeam) => ({
-                id: team.team_number,
-                name: team.name,
+                    id: team.team_number,
+                    name: team.name,
                 budget: Number(team.budget),
                 players: playersByTeamId.get(team.id) || [],
-                ownerName: team.owner_name,
-                ownerPhoto: team.owner_photo || undefined,
-                logoUrl: team.logo_url || undefined
+                    ownerName: team.owner_name,
+                    ownerPhoto: team.owner_photo || undefined,
+                    logoUrl: team.logo_url || undefined
             }));
 
             setTeams(mappedTeams);
@@ -1953,9 +1930,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             console.log('handleSwitchToSkippedPlayers: Database update complete, current players:', playersRef.current.length);
 
-            const newMinimum = getMinimumBid();
+            // Get minimum bid for the first skipped player explicitly (not relying on currentPlayer which might not be updated yet)
+            const firstSkippedPlayer = skippedList[0];
+            const newMinimum = getMinimumBidForPlayer(firstSkippedPlayer);
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
+            
+            // Also update database to sync the bid
+            if (canEdit) {
+                await supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_bid_amount: newMinimum,
+                        current_bid_team_id: null
+                    })
+                    .eq('id', sessionId);
+            }
         } catch (error) {
             console.error('Error switching to skipped players:', error);
             alert('Failed to switch to skipped players. Please try again.');
@@ -2581,14 +2571,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     setSkippedPlayers(updatedSkippedList);
                     playersRef.current = updatedSkippedList;
                 } else {
-                    // No more skipped players - switch back to all players mode
-                    nextIndex = 0;
-                    nextPlayer = originalPlayerPool[0];
-                    nextPlayerOriginalIndex = 0;
-                    setIsSkippedPlayersMode(false);
-                    isSkippedPlayersModeRef.current = false;
-                    setPlayers(originalPlayerPool);
-                    playersRef.current = originalPlayerPool;
+                    // No more skipped players - stay in skipped players mode at the last index
+                    // Don't auto-switch to all players mode - user can manually click "All Unbidded" if they want
+                    // Keep the current player visible (the one that was just bought) so UI doesn't break
+                    nextIndex = currentPlayerIndex;
+                    nextPlayer = currentPlayer;
+                    nextPlayerOriginalIndex = getOriginalPoolIndex(currentPlayer);
+                    // Keep skipped players mode active
+                    // Keep the current player in the list so UI doesn't break (it's already bought, but we show it)
+                    setPlayers([currentPlayer]);
+                    setSkippedPlayers([]);
+                    playersRef.current = [currentPlayer];
+                    // Keep is_skipped_players_mode: true in database
                 }
             } else {
                 // In all players mode (or unbidded mode): find next player in original pool
@@ -2656,8 +2650,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             };
 
             // Save index to the appropriate column based on mode
-            if (isSkippedPlayersModeRef.current && nextPlayer) {
-                // In skipped players mode: save to skipped_players_index using the updated list index
+            if (isSkippedPlayersModeRef.current) {
+                // In skipped players mode: save to skipped_players_index
+                // Even if there are no more skipped players, keep the mode and save the last index
                 updateData.skipped_players_index = nextIndex;
             } else if (!isSkippedPlayersModeRef.current) {
                 // In all players mode: save to current_player_index using originalPlayerPool index
@@ -2789,76 +2784,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 }
             }
 
-            // Check if this is the last player
-            const isLastPlayer = currentPlayerIndex >= players.length - 1;
-
-            if (isLastPlayer) {
-                // Mark auction as complete
-                setAuctionComplete(true);
-                await supabase
-                    .from('auction_sessions')
-                    .update({
-                        current_player_index: currentPlayerIndex,
-                        is_complete: true
-                    })
-                    .eq('id', sessionId);
-
-                // Reload skipped players from table to get final list
-                const { data: skippedData } = await supabase
-                    .from('auction_skipped_players')
-                    .select('player_pool_id, player_name, player_order')
-                    .eq('session_id', sessionId)
-                    .order('player_order', { ascending: true });
-
-                if (skippedData && skippedData.length > 0) {
-                    // Get player pool data to map skipped players
-                    const { data: allPoolData } = await supabase
-                        .from('auction_player_pool')
-                        .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
-                        .eq('session_id', sessionId);
-
-                    const poolMap = new Map(
-                        (allPoolData || []).map((p: any) => [p.id, p])
-                    );
-
-                    const skippedList: Player[] = skippedData
-                        .map((sp: any) => {
-                            const poolPlayer = poolMap.get(sp.player_pool_id);
-                            if (!poolPlayer) return null;
-                            return {
-                                name: poolPlayer.name,
-                                photo: poolPlayer.photo || undefined,
-                                age: poolPlayer.age || undefined,
-                                played_s1: poolPlayer.played_s1 || undefined,
-                                experience: poolPlayer.experience || undefined,
-                                active_sport: poolPlayer.active_sport || undefined,
-                                skill: poolPlayer.skill || undefined,
-                                batting_hand: poolPlayer.batting_hand || undefined,
-                                bowling_hand: poolPlayer.bowling_hand || undefined,
-                                wing: poolPlayer.wing || undefined,
-                                flat_no: poolPlayer.flat_no || undefined,
-                                phone: poolPlayer.phone || undefined,
-                                category: poolPlayer.category || undefined
-                            } as Player;
-                        })
-                        .filter((p): p is Player => p !== null);
-
-                    if (skippedList.length > 0) {
-                        setPlayers(skippedList);
-                        setSkippedPlayers(skippedList);
-                        setIsSkippedPlayersMode(true);
-                        isSkippedPlayersModeRef.current = true;
-                        setCurrentPlayerIndex(0);
-                        await supabase
-                            .from('auction_sessions')
-                            .update({
-                                skipped_players_index: 0,
-                                is_skipped_players_mode: true
-                            })
-                            .eq('id', sessionId);
-                    }
-                }
-            } else {
+            // Move to next player (do NOT auto-complete the auction here)
+            // Auction completion is handled only via handleEndAuction (End Auction button)
+            {
                 // Move to next player
                 // If in skipped players mode, ensure we stay within skipped players array
                 let nextPlayer: Player | undefined;
@@ -4488,7 +4416,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         const finalDisabled = isDisabled || isViewOnly;
 
                                         // Determine team status for coloring
-                                        const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                        // Use relative budget percentage per team using its initial budget if available
+                                        const budgetPercentage = team.budget > 0 && team.players.length > 0
+                                            ? (team.budget / (team.budget + team.players.reduce((sum, p) => sum + (p.bidAmount || 0), 0))) * 100
+                                            : 100;
                                         const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
                                         const isSelected = selectedTeamId === team.id;
 
@@ -5314,7 +5245,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         const finalDisabled = isDisabled || isViewOnly;
 
                                         // Determine team status for coloring
-                                        const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                        const budgetPercentage = team.budget > 0 && team.players.length > 0
+                                            ? (team.budget / (team.budget + team.players.reduce((sum, p) => sum + (p.bidAmount || 0), 0))) * 100
+                                            : 100;
                                         const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
                                         const isSelected = selectedTeamId === team.id;
 
@@ -5688,7 +5621,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 const finalDisabled = isDisabled || isViewOnly;
 
                                 // Determine team status for coloring
-                                const budgetPercentage = (team.budget / TOTAL_AMOUNT) * 100;
+                                const budgetPercentage = team.budget > 0 && team.players.length > 0
+                                    ? (team.budget / (team.budget + team.players.reduce((sum, p) => sum + (p.bidAmount || 0), 0))) * 100
+                                    : 100;
                                 const isLowBudget = budgetPercentage < 20; // Less than 20% of total budget remaining
                                 const isSelected = selectedTeamId === team.id;
 
