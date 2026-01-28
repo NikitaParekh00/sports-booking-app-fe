@@ -206,6 +206,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const playersRef = useRef<Player[]>([]);
     const prevSoldPlayerInfoRef = useRef<{ playerName: string; teamName: string; amount: number } | null>(null);
     const isUpdatingBidRef = useRef<boolean>(false); // Track if we're updating bid ourselves
+    const isUpdatingIndexRef = useRef<boolean>(false); // Track if we're updating player index ourselves (mode switches)
 
     // Resizable divider state
     const [leftPanelWidth, setLeftPanelWidth] = useState<number | null>(null); // null means use default
@@ -1252,16 +1253,31 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     const oldAcknowledged = (payload.old as any)?.congratulations_modal_acknowledged;
                     
                     // Read the correct index based on mode
-                    // In skipped players mode, use skipped_players_index; otherwise use current_player_index
+                    // Use database flag (is_skipped_players_mode) as source of truth, not local ref
+                    // This prevents race conditions when switching modes
+                    const dbIsSkippedMode = session.is_skipped_players_mode === true;
+                    const localIsSkippedMode = isSkippedPlayersModeRef.current;
                     let sessionNewIndex: number;
-                    if (isSkippedPlayersModeRef.current && session.skipped_players_index !== undefined && session.skipped_players_index !== null) {
+                    if (dbIsSkippedMode && session.skipped_players_index !== undefined && session.skipped_players_index !== null) {
                         sessionNewIndex = session.skipped_players_index;
-                    } else if (!isSkippedPlayersModeRef.current) {
-                        sessionNewIndex = session.current_player_index;
                     } else {
-                        // If we're in skipped mode but skipped_players_index is not set, use current_player_index as fallback
+                        // Not in skipped mode - use current_player_index
                         sessionNewIndex = session.current_player_index;
                     }
+                    
+                    console.log('[REALTIME SUBSCRIPTION] Index calculation:', {
+                        dbIsSkippedMode,
+                        localIsSkippedMode,
+                        sessionNewIndex,
+                        skipped_players_index: session.skipped_players_index,
+                        current_player_index: session.current_player_index,
+                        currentPlayerIndex,
+                        prevPlayerIndexRef: prevPlayerIndexRef.current,
+                        playersRefLength: playersRef.current.length,
+                        originalPlayerPoolLength: originalPlayerPool.length,
+                        isUpdatingIndexRef: isUpdatingIndexRef.current,
+                        timestamp: new Date().toISOString()
+                    });
                     
                     // Show modal when sold_player_info is set and not acknowledged (real-time)
                     // Only show if congratulations_modal_acknowledged is false or undefined
@@ -1307,7 +1323,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     let clampedIndex = sessionNewIndex;
                     let shouldUpdateIndex = true;
                     
-                    if (isSkippedPlayersModeRef.current && playersRef.current.length > 0) {
+                    if (isUpdatingIndexRef.current) {
+                        // We're currently updating the index ourselves (e.g. switching modes) on this device.
+                        // Skip applying realtime index changes to avoid overwriting the local selection.
+                        console.log('[REALTIME SUBSCRIPTION] Skipping index update because isUpdatingIndexRef is true', {
+                            sessionNewIndex,
+                            currentPlayerIndex,
+                            timestamp: new Date().toISOString()
+                        });
+                        shouldUpdateIndex = false;
+                    } else if (dbIsSkippedMode && playersRef.current.length > 0) {
                         // Clamp index to valid range for skipped players
                         if (clampedIndex >= playersRef.current.length) {
                             clampedIndex = playersRef.current.length - 1;
@@ -1322,23 +1347,47 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             // Index hasn't changed, skip index update but continue with other updates
                             shouldUpdateIndex = false;
                         }
-                    } else if (!isSkippedPlayersModeRef.current) {
+                    } else if (!dbIsSkippedMode) {
                         // Not in skipped players mode - could be showing all players or unbidded players
                         // sessionNewIndex is an index in originalPlayerPool
                         // We need to find the corresponding player in the current players array
                         if (playersRef.current.length > 0 && originalPlayerPool.length > 0) {
                             // Check if current players array is a subset (unbidded players) or full list
+                            // Use database flag to determine mode, but also check list length as fallback
                             const isUnbiddedMode = playersRef.current.length < originalPlayerPool.length;
+                            
+                            console.log('[REALTIME SUBSCRIPTION] Not in skipped mode, calculating index:', {
+                                isUnbiddedMode,
+                                playersRefLength: playersRef.current.length,
+                                originalPlayerPoolLength: originalPlayerPool.length,
+                                sessionNewIndex,
+                                timestamp: new Date().toISOString()
+                            });
                             
                             if (isUnbiddedMode) {
                                 // We're showing unbidded players, need to convert original pool index to unbidded list index
                                 if (sessionNewIndex >= 0 && sessionNewIndex < originalPlayerPool.length) {
                                     const playerAtOriginalIndex = originalPlayerPool[sessionNewIndex];
+                                    console.log('[REALTIME SUBSCRIPTION] Looking for player in unbidded list:', {
+                                        playerAtOriginalIndex: playerAtOriginalIndex?.name,
+                                        sessionNewIndex,
+                                        timestamp: new Date().toISOString()
+                                    });
+                                    
                                     if (playerAtOriginalIndex) {
                                         const foundInCurrentList = playersRef.current.findIndex(p => p.name === playerAtOriginalIndex.name);
                                         if (foundInCurrentList !== -1) {
                                             clampedIndex = foundInCurrentList;
+                                            console.log('[REALTIME SUBSCRIPTION] Found player in unbidded list:', {
+                                                foundIndex: foundInCurrentList,
+                                                playerName: playerAtOriginalIndex.name,
+                                                timestamp: new Date().toISOString()
+                                            });
                                         } else {
+                                            console.log('[REALTIME SUBSCRIPTION] Player not found in unbidded list, searching for closest:', {
+                                                playerName: playerAtOriginalIndex.name,
+                                                timestamp: new Date().toISOString()
+                                            });
                                             // Player at that index was bought, find closest unbidded player
                                             // Try next players first
                                             for (let i = sessionNewIndex + 1; i < originalPlayerPool.length; i++) {
@@ -1346,6 +1395,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 const found = playersRef.current.findIndex(p => p.name === nextPlayer.name);
                                                 if (found !== -1) {
                                                     clampedIndex = found;
+                                                    console.log('[REALTIME SUBSCRIPTION] Found next player:', {
+                                                        foundIndex: found,
+                                                        playerName: nextPlayer.name,
+                                                        timestamp: new Date().toISOString()
+                                                    });
                                                     break;
                                                 }
                                             }
@@ -1356,6 +1410,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     const found = playersRef.current.findIndex(p => p.name === prevPlayer.name);
                                                     if (found !== -1) {
                                                         clampedIndex = found;
+                                                        console.log('[REALTIME SUBSCRIPTION] Found previous player:', {
+                                                            foundIndex: found,
+                                                            playerName: prevPlayer.name,
+                                                            timestamp: new Date().toISOString()
+                                                        });
                                                         break;
                                                     }
                                                 }
@@ -1366,23 +1425,62 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             } else {
                                 // We're showing all players, index should match
                                 clampedIndex = sessionNewIndex;
+                                console.log('[REALTIME SUBSCRIPTION] All players mode, using sessionNewIndex directly:', {
+                                    clampedIndex,
+                                    timestamp: new Date().toISOString()
+                                });
                             }
+                        } else if (originalPlayerPool.length === 0) {
+                            // originalPlayerPool is empty - this shouldn't happen, but if it does, skip index update
+                            // to prevent wrong player from being shown
+                            console.log('[REALTIME SUBSCRIPTION] originalPlayerPool is empty, skipping index update to prevent wrong player:', {
+                                playersRefLength: playersRef.current.length,
+                                sessionNewIndex,
+                                currentPlayerIndex,
+                                timestamp: new Date().toISOString()
+                            });
+                            shouldUpdateIndex = false;
                         } else {
+                            // playersRef is empty but originalPlayerPool is not - use sessionNewIndex
                             clampedIndex = sessionNewIndex;
+                            console.log('[REALTIME SUBSCRIPTION] playersRef empty, using sessionNewIndex:', {
+                                clampedIndex,
+                                timestamp: new Date().toISOString()
+                            });
                         }
                         
                         // Only update if the index actually changed
                         if (clampedIndex === prevPlayerIndexRef.current && clampedIndex === currentPlayerIndex) {
                             // Index hasn't changed, skip index update but continue with other updates
                             shouldUpdateIndex = false;
+                            console.log('[REALTIME SUBSCRIPTION] Index unchanged, skipping update:', {
+                                clampedIndex,
+                                prevPlayerIndexRef: prevPlayerIndexRef.current,
+                                currentPlayerIndex,
+                                timestamp: new Date().toISOString()
+                            });
                         }
                     }
 
                     // Only update index if it actually changed
                     if (shouldUpdateIndex) {
-                    setCurrentPlayerIndex(clampedIndex);
-                    // Update ref after setting state
-                    prevPlayerIndexRef.current = clampedIndex;
+                        console.log('[REALTIME SUBSCRIPTION] Updating index:', {
+                            clampedIndex,
+                            playerName: playersRef.current[clampedIndex]?.name,
+                            prevIndex: prevPlayerIndexRef.current,
+                            currentIndex: currentPlayerIndex,
+                            timestamp: new Date().toISOString()
+                        });
+                        setCurrentPlayerIndex(clampedIndex);
+                        // Update ref after setting state
+                        prevPlayerIndexRef.current = clampedIndex;
+                    } else {
+                        console.log('[REALTIME SUBSCRIPTION] Skipping index update (shouldUpdateIndex=false)', {
+                            clampedIndex,
+                            prevPlayerIndexRef: prevPlayerIndexRef.current,
+                            currentPlayerIndex,
+                            timestamp: new Date().toISOString()
+                        });
                     }
                     
                     setAuctionComplete(session.is_complete);
@@ -1770,6 +1868,36 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             isSkippedPlayersModeRef.current = false;
             playersRef.current = unbiddedList;
             
+            // Ensure originalPlayerPool is set (it should be, but double-check to prevent subscription issues)
+            if (originalPlayerPool.length === 0) {
+                // Reload original player pool if it's empty
+                const { data: playerPoolData } = await supabase
+                    .from('auction_player_pool')
+                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                    .eq('session_id', sessionId)
+                    .order('player_order', { ascending: true });
+                
+                if (playerPoolData) {
+                    const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
+                        name: p.name,
+                        photo: p.photo || undefined,
+                        age: p.age || undefined,
+                        played_s1: p.played_s1 || undefined,
+                        experience: p.experience || undefined,
+                        active_sport: p.active_sport || undefined,
+                        skill: p.skill || undefined,
+                        batting_hand: p.batting_hand || undefined,
+                        bowling_hand: p.bowling_hand || undefined,
+                        wing: p.wing || undefined,
+                        flat_no: p.flat_no || undefined,
+                        phone: p.phone || undefined,
+                        category: p.category || undefined,
+                        player_order: p.player_order || undefined
+                    }));
+                    setOriginalPlayerPool(mappedPlayers);
+                }
+            }
+            
             // Restore the saved current_player_index (index in originalPlayerPool)
             const savedIndex = sessionData?.current_player_index ?? 0;
             // Find the player at that index in originalPlayerPool, then find it in unbiddedList
@@ -1805,6 +1933,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                 }
             }
+            console.log('[SWITCH TO UNBIDDED] Setting local index:', {
+                actualIndex,
+                playerName: unbiddedList[actualIndex]?.name,
+                unbiddedListLength: unbiddedList.length,
+                savedIndex,
+                timestamp: new Date().toISOString()
+            });
+            console.log('[SWITCH TO UNBIDDED] Setting local index:', {
+                actualIndex,
+                playerName: unbiddedList[actualIndex]?.name,
+                unbiddedListLength: unbiddedList.length,
+                savedIndex,
+                timestamp: new Date().toISOString()
+            });
             setCurrentPlayerIndex(actualIndex);
             
             // Update prevPlayerIndexRef to prevent the useEffect from resetting the bid
@@ -1822,6 +1964,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 }
             }
             
+            console.log('[SWITCH TO UNBIDDED] Updating database:', {
+                originalPoolIndex,
+                playerName: currentPlayerInUnbidded?.name,
+                is_skipped_players_mode: false,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Mark that we're updating the index ourselves so the realtime subscription
+            // does not immediately overwrite it on THIS device
+            isUpdatingIndexRef.current = true;
+
             await supabase
                 .from('auction_sessions')
                 .update({
@@ -1829,7 +1982,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     current_player_index: originalPoolIndex // Update to the correct original pool index
                     // Keep skipped_players_index unchanged so we can restore it when switching back
                 })
-                .eq('id', sessionId);
+                .eq('id', sessionId)
+                .then(({ error }) => {
+                    if (error) {
+                        console.error('[SWITCH TO UNBIDDED] Database update error:', error);
+                    } else {
+                        console.log('[SWITCH TO UNBIDDED] Database update complete', {
+                            originalPoolIndex,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                    // Allow realtime subscription to resume index updates
+                    isUpdatingIndexRef.current = false;
+                });
+            
+            console.log('[SWITCH TO UNBIDDED] Database update complete', {
+                timestamp: new Date().toISOString()
+            });
 
             const newMinimum = getMinimumBid();
             setCurrentBid(newMinimum);
