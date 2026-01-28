@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
@@ -950,39 +950,45 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     }, [authLoading, supabase, initialSessionId, router]);
 
     // Helper function to reload teams (accessible throughout component)
+    // Optimized: Select only needed columns and use Map for O(n) grouping instead of O(teams × players)
     const reloadTeams = useCallback(async () => {
         if (!sessionId) return;
 
         const { data: teamsData } = await supabase
             .from('auction_teams')
-            .select('*')
+            .select('id, team_number, name, budget, owner_name, owner_photo, logo_url')
             .eq('session_id', sessionId)
             .order('team_number', { ascending: true });
 
         const { data: playersData } = await supabase
             .from('auction_players')
-            .select('*')
+            .select('team_id, player_name, bid_amount')
             .eq('session_id', sessionId);
 
         if (teamsData && playersData) {
-            const mappedTeams: Team[] = teamsData.map((team: DbTeam) => {
-                const teamPlayers = playersData
-                    .filter((p: DbPlayer) => p.team_id === team.id)
-                    .map((p: DbPlayer) => ({
-                        name: p.player_name,
-                        bidAmount: Number(p.bid_amount) || 0 // Ensure bid_amount is a number
-                    }));
+            // Build a Map of team_id -> players[] in O(n) instead of O(teams × players)
+            const playersByTeamId = new Map<string, Array<{ name: string; bidAmount: number }>>();
+            for (const player of playersData) {
+                const teamId = player.team_id;
+                if (!playersByTeamId.has(teamId)) {
+                    playersByTeamId.set(teamId, []);
+                }
+                playersByTeamId.get(teamId)!.push({
+                    name: player.player_name,
+                    bidAmount: Number(player.bid_amount) || 0
+                });
+            }
 
-                return {
-                    id: team.team_number,
-                    name: team.name,
-                    budget: Number(team.budget), // Ensure budget is a number
-                    players: teamPlayers,
-                    ownerName: team.owner_name,
-                    ownerPhoto: team.owner_photo || undefined,
-                    logoUrl: team.logo_url || undefined
-                };
-            });
+            // Map teams using the pre-built Map (O(teams) instead of O(teams × players))
+            const mappedTeams: Team[] = teamsData.map((team: DbTeam) => ({
+                id: team.team_number,
+                name: team.name,
+                budget: Number(team.budget),
+                players: playersByTeamId.get(team.id) || [],
+                ownerName: team.owner_name,
+                ownerPhoto: team.owner_photo || undefined,
+                logoUrl: team.logo_url || undefined
+            }));
 
             setTeams(mappedTeams);
 
@@ -1427,12 +1433,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         if (newTeamId !== selectedTeamId) {
                             setSelectedTeamId(newTeamId);
                         }
+                        // If DB cleared the selected team, also clear local bid->team mapping
+                        // (UI displays "Bid by" using playerBids.get(currentBid), not selectedTeamId)
+                        if (newTeamId === null) {
+                            setPlayerBids(new Map());
+                        }
                     }
                 }
             })
             .subscribe();
 
         // Subscribe to team changes
+        // This covers budget updates when players are bought (by any admin) and manual team updates
         const teamsChannel = supabase
             .channel('auction-teams-changes')
             .on('postgres_changes', {
@@ -1442,21 +1454,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 filter: `session_id=eq.${sessionId}`
             }, async (payload) => {
                 console.log('Team changed:', payload);
-                await reloadTeams();
-            })
-            .subscribe();
-
-        // Subscribe to player changes (bought players)
-        const playersChannel = supabase
-            .channel('auction-players-changes')
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'auction_players',
-                filter: `session_id=eq.${sessionId}`
-            }, async (payload) => {
-                console.log('Player changed:', payload);
-                // Reload teams when players change (this also reloads team budgets)
                 await reloadTeams();
             })
             .subscribe();
@@ -1674,7 +1671,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         return () => {
             sessionChannel.unsubscribe();
             teamsChannel.unsubscribe();
-            playersChannel.unsubscribe();
             playerPoolChannel.unsubscribe();
             skippedPlayersChannel.unsubscribe();
         };
@@ -1967,6 +1963,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
 
     // Get players list based on filter (All, Sold, Unsold) in random order
+    // Memoized to prevent reshuffling on every render - only recalculates when filters change
     const getFilteredPlayersList = useCallback(() => {
         if (originalPlayerPool.length === 0) return [];
 
@@ -2022,6 +2019,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
         return shuffled;
     }, [originalPlayerPool, boughtPlayerNames, playerListFilter, selectedCategoryFilter]);
+
+    // Memoize the filtered players list to prevent reshuffling on every render
+    // Only recalculates when the sheet is open and filters change
+    const memoizedFilteredPlayers = useMemo(() => {
+        if (!isPlayerListSheetOpen) return [];
+        return getFilteredPlayersList();
+    }, [isPlayerListSheetOpen, getFilteredPlayersList]);
 
     // Freeze skipped players list when sheet opens
     useEffect(() => {
@@ -2587,10 +2591,51 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     playersRef.current = originalPlayerPool;
                 }
             } else {
-                // In all players mode: use simple increment
-                nextIndex = currentPlayerIndex < players.length - 1 ? currentPlayerIndex + 1 : currentPlayerIndex;
-                nextPlayer = players[nextIndex];
-                nextPlayerOriginalIndex = nextPlayer ? getOriginalPoolIndex(nextPlayer) : getOriginalPoolIndex(currentPlayer);
+                // In all players mode (or unbidded mode): find next player in original pool
+                const currentPlayerOriginalIndex = getOriginalPoolIndex(currentPlayer);
+                const updatedBoughtNames = new Set([...boughtPlayerNames, currentPlayer.name]);
+                
+                // Check if we're in unbidded mode - if so, update the players list immediately
+                // to prevent race condition with real-time subscription
+                const isUnbiddedMode = players.length < originalPlayerPool.length;
+                if (isUnbiddedMode) {
+                    // Update players list immediately to exclude the just-bought player
+                    // This ensures playersRef.current is correct when real-time subscription fires
+                    const updatedUnbiddedList = originalPlayerPool.filter(player => !updatedBoughtNames.has(player.name));
+                    setPlayers(updatedUnbiddedList);
+                    playersRef.current = updatedUnbiddedList;
+                }
+                
+                // Find the next player in original pool that hasn't been bought
+                let foundNextPlayer: Player | undefined;
+                let foundNextOriginalIndex = currentPlayerOriginalIndex;
+                
+                for (let i = currentPlayerOriginalIndex + 1; i < originalPlayerPool.length; i++) {
+                    const candidatePlayer = originalPlayerPool[i];
+                    if (!updatedBoughtNames.has(candidatePlayer.name)) {
+                        foundNextPlayer = candidatePlayer;
+                        foundNextOriginalIndex = i;
+                        break;
+                    }
+                }
+                
+                // If next player found, use it; otherwise stay on current
+                if (foundNextPlayer) {
+                    nextPlayer = foundNextPlayer;
+                    nextPlayerOriginalIndex = foundNextOriginalIndex;
+                    // Find index in the updated list (if unbidded mode) or current list
+                    const listToSearch = isUnbiddedMode ? playersRef.current : players;
+                    nextIndex = listToSearch.findIndex(p => p.name === foundNextPlayer!.name);
+                    if (nextIndex === -1) {
+                        // Fallback: use current index (shouldn't happen, but subscription will correct it)
+                        nextIndex = Math.min(currentPlayerIndex, listToSearch.length - 1);
+                    }
+                } else {
+                    // No more unbidded players, stay on current
+                    nextIndex = currentPlayerIndex;
+                    nextPlayer = currentPlayer;
+                    nextPlayerOriginalIndex = currentPlayerOriginalIndex;
+                }
             }
 
             // Update session with next player index and sold player info
@@ -2648,6 +2693,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             const newMinimum = getMinimumBidForPlayer(nextPlayer);
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
+            setPlayerBids(new Map());
             
             // Update database to sync bid reset
             await supabase
@@ -2847,6 +2893,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 const newMinimum = getMinimumBidForPlayer(nextPlayer);
             setCurrentBid(newMinimum);
             setSelectedTeamId(null);
+            setPlayerBids(new Map());
                 
                 // Update database to sync bid reset
                 await supabase
@@ -6038,11 +6085,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     </div>
 
                     {/* Players List */}
-                    {(() => {
-                        const filteredPlayers = getFilteredPlayersList();
-                        return filteredPlayers.length > 0 ? (
+                    {memoizedFilteredPlayers.length > 0 ? (
                             <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-                                {filteredPlayers.map((player, idx) => {
+                                {memoizedFilteredPlayers.map((player, idx) => {
                                     const isSold = boughtPlayerNames.has(player.name);
                                     // Get team info for sold players
                                     const playerTeam = isSold
@@ -6086,8 +6131,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             <div className="text-center py-8" style={{ color: '#9CA3AF' }}>
                                 No players found
                             </div>
-                        );
-                    })()}
+                        )}
                 </div>
             </BottomSheet>
         </div>
