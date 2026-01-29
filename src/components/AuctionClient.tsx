@@ -1542,6 +1542,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             })
             .subscribe();
 
+        // Subscribe to auction_players changes
+        // This ensures view mode updates immediately when players are bought/removed
+        const auctionPlayersChannel = supabase
+            .channel('auction-players-changes')
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'auction_players',
+                filter: `session_id=eq.${sessionId}`
+            }, async (payload) => {
+                console.log('Auction players changed:', payload);
+                await reloadTeams();
+            })
+            .subscribe();
+
         // Subscribe to player pool changes (available players list)
         const playerPoolChannel = supabase
             .channel('auction-player-pool-changes')
@@ -1757,6 +1772,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             teamsChannel.unsubscribe();
             playerPoolChannel.unsubscribe();
             skippedPlayersChannel.unsubscribe();
+            auctionPlayersChannel.unsubscribe();
         };
     }, [sessionId, supabase, reloadTeams]);
 
