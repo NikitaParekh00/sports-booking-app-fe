@@ -366,6 +366,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [originalPlayerPool, setOriginalPlayerPool] = useState<Player[]>([]); // Store original player pool for switching back
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
     const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<boolean>(false); // Track if top players PDF is generating
+    
+    // Undo system state
+    type UndoAction = 
+        | { type: 'buy'; playerName: string; teamId: number; bidAmount: number; previousPlayerIndex: number; previousBid: number; previousTeamId: number | null }
+        | { type: 'skip'; playerName: string; previousPlayerIndex: number; previousBid: number; previousTeamId: number | null }
+        | { type: 'bid'; previousBid: number; previousTeamId: number | null };
+    const [lastAction, setLastAction] = useState<UndoAction | null>(null);
 
     // Check authentication and edit permissions
     useEffect(() => {
@@ -1278,8 +1285,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         playersRefLength: playersRef.current.length,
                         originalPlayerPoolLength: originalPlayerPool.length,
                         isUpdatingIndexRef: isUpdatingIndexRef.current,
-                        timestamp: new Date().toISOString()
-                    });
+                            timestamp: new Date().toISOString()
+                        });
                     
                     // Show modal when sold_player_info is set and not acknowledged (real-time)
                     // Only show if congratulations_modal_acknowledged is false or undefined
@@ -1473,9 +1480,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             currentIndex: currentPlayerIndex,
                             timestamp: new Date().toISOString()
                         });
-                        setCurrentPlayerIndex(clampedIndex);
-                        // Update ref after setting state
-                        prevPlayerIndexRef.current = clampedIndex;
+                    setCurrentPlayerIndex(clampedIndex);
+                    // Update ref after setting state
+                    prevPlayerIndexRef.current = clampedIndex;
                     } else {
                         console.log('[REALTIME SUBSCRIPTION] Skipping index update (shouldUpdateIndex=false)', {
                             clampedIndex,
@@ -2390,6 +2397,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         setCurrentBid(newBid);
         setSelectedTeamId(teamId);
 
+        // Store previous state for undo (only if bid or team changed)
+        const previousBid = currentBid;
+        const previousTeamId = selectedTeamId;
+        if (newBid !== previousBid || teamId !== previousTeamId) {
+            setLastAction({
+                type: 'bid',
+                previousBid,
+                previousTeamId
+            });
+        }
+
         // Record the bid immediately
         setPlayerBids(prev => {
             const newBids = new Map(prev);
@@ -2417,6 +2435,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         const increment = getBidIncrement(currentBid);
         const newBid = currentBid + increment;
 
+        // Store previous state for undo
+        const previousBid = currentBid;
+        const previousTeamId = selectedTeamId;
+        setLastAction({
+            type: 'bid',
+            previousBid,
+            previousTeamId
+        });
+
         // Update local state immediately
         setCurrentBid(newBid);
 
@@ -2441,6 +2468,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         // Calculate increment based on the amount we're decreasing FROM
         const increment = getBidIncrement(currentBid);
         const newBid = Math.max(currentMinimumBid, currentBid - increment);
+
+        // Store previous state for undo
+        const previousBid = currentBid;
+        const previousTeamId = selectedTeamId;
+        setLastAction({
+            type: 'bid',
+            previousBid,
+            previousTeamId
+        });
 
         // Update local state immediately
         setCurrentBid(newBid);
@@ -2555,6 +2591,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
         const team = teams.find(t => t.id === selectedTeamId);
         if (!team) return;
+
+        // Store state for undo before making changes
+        const previousPlayerIndex = currentPlayerIndex;
+        const previousBid = currentBid;
+        const previousTeamId = selectedTeamId;
 
         // Check if team has space
         const playersPerTeam = getPlayersPerTeam();
@@ -2693,6 +2734,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 teamName: team.name,
                 amount: currentBid
             };
+
+            // Store action for undo
+            setLastAction({
+                type: 'buy',
+                playerName: currentPlayer.name,
+                teamId: selectedTeamId,
+                bidAmount: currentBid,
+                previousPlayerIndex,
+                previousBid,
+                previousTeamId
+            });
 
             // Move to next player
             let nextIndex: number;
@@ -2927,6 +2979,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 return;
             }
 
+            // Store state for undo before making changes
+            const previousPlayerIndex = currentPlayerIndex;
+            const previousBid = currentBid;
+            const previousTeamId = selectedTeamId;
+
             // Check if player has already been sold (bought)
             if (boughtPlayerNames.has(currentPlayer.name)) {
                 alert(`${currentPlayer.name} has already been bought and cannot be skipped.`);
@@ -3036,10 +3093,197 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         current_bid_team_id: null
                     })
                     .eq('id', sessionId);
+
+                // Store action for undo
+                setLastAction({
+                    type: 'skip',
+                    playerName: currentPlayer.name,
+                    previousPlayerIndex,
+                    previousBid,
+                    previousTeamId
+                });
             }
         } catch (error) {
             console.error('Error skipping player:', error);
             alert('Failed to save auction state. Please try again.');
+        }
+    };
+
+    // Undo last action
+    const handleUndo = async () => {
+        if (!canEdit || !lastAction || !sessionId) {
+            return;
+        }
+
+        try {
+            if (lastAction.type === 'buy') {
+                // Undo buy: Remove player from team, restore budget, restore player index
+                const { data: dbTeam } = await supabase
+                    .from('auction_teams')
+                    .select('id')
+                    .eq('session_id', sessionId)
+                    .eq('team_number', lastAction.teamId)
+                    .single();
+
+                if (dbTeam) {
+                    // Delete player from auction_players
+                    const { error: deleteError } = await supabase
+                        .from('auction_players')
+                        .delete()
+                        .eq('session_id', sessionId)
+                        .eq('player_name', lastAction.playerName);
+                    
+                    if (deleteError) {
+                        alert('Failed to undo: Could not remove player from database.');
+                        return;
+                    }
+                    
+                    // Restore team budget
+                    const team = teamMap.get(lastAction.teamId);
+                    if (team) {
+                        const restoredBudget = team.budget + lastAction.bidAmount;
+                        await supabase
+                            .from('auction_teams')
+                            .update({ budget: restoredBudget })
+                            .eq('id', dbTeam.id);
+                    }
+                    
+                    // Reload teams - this updates teams list and boughtPlayerNames from database
+                    await reloadTeams();
+
+                    // Restore player index
+                    if (isSkippedPlayersMode) {
+                        // Reload skipped players list to include the undone player
+                        const skippedList = getCurrentSkippedPlayers();
+                        setPlayers(skippedList);
+                        setSkippedPlayers(skippedList);
+                        playersRef.current = skippedList;
+                        
+                        const undoneIndex = skippedList.findIndex(p => p.name === lastAction.playerName);
+                        if (undoneIndex !== -1) {
+                            setCurrentPlayerIndex(undoneIndex);
+                        await supabase
+                            .from('auction_sessions')
+                            .update({
+                                    skipped_players_index: undoneIndex,
+                                    current_bid_amount: lastAction.previousBid,
+                                    current_bid_team_id: lastAction.previousTeamId
+                            })
+                            .eq('id', sessionId);
+                }
+            } else {
+                        // In all players or unbidded mode
+                        const updatedBoughtNames = new Set(boughtPlayerNames);
+                        updatedBoughtNames.delete(lastAction.playerName);
+                        
+                        const isUnbiddedMode = players.length < originalPlayerPool.length;
+                        if (isUnbiddedMode) {
+                            const updatedUnbiddedList = originalPlayerPool.filter(player => !updatedBoughtNames.has(player.name));
+                            setPlayers(updatedUnbiddedList);
+                            playersRef.current = updatedUnbiddedList;
+                            
+                            const undoneIndex = updatedUnbiddedList.findIndex(p => p.name === lastAction.playerName);
+                            if (undoneIndex !== -1) {
+                                setCurrentPlayerIndex(undoneIndex);
+                                const undonePlayer = updatedUnbiddedList[undoneIndex];
+                                const originalIndex = getOriginalPoolIndex(undonePlayer);
+                    await supabase
+                        .from('auction_sessions')
+                        .update({
+                                        current_player_index: originalIndex,
+                                        current_bid_amount: lastAction.previousBid,
+                                        current_bid_team_id: lastAction.previousTeamId
+                        })
+                        .eq('id', sessionId);
+                            }
+                } else {
+                            // All players mode
+                            const originalIndex = originalPlayerPool.findIndex(p => p.name === lastAction.playerName);
+                            if (originalIndex !== -1) {
+                                setCurrentPlayerIndex(originalIndex);
+                    await supabase
+                        .from('auction_sessions')
+                        .update({
+                                        current_player_index: originalIndex,
+                                        current_bid_amount: lastAction.previousBid,
+                                        current_bid_team_id: lastAction.previousTeamId
+                        })
+                        .eq('id', sessionId);
+                            }
+                        }
+                    }
+
+                    // Restore bid and team selection
+                    setCurrentBid(lastAction.previousBid);
+                    setSelectedTeamId(lastAction.previousTeamId);
+                }
+            } else if (lastAction.type === 'skip') {
+                // Undo skip: Remove from skipped_players table, restore player index
+                await supabase
+                    .from('auction_skipped_players')
+                    .delete()
+                    .eq('session_id', sessionId)
+                    .eq('player_name', lastAction.playerName);
+
+                // Remove from local skipped players
+                setSkippedPlayers(prev => prev.filter(p => p.name !== lastAction.playerName));
+
+                // Restore player index and bid
+                setCurrentPlayerIndex(lastAction.previousPlayerIndex);
+                setCurrentBid(lastAction.previousBid);
+                setSelectedTeamId(lastAction.previousTeamId);
+
+                // Update database
+                const currentPlayer = players[lastAction.previousPlayerIndex];
+                if (currentPlayer) {
+                    const originalIndex = getOriginalPoolIndex(currentPlayer);
+                    await supabase
+                        .from('auction_sessions')
+                        .update({
+                            current_player_index: originalIndex,
+                            current_bid_amount: lastAction.previousBid,
+                            current_bid_team_id: lastAction.previousTeamId
+                        })
+                        .eq('id', sessionId);
+                }
+            } else if (lastAction.type === 'bid') {
+                // Undo bid: Restore previous bid and team selection
+                setCurrentBid(lastAction.previousBid);
+                setSelectedTeamId(lastAction.previousTeamId);
+
+                // Update playerBids map
+                if (lastAction.previousTeamId && lastAction.previousBid >= currentMinimumBid) {
+                    const team = teamMap.get(lastAction.previousTeamId);
+                    if (team) {
+                        setPlayerBids(prev => {
+                            const newBids = new Map(prev);
+                            newBids.set(lastAction.previousBid, {
+                                teamId: lastAction.previousTeamId!,
+                                teamName: team.name,
+                                amount: lastAction.previousBid
+                            });
+                            return newBids;
+                        });
+                    }
+                } else {
+                    setPlayerBids(new Map());
+                }
+
+                // Update database
+                await supabase
+                    .from('auction_sessions')
+                    .update({
+                        current_bid_amount: lastAction.previousBid,
+                        current_bid_team_id: lastAction.previousTeamId
+                    })
+                    .eq('id', sessionId);
+            }
+
+            // Clear last action after undo
+            setLastAction(null);
+        } catch (error) {
+            console.error('Error undoing action:', error);
+            alert('Failed to undo action. Please try again.');
         }
     };
 
@@ -5082,6 +5326,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 {/* Right side - Action Buttons */}
                                 <div className="flex flex-col gap-3 md:gap-4 justify-start md:min-w-[200px]">
                                     <button
+                                        onClick={handleBuyPlayer}
+                                        disabled={!canEdit || !selectedTeamId}
+                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                                        onMouseEnter={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
+                                        onMouseLeave={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
+                                    >
+                                        Buy Player
+                                    </button>
+                                    <button
                                         onClick={handleSkip}
                                         disabled={!canEdit}
                                         className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
@@ -5092,14 +5346,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         Skip Player
                                     </button>
                                     <button
-                                        onClick={handleBuyPlayer}
-                                        disabled={!canEdit || !selectedTeamId}
+                                        onClick={handleUndo}
+                                        disabled={!canEdit || !lastAction}
                                         className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
-                                        style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
-                                        onMouseEnter={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
-                                        onMouseLeave={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
+                                        style={{ 
+                                            backgroundColor: lastAction ? '#6B7280' : '#1F2937', 
+                                            color: '#FFFFFF',
+                                            border: lastAction ? '2px solid #6B7280' : '2px solid #374151'
+                                        }}
+                                        title={lastAction ? `Undo last ${lastAction.type}` : 'No action to undo'}
+                                        onMouseEnter={(e) => !canEdit || !lastAction || (e.currentTarget.style.backgroundColor = '#4B5563')}
+                                        onMouseLeave={(e) => !canEdit || !lastAction || (e.currentTarget.style.backgroundColor = '#6B7280')}
                                     >
-                                        Buy Player
+                                        Undo
                                     </button>
                                 </div>
                             </div>
@@ -5402,6 +5661,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 {/* Right side - Action buttons */}
                                 <div className="flex flex-col gap-3">
                                     <button
+                                        onClick={handleBuyPlayer}
+                                        disabled={!canEdit || !selectedTeamId}
+                                        className="px-6 py-3 rounded-lg font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        style={{
+                                            backgroundColor: selectedTeamId ? '#E11D48' : '#1F2937',
+                                            color: '#FFFFFF',
+                                            border: selectedTeamId ? '2px solid #E11D48' : '2px solid #374151'
+                                        }}
+                                    >
+                                        Buy Player
+                                    </button>
+                                    <button
                                         onClick={handleSkip}
                                         disabled={!canEdit}
                                         className="px-6 py-3 rounded-lg font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -5414,16 +5685,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         Skip Player
                                     </button>
                                     <button
-                                        onClick={handleBuyPlayer}
-                                        disabled={!canEdit || !selectedTeamId}
+                                        onClick={handleUndo}
+                                        disabled={!canEdit || !lastAction}
                                         className="px-6 py-3 rounded-lg font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         style={{
-                                            backgroundColor: selectedTeamId ? '#E11D48' : '#1F2937',
+                                            backgroundColor: lastAction ? '#6B7280' : '#1F2937',
                                             color: '#FFFFFF',
-                                            border: selectedTeamId ? '2px solid #E11D48' : '2px solid #374151'
+                                            border: lastAction ? '2px solid #6B7280' : '2px solid #374151'
                                         }}
+                                        title={lastAction ? `Undo last ${lastAction.type}` : 'No action to undo'}
                                     >
-                                        Buy Player
+                                        Undo
                                     </button>
                                 </div>
                             </div>
