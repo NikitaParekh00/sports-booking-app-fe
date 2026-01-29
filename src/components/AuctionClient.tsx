@@ -3153,24 +3153,83 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
                     // Restore player index
                     if (isSkippedPlayersMode) {
-                        // Reload skipped players list to include the undone player
-                        const skippedList = getCurrentSkippedPlayers();
-                        setPlayers(skippedList);
-                        setSkippedPlayers(skippedList);
-                        playersRef.current = skippedList;
-                        
-                        const undoneIndex = skippedList.findIndex(p => p.name === lastAction.playerName);
-                        if (undoneIndex !== -1) {
-                            setCurrentPlayerIndex(undoneIndex);
-                        await supabase
-                            .from('auction_sessions')
-                            .update({
-                                    skipped_players_index: undoneIndex,
-                                    current_bid_amount: lastAction.previousBid,
-                                    current_bid_team_id: lastAction.previousTeamId
-                            })
-                            .eq('id', sessionId);
-                }
+                        // Re-insert player back into auction_skipped_players table
+                        const { data: playerPoolData } = await supabase
+                            .from('auction_player_pool')
+                            .select('id, player_order')
+                            .eq('session_id', sessionId)
+                            .eq('name', lastAction.playerName)
+                            .single();
+
+                        if (playerPoolData) {
+                            await supabase
+                                .from('auction_skipped_players')
+                                .insert({
+                                    session_id: sessionId,
+                                    player_pool_id: playerPoolData.id,
+                                    player_name: lastAction.playerName,
+                                    player_order: playerPoolData.player_order
+                                });
+                        }
+
+                        // Reload skipped players list from database
+                        const { data: skippedData } = await supabase
+                            .from('auction_skipped_players')
+                            .select(`
+                                player_pool_id,
+                                player_name,
+                                player_order,
+                                auction_player_pool!inner(
+                                    id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                )
+                            `)
+                            .eq('session_id', sessionId)
+                            .order('player_order', { ascending: true });
+
+                        if (skippedData && skippedData.length > 0) {
+                            const poolMap = new Map(
+                                skippedData.map((sp: any) => [sp.player_pool_id, sp.auction_player_pool])
+                            );
+
+                            const updatedSkippedList: Player[] = skippedData
+                                .map((sp: any) => {
+                                    const poolPlayer = poolMap.get(sp.player_pool_id);
+                                    if (!poolPlayer) return null;
+                                    return {
+                                        name: poolPlayer.name,
+                                        photo: poolPlayer.photo || undefined,
+                                        age: poolPlayer.age || undefined,
+                                        played_s1: poolPlayer.played_s1 || undefined,
+                                        experience: poolPlayer.experience || undefined,
+                                        active_sport: poolPlayer.active_sport || undefined,
+                                        skill: poolPlayer.skill || undefined,
+                                        batting_hand: poolPlayer.batting_hand || undefined,
+                                        bowling_hand: poolPlayer.bowling_hand || undefined,
+                                        wing: poolPlayer.wing || undefined,
+                                        flat_no: poolPlayer.flat_no || undefined,
+                                        phone: poolPlayer.phone || undefined,
+                                        category: poolPlayer.category || undefined
+                                    } as Player;
+                                })
+                                .filter((p): p is Player => p !== null);
+
+                            setPlayers(updatedSkippedList);
+                            setSkippedPlayers(updatedSkippedList);
+                            playersRef.current = updatedSkippedList;
+
+                            const undoneIndex = updatedSkippedList.findIndex(p => p.name === lastAction.playerName);
+                            if (undoneIndex !== -1) {
+                                setCurrentPlayerIndex(undoneIndex);
+                                await supabase
+                                    .from('auction_sessions')
+                                    .update({
+                                        skipped_players_index: undoneIndex,
+                                        current_bid_amount: lastAction.previousBid,
+                                        current_bid_team_id: lastAction.previousTeamId
+                                    })
+                                    .eq('id', sessionId);
+                            }
+                        }
             } else {
                         // In all players or unbidded mode
                         const updatedBoughtNames = new Set(boughtPlayerNames);
