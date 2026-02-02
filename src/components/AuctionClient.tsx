@@ -204,7 +204,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const isInitialLoadRef = useRef<boolean>(true);
     const isSkippedPlayersModeRef = useRef<boolean>(false);
     const playersRef = useRef<Player[]>([]);
-    const prevSoldPlayerInfoRef = useRef<{ playerName: string; teamName: string; amount: number } | null>(null);
     const isUpdatingBidRef = useRef<boolean>(false); // Track if we're updating bid ourselves
     const isUpdatingIndexRef = useRef<boolean>(false); // Track if we're updating player index ourselves (mode switches)
 
@@ -362,8 +361,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [skippedPlayers, setSkippedPlayers] = useState<Player[]>([]);
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
-    const [allPlayers, setAllPlayers] = useState<Player[]>([]); // Store all players when switching to skipped mode
     const [originalPlayerPool, setOriginalPlayerPool] = useState<Player[]>([]); // Store original player pool for switching back
+    const originalPlayerPoolRef = useRef<Player[]>([]); // Ref for originalPlayerPool to use in subscriptions
     const [pdfGeneratingTeamId, setPdfGeneratingTeamId] = useState<number | null>(null); // Track which team is generating PDF
     const [pdfGeneratingTopPlayers, setPdfGeneratingTopPlayers] = useState<boolean>(false); // Track if top players PDF is generating
     
@@ -991,7 +990,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     useEffect(() => {
         isSkippedPlayersModeRef.current = isSkippedPlayersMode;
         playersRef.current = players;
-    }, [isSkippedPlayersMode, players]);
+        originalPlayerPoolRef.current = originalPlayerPool;
+    }, [isSkippedPlayersMode, players, originalPlayerPool]);
 
     // Handle divider drag
     useEffect(() => {
@@ -1528,7 +1528,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             .subscribe();
 
         // Subscribe to team changes
-        // This covers budget updates when players are bought (by any admin) and manual team updates
+        // This fires when:
+        // 1. Team budget changes automatically (when players are bought/removed)
+        // 2. Teams are manually updated in the admin page (name, owner, logo, budget, etc.)
+        // When a player is bought/removed, auction_teams updates (budget change), so this subscription fires
         const teamsChannel = supabase
             .channel('auction-teams-changes')
             .on('postgres_changes', {
@@ -1538,21 +1541,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 filter: `session_id=eq.${sessionId}`
             }, async (payload) => {
                 console.log('Team changed:', payload);
-                await reloadTeams();
-            })
-            .subscribe();
-
-        // Subscribe to auction_players changes
-        // This ensures view mode updates immediately when players are bought/removed
-        const auctionPlayersChannel = supabase
-            .channel('auction-players-changes')
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'auction_players',
-                filter: `session_id=eq.${sessionId}`
-            }, async (payload) => {
-                console.log('Auction players changed:', payload);
+                
+                // Update players list FIRST (before reloadTeams) to ensure session subscription has correct data
+                // This handles the case where a player was bought/removed (budget changed)
+                if (!isSkippedPlayersModeRef.current && originalPlayerPoolRef.current.length > 0) {
+                    const { data: playersData } = await supabase
+                        .from('auction_players')
+                        .select('player_name')
+                        .eq('session_id', sessionId);
+                    
+                    if (playersData) {
+                        const boughtNames = new Set(playersData.map((p: any) => p.player_name));
+                        const isUnbiddedMode = playersRef.current.length < originalPlayerPoolRef.current.length;
+                        if (isUnbiddedMode) {
+                            const updatedUnbiddedList = originalPlayerPoolRef.current.filter(player => !boughtNames.has(player.name));
+                            setPlayers(updatedUnbiddedList);
+                            playersRef.current = updatedUnbiddedList;
+                        }
+                    }
+                }
+                
                 await reloadTeams();
             })
             .subscribe();
@@ -1772,7 +1780,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             teamsChannel.unsubscribe();
             playerPoolChannel.unsubscribe();
             skippedPlayersChannel.unsubscribe();
-            auctionPlayersChannel.unsubscribe();
         };
     }, [sessionId, supabase, reloadTeams]);
 
@@ -3189,8 +3196,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         }
 
                         // Reload skipped players list from database
-                        const { data: skippedData } = await supabase
-                            .from('auction_skipped_players')
+                const { data: skippedData } = await supabase
+                    .from('auction_skipped_players')
                             .select(`
                                 player_pool_id,
                                 player_name,
@@ -3199,35 +3206,35 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
                                 )
                             `)
-                            .eq('session_id', sessionId)
-                            .order('player_order', { ascending: true });
+                    .eq('session_id', sessionId)
+                    .order('player_order', { ascending: true });
 
-                        if (skippedData && skippedData.length > 0) {
-                            const poolMap = new Map(
+                if (skippedData && skippedData.length > 0) {
+                    const poolMap = new Map(
                                 skippedData.map((sp: any) => [sp.player_pool_id, sp.auction_player_pool])
-                            );
+                    );
 
                             const updatedSkippedList: Player[] = skippedData
-                                .map((sp: any) => {
-                                    const poolPlayer = poolMap.get(sp.player_pool_id);
-                                    if (!poolPlayer) return null;
-                                    return {
-                                        name: poolPlayer.name,
-                                        photo: poolPlayer.photo || undefined,
-                                        age: poolPlayer.age || undefined,
-                                        played_s1: poolPlayer.played_s1 || undefined,
-                                        experience: poolPlayer.experience || undefined,
-                                        active_sport: poolPlayer.active_sport || undefined,
-                                        skill: poolPlayer.skill || undefined,
-                                        batting_hand: poolPlayer.batting_hand || undefined,
-                                        bowling_hand: poolPlayer.bowling_hand || undefined,
-                                        wing: poolPlayer.wing || undefined,
-                                        flat_no: poolPlayer.flat_no || undefined,
-                                        phone: poolPlayer.phone || undefined,
-                                        category: poolPlayer.category || undefined
-                                    } as Player;
-                                })
-                                .filter((p): p is Player => p !== null);
+                        .map((sp: any) => {
+                            const poolPlayer = poolMap.get(sp.player_pool_id);
+                            if (!poolPlayer) return null;
+                            return {
+                                name: poolPlayer.name,
+                                photo: poolPlayer.photo || undefined,
+                                age: poolPlayer.age || undefined,
+                                played_s1: poolPlayer.played_s1 || undefined,
+                                experience: poolPlayer.experience || undefined,
+                                active_sport: poolPlayer.active_sport || undefined,
+                                skill: poolPlayer.skill || undefined,
+                                batting_hand: poolPlayer.batting_hand || undefined,
+                                bowling_hand: poolPlayer.bowling_hand || undefined,
+                                wing: poolPlayer.wing || undefined,
+                                flat_no: poolPlayer.flat_no || undefined,
+                                phone: poolPlayer.phone || undefined,
+                                category: poolPlayer.category || undefined
+                            } as Player;
+                        })
+                        .filter((p): p is Player => p !== null);
 
                             setPlayers(updatedSkippedList);
                             setSkippedPlayers(updatedSkippedList);
@@ -3236,16 +3243,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             const undoneIndex = updatedSkippedList.findIndex(p => p.name === lastAction.playerName);
                             if (undoneIndex !== -1) {
                                 setCurrentPlayerIndex(undoneIndex);
-                                await supabase
-                                    .from('auction_sessions')
-                                    .update({
+                        await supabase
+                            .from('auction_sessions')
+                            .update({
                                         skipped_players_index: undoneIndex,
                                         current_bid_amount: lastAction.previousBid,
                                         current_bid_team_id: lastAction.previousTeamId
-                                    })
-                                    .eq('id', sessionId);
-                            }
-                        }
+                            })
+                            .eq('id', sessionId);
+                    }
+                }
             } else {
                         // In all players or unbidded mode
                         const updatedBoughtNames = new Set(boughtPlayerNames);
@@ -3388,8 +3395,6 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
             // If not already in skipped players mode, switch to it
             if (!isSkippedPlayersMode) {
-                // Store all current players
-                setAllPlayers([...players]);
                 // Switch to skipped players only
                 setPlayers(skippedList);
                 setIsSkippedPlayersMode(true);
