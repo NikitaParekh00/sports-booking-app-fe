@@ -1362,8 +1362,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         // We need to find the corresponding player in the current players array
                         
                         // First, ensure players list is up-to-date (in case teams subscription hasn't fired yet)
-                        if (originalPlayerPool.length > 0) {
-                            const isUnbiddedMode = playersRef.current.length < originalPlayerPool.length;
+                        // Use ref to get latest originalPlayerPool value (not stale closure)
+                        if (originalPlayerPoolRef.current.length > 0) {
+                            const isUnbiddedMode = playersRef.current.length < originalPlayerPoolRef.current.length;
                             if (isUnbiddedMode) {
                                 // Query fresh data to ensure we have the latest bought players
                                 const { data: playersData } = await supabase
@@ -1373,30 +1374,30 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 
                                 if (playersData) {
                                     const boughtNames = new Set(playersData.map((p: any) => p.player_name));
-                                    const updatedUnbiddedList = originalPlayerPool.filter(player => !boughtNames.has(player.name));
+                                    const updatedUnbiddedList = originalPlayerPoolRef.current.filter(player => !boughtNames.has(player.name));
                                     setPlayers(updatedUnbiddedList);
                                     playersRef.current = updatedUnbiddedList;
                                 }
                             }
                         }
                         
-                        if (playersRef.current.length > 0 && originalPlayerPool.length > 0) {
+                        if (playersRef.current.length > 0 && originalPlayerPoolRef.current.length > 0) {
                             // Check if current players array is a subset (unbidded players) or full list
                             // Use database flag to determine mode, but also check list length as fallback
-                            const isUnbiddedMode = playersRef.current.length < originalPlayerPool.length;
+                            const isUnbiddedMode = playersRef.current.length < originalPlayerPoolRef.current.length;
                             
                             console.log('[REALTIME SUBSCRIPTION] Not in skipped mode, calculating index:', {
                                 isUnbiddedMode,
                                 playersRefLength: playersRef.current.length,
-                                originalPlayerPoolLength: originalPlayerPool.length,
+                                originalPlayerPoolLength: originalPlayerPoolRef.current.length,
                                 sessionNewIndex,
                                 timestamp: new Date().toISOString()
                             });
                             
                             if (isUnbiddedMode) {
                                 // We're showing unbidded players, need to convert original pool index to unbidded list index
-                                if (sessionNewIndex >= 0 && sessionNewIndex < originalPlayerPool.length) {
-                                    const playerAtOriginalIndex = originalPlayerPool[sessionNewIndex];
+                                if (sessionNewIndex >= 0 && sessionNewIndex < originalPlayerPoolRef.current.length) {
+                                    const playerAtOriginalIndex = originalPlayerPoolRef.current[sessionNewIndex];
                                     console.log('[REALTIME SUBSCRIPTION] Looking for player in unbidded list:', {
                                         playerAtOriginalIndex: playerAtOriginalIndex?.name,
                                         sessionNewIndex,
@@ -1435,7 +1436,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             // If not found, try previous players
                                             if (clampedIndex === sessionNewIndex) {
                                                 for (let i = sessionNewIndex - 1; i >= 0; i--) {
-                                                    const prevPlayer = originalPlayerPool[i];
+                                                    const prevPlayer = originalPlayerPoolRef.current[i];
                                                     const found = playersRef.current.findIndex(p => p.name === prevPlayer.name);
                                                     if (found !== -1) {
                                                         clampedIndex = found;
@@ -1459,7 +1460,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     timestamp: new Date().toISOString()
                                 });
                             }
-                        } else if (originalPlayerPool.length === 0) {
+                        } else if (originalPlayerPoolRef.current.length === 0) {
                             // originalPlayerPool is empty - this shouldn't happen, but if it does, skip index update
                             // to prevent wrong player from being shown
                             console.log('[REALTIME SUBSCRIPTION] originalPlayerPool is empty, skipping index update to prevent wrong player:', {
