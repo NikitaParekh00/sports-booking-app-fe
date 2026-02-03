@@ -1094,7 +1094,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 schema: 'public',
                 table: 'auction_sessions',
                 filter: `id=eq.${sessionId}`
-            }, (payload) => {
+            }, async (payload) => {
                 if (payload.new) {
                     const session = payload.new as {
                         current_player_index: number;
@@ -1360,6 +1360,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         // Not in skipped players mode - could be showing all players or unbidded players
                         // sessionNewIndex is an index in originalPlayerPool
                         // We need to find the corresponding player in the current players array
+                        
+                        // First, ensure players list is up-to-date (in case teams subscription hasn't fired yet)
+                        if (originalPlayerPool.length > 0) {
+                            const isUnbiddedMode = playersRef.current.length < originalPlayerPool.length;
+                            if (isUnbiddedMode) {
+                                // Query fresh data to ensure we have the latest bought players
+                                const { data: playersData } = await supabase
+                                    .from('auction_players')
+                                    .select('player_name')
+                                    .eq('session_id', sessionId);
+                                
+                                if (playersData) {
+                                    const boughtNames = new Set(playersData.map((p: any) => p.player_name));
+                                    const updatedUnbiddedList = originalPlayerPool.filter(player => !boughtNames.has(player.name));
+                                    setPlayers(updatedUnbiddedList);
+                                    playersRef.current = updatedUnbiddedList;
+                                }
+                            }
+                        }
+                        
                         if (playersRef.current.length > 0 && originalPlayerPool.length > 0) {
                             // Check if current players array is a subset (unbidded players) or full list
                             // Use database flag to determine mode, but also check list length as fallback
@@ -1528,9 +1548,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             .subscribe();
 
         // Subscribe to team changes
-        // This fires when:
-        // 1. Team budget changes automatically (when players are bought/removed)
-        // 2. Teams are manually updated in the admin page (name, owner, logo, budget, etc.)
+        // This covers budget updates when players are bought (by any admin) and manual team updates
         // When a player is bought/removed, auction_teams updates (budget change), so this subscription fires
         const teamsChannel = supabase
             .channel('auction-teams-changes')
@@ -1542,8 +1560,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             }, async (payload) => {
                 console.log('Team changed:', payload);
                 
-                // Update players list FIRST (before reloadTeams) to ensure session subscription has correct data
-                // This handles the case where a player was bought/removed (budget changed)
+                // Update players list FIRST (before reloadTeams) using fresh data from database
+                // This ensures session subscription has correct data when it fires
                 if (!isSkippedPlayersModeRef.current && originalPlayerPoolRef.current.length > 0) {
                     const { data: playersData } = await supabase
                         .from('auction_players')
