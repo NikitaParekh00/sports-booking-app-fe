@@ -1342,79 +1342,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         });
                         shouldUpdateIndex = false;
                     } else if (dbIsSkippedMode) {
-                        // Only query when index changes - rely on skippedPlayersChannel subscription for list updates
-                        const indexChanged = sessionNewIndex !== prevPlayerIndexRef.current && sessionNewIndex !== currentPlayerIndex;
-                        
-                        // For view mode: also check if list size changed (player bought/skipped)
-                        let shouldQuery = indexChanged;
-                        if (!canEdit && !indexChanged) {
-                            const { count } = await supabase
-                                .from('auction_skipped_players')
-                                .select('*', { count: 'exact', head: true })
-                                .eq('session_id', sessionId);
-                            
-                            if (count !== null && count !== players.length) {
-                                shouldQuery = true;
-                            }
-                        }
-                        
-                        if (shouldQuery) {
-                            // Query fresh data only when index changes (admin) or list size changed (view mode)
+                        // Same approach as unbidded players: query skipped player names and filter from originalPlayerPool
+                        // Use ref to get latest originalPlayerPool value (not stale closure)
+                        if (originalPlayerPoolRef.current.length > 0) {
+                            // Query fresh data to ensure we have the latest skipped players (same as unbidded mode)
                             const { data: skippedPlayersData } = await supabase
                                 .from('auction_skipped_players')
-                                .select(`
-                                    player_pool_id,
-                                    player_name,
-                                    player_order,
-                                    auction_player_pool!inner(
-                                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
-                                    )
-                                `)
-                                .eq('session_id', sessionId)
-                                .order('player_order', { ascending: true });
+                                .select('player_name')
+                                .eq('session_id', sessionId);
                             
-                            if (skippedPlayersData && skippedPlayersData.length > 0) {
-                                const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
-                                    const poolPlayer = sp.auction_player_pool;
-                                    return {
-                                        name: poolPlayer.name,
-                                        photo: poolPlayer.photo || undefined,
-                                        age: poolPlayer.age || undefined,
-                                        played_s1: poolPlayer.played_s1 || undefined,
-                                        experience: poolPlayer.experience || undefined,
-                                        active_sport: poolPlayer.active_sport || undefined,
-                                        skill: poolPlayer.skill || undefined,
-                                        batting_hand: poolPlayer.batting_hand || undefined,
-                                        bowling_hand: poolPlayer.bowling_hand || undefined,
-                                        wing: poolPlayer.wing || undefined,
-                                        flat_no: poolPlayer.flat_no || undefined,
-                                        phone: poolPlayer.phone || undefined,
-                                        category: poolPlayer.category || undefined,
-                                        player_order: poolPlayer.player_order || undefined
-                                    };
-                                });
-                                
-                                // Always update ref (for index calculations)
-                                playersRef.current = skippedFromTable;
-                                
-                                // Only update state when index changes (admin) or list size changed (view mode)
-                                const listSizeChanged = !canEdit && players.length !== skippedFromTable.length;
-                                
-                                if (indexChanged || listSizeChanged) {
-                                    setPlayers(skippedFromTable);
-                                    setSkippedPlayers(skippedFromTable);
-                                }
-                            } else {
-                                // No skipped players
-                                playersRef.current = [];
-                                if (indexChanged || (!canEdit && players.length > 0)) {
-                                    setPlayers([]);
-                                    setSkippedPlayers([]);
-                                }
+                            if (skippedPlayersData) {
+                                const skippedNames = new Set(skippedPlayersData.map((sp: any) => sp.player_name));
+                                const updatedSkippedList = originalPlayerPoolRef.current.filter(player => skippedNames.has(player.name));
+                                setPlayers(updatedSkippedList);
+                                setSkippedPlayers(updatedSkippedList);
+                                playersRef.current = updatedSkippedList;
                             }
                         }
-                        // If index didn't change and not in view mode, rely on skippedPlayersChannel subscription
-                        // playersRef.current should already be updated by that subscription
                         
                         // Clamp index to valid range for skipped players
                         if (playersRef.current.length > 0) {
@@ -1779,95 +1723,37 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 filter: `session_id=eq.${sessionId}`
             }, async () => {
                 console.log('Skipped players changed, reloading...');
-                // Reload skipped players from database
-                const { data: skippedPlayersData, error: skippedError } = await supabase
-                    .from('auction_skipped_players')
-                    .select(`
-                        player_pool_id,
-                        player_name,
-                        player_order,
-                        auction_player_pool!inner(
-                            id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
-                        )
-                    `)
-                    .eq('session_id', sessionId)
-                    .order('player_order', { ascending: true });
+                // Same approach as unbidded players: query skipped player names and filter from originalPlayerPool
+                if (originalPlayerPoolRef.current.length > 0) {
+                    const { data: skippedPlayersData, error: skippedError } = await supabase
+                        .from('auction_skipped_players')
+                        .select('player_name')
+                        .eq('session_id', sessionId);
 
-                if (skippedError) {
-                    console.error('Error reloading skipped players:', skippedError);
-                    return;
-                }
-
-                if (skippedPlayersData) {
-                    const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
-                        const poolPlayer = sp.auction_player_pool;
-                        return {
-                            name: poolPlayer.name,
-                            photo: poolPlayer.photo || undefined,
-                            age: poolPlayer.age || undefined,
-                            played_s1: poolPlayer.played_s1 || undefined,
-                            experience: poolPlayer.experience || undefined,
-                            active_sport: poolPlayer.active_sport || undefined,
-                            skill: poolPlayer.skill || undefined,
-                            batting_hand: poolPlayer.batting_hand || undefined,
-                            bowling_hand: poolPlayer.bowling_hand || undefined,
-                            wing: poolPlayer.wing || undefined,
-                            flat_no: poolPlayer.flat_no || undefined,
-                            phone: poolPlayer.phone || undefined,
-                            category: poolPlayer.category || undefined,
-                            player_order: poolPlayer.player_order || undefined
-                        };
-                    });
-
-                    // Update skipped players state (this will update the count in the button)
-                    setSkippedPlayers(skippedFromTable);
-
-                    // If we're currently in skipped players mode, also update the players list
-                    // Update playersRef FIRST to ensure session subscription has correct data
-                    if (isSkippedPlayersModeRef.current) {
-                        playersRef.current = skippedFromTable; // Update ref FIRST (synchronously)
-                        setPlayers(skippedFromTable); // Then update state
+                    if (skippedError) {
+                        console.error('Error reloading skipped players:', skippedError);
+                        return;
                     }
-                } else {
-                    // No skipped players, clear the list
-                    setSkippedPlayers([]);
-                    // If we're in skipped players mode and there are no skipped players, switch back to all players
-                    if (isSkippedPlayersModeRef.current) {
-                        // Reload all players
-                        const { data: playerPoolData } = await supabase
-                            .from('auction_player_pool')
-                            .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
-                            .eq('session_id', sessionId)
-                            .order('player_order', { ascending: true });
 
-                        if (playerPoolData) {
-                            const mappedPlayers: Player[] = playerPoolData.map((p: Partial<DbPlayerPool> & { name: string }) => ({
-                                name: p.name,
-                                photo: p.photo || undefined,
-                                age: p.age || undefined,
-                                played_s1: p.played_s1 || undefined,
-                                experience: p.experience || undefined,
-                                active_sport: p.active_sport || undefined,
-                                skill: p.skill || undefined,
-                                batting_hand: p.batting_hand || undefined,
-                                bowling_hand: p.bowling_hand || undefined,
-                                wing: p.wing || undefined,
-                                flat_no: p.flat_no || undefined,
-                                phone: p.phone || undefined,
-                                category: p.category || undefined,
-                                player_order: p.player_order || undefined
-                            }));
-                            setPlayers(mappedPlayers);
-                            setOriginalPlayerPool(mappedPlayers);
-                            setIsSkippedPlayersMode(false);
-                            isSkippedPlayersModeRef.current = false;
-                            playersRef.current = mappedPlayers;
-                            
-                            // Update database to reflect mode change
-                            await supabase
-                                .from('auction_sessions')
-                                .update({ is_skipped_players_mode: false })
-                                .eq('id', sessionId);
+                    if (skippedPlayersData) {
+                        const skippedNames = new Set(skippedPlayersData.map((sp: any) => sp.player_name));
+                        const skippedFromTable = originalPlayerPoolRef.current.filter(player => skippedNames.has(player.name));
+
+                        // Update skipped players state (this will update the count in the button)
+                        setSkippedPlayers(skippedFromTable);
+
+                        // If we're currently in skipped players mode, also update the players list
+                        // Update playersRef FIRST to ensure session subscription has correct data
+                        if (isSkippedPlayersModeRef.current) {
+                            playersRef.current = skippedFromTable; // Update ref FIRST (synchronously)
+                            setPlayers(skippedFromTable); // Then update state
+                        }
+                    } else {
+                        // No skipped players, clear the list
+                        setSkippedPlayers([]);
+                        if (isSkippedPlayersModeRef.current) {
+                            playersRef.current = [];
+                            setPlayers([]);
                         }
                     }
                 }
