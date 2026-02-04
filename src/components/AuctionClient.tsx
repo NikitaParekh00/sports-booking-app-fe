@@ -1341,19 +1341,69 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             timestamp: new Date().toISOString()
                         });
                         shouldUpdateIndex = false;
-                    } else if (dbIsSkippedMode && playersRef.current.length > 0) {
-                        // Clamp index to valid range for skipped players
-                        if (clampedIndex >= playersRef.current.length) {
-                            clampedIndex = playersRef.current.length - 1;
-                        }
-                        if (clampedIndex < 0) {
-                            clampedIndex = 0;
+                    } else if (dbIsSkippedMode) {
+                        // First, ensure skipped players list is up-to-date (in case skipped players subscription hasn't fired yet)
+                        // Query fresh data to ensure we have the latest skipped players
+                        const { data: skippedPlayersData } = await supabase
+                            .from('auction_skipped_players')
+                            .select(`
+                                player_pool_id,
+                                player_name,
+                                player_order,
+                                auction_player_pool!inner(
+                                    id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                )
+                            `)
+                            .eq('session_id', sessionId)
+                            .order('player_order', { ascending: true });
+                        
+                        if (skippedPlayersData && skippedPlayersData.length > 0) {
+                            const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
+                                const poolPlayer = sp.auction_player_pool;
+                                return {
+                                    name: poolPlayer.name,
+                                    photo: poolPlayer.photo || undefined,
+                                    age: poolPlayer.age || undefined,
+                                    played_s1: poolPlayer.played_s1 || undefined,
+                                    experience: poolPlayer.experience || undefined,
+                                    active_sport: poolPlayer.active_sport || undefined,
+                                    skill: poolPlayer.skill || undefined,
+                                    batting_hand: poolPlayer.batting_hand || undefined,
+                                    bowling_hand: poolPlayer.bowling_hand || undefined,
+                                    wing: poolPlayer.wing || undefined,
+                                    flat_no: poolPlayer.flat_no || undefined,
+                                    phone: poolPlayer.phone || undefined,
+                                    category: poolPlayer.category || undefined,
+                                    player_order: poolPlayer.player_order || undefined
+                                };
+                            });
+                            setPlayers(skippedFromTable);
+                            setSkippedPlayers(skippedFromTable);
+                            playersRef.current = skippedFromTable;
+                        } else {
+                            // No skipped players - clear the list
+                            setPlayers([]);
+                            setSkippedPlayers([]);
+                            playersRef.current = [];
                         }
                         
-                        // Only update if the index actually changed to prevent unnecessary resets
-                        // This prevents resetting to index 0 when we're already at the last player
-                        if (clampedIndex === prevPlayerIndexRef.current && clampedIndex === currentPlayerIndex) {
-                            // Index hasn't changed, skip index update but continue with other updates
+                        // Clamp index to valid range for skipped players
+                        if (playersRef.current.length > 0) {
+                            if (clampedIndex >= playersRef.current.length) {
+                                clampedIndex = playersRef.current.length - 1;
+                            }
+                            if (clampedIndex < 0) {
+                                clampedIndex = 0;
+                            }
+                            
+                            // Only update if the index actually changed to prevent unnecessary resets
+                            // This prevents resetting to index 0 when we're already at the last player
+                            if (clampedIndex === prevPlayerIndexRef.current && clampedIndex === currentPlayerIndex) {
+                                // Index hasn't changed, skip index update but continue with other updates
+                                shouldUpdateIndex = false;
+                            }
+                        } else {
+                            // No skipped players, skip index update
                             shouldUpdateIndex = false;
                         }
                     } else if (!dbIsSkippedMode) {
@@ -1744,9 +1794,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     setSkippedPlayers(skippedFromTable);
 
                     // If we're currently in skipped players mode, also update the players list
+                    // Update playersRef FIRST to ensure session subscription has correct data
                     if (isSkippedPlayersModeRef.current) {
-                        setPlayers(skippedFromTable);
-                        playersRef.current = skippedFromTable;
+                        playersRef.current = skippedFromTable; // Update ref FIRST (synchronously)
+                        setPlayers(skippedFromTable); // Then update state
                     }
                 } else {
                     // No skipped players, clear the list
