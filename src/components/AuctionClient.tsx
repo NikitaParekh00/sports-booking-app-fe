@@ -1342,11 +1342,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         });
                         shouldUpdateIndex = false;
                     } else if (dbIsSkippedMode) {
-                        // Query fresh data when index changes OR when we need to ensure list is up-to-date
-                        // But only update state when index changes to prevent bid resets
+                        // Query fresh data to ensure we have the latest skipped players
                         const indexChanged = sessionNewIndex !== prevPlayerIndexRef.current && sessionNewIndex !== currentPlayerIndex;
                         
-                        // Always query to get fresh data (for playersRef.current), but only update state when index changes
+                        // Always query to get fresh data (for playersRef.current)
                         const { data: skippedPlayersData } = await supabase
                             .from('auction_skipped_players')
                             .select(`
@@ -1384,15 +1383,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             // Always update ref (for index calculations) - this ensures we have fresh data
                             playersRef.current = skippedFromTable;
                             
-                            // Only update state when index changes (prevents bid resets on bid/team updates)
-                            if (indexChanged) {
+                            // Update state when:
+                            // 1. Index changed (player moved forward/backward)
+                            // 2. List size changed (player bought/skipped)
+                            // 3. Player at current index changed (player removed earlier in list)
+                            const listSizeChanged = players.length !== skippedFromTable.length;
+                            const playerAtIndexChanged = currentPlayerIndex < skippedFromTable.length && 
+                                currentPlayerIndex < players.length &&
+                                players[currentPlayerIndex]?.name !== skippedFromTable[currentPlayerIndex]?.name;
+                            
+                            if (indexChanged || listSizeChanged || playerAtIndexChanged) {
                                 setPlayers(skippedFromTable);
                                 setSkippedPlayers(skippedFromTable);
                             }
                         } else {
                             // No skipped players
                             playersRef.current = [];
-                            if (indexChanged || players.length > 0) {
+                            if (players.length > 0) {
                                 setPlayers([]);
                                 setSkippedPlayers([]);
                             }
