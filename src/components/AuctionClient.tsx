@@ -1342,53 +1342,62 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         });
                         shouldUpdateIndex = false;
                     } else if (dbIsSkippedMode) {
-                        // Only query and update skipped players list if the index actually changed
-                        // This prevents unnecessary queries and state updates on bid/team changes
-                        const indexChanged = sessionNewIndex !== prevPlayerIndexRef.current && sessionNewIndex !== currentPlayerIndex;
+                        // Always query fresh data to ensure we have the latest skipped players (same as unbidded mode)
+                        // But only update state if the list actually changed to prevent bid resets
+                        const { data: skippedPlayersData } = await supabase
+                            .from('auction_skipped_players')
+                            .select(`
+                                player_pool_id,
+                                player_name,
+                                player_order,
+                                auction_player_pool!inner(
+                                    id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                )
+                            `)
+                            .eq('session_id', sessionId)
+                            .order('player_order', { ascending: true });
                         
-                        if (indexChanged) {
-                            // Query fresh data to ensure we have the latest skipped players
-                            const { data: skippedPlayersData } = await supabase
-                                .from('auction_skipped_players')
-                                .select(`
-                                    player_pool_id,
-                                    player_name,
-                                    player_order,
-                                    auction_player_pool!inner(
-                                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
-                                    )
-                                `)
-                                .eq('session_id', sessionId)
-                                .order('player_order', { ascending: true });
+                        if (skippedPlayersData && skippedPlayersData.length > 0) {
+                            const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
+                                const poolPlayer = sp.auction_player_pool;
+                                return {
+                                    name: poolPlayer.name,
+                                    photo: poolPlayer.photo || undefined,
+                                    age: poolPlayer.age || undefined,
+                                    played_s1: poolPlayer.played_s1 || undefined,
+                                    experience: poolPlayer.experience || undefined,
+                                    active_sport: poolPlayer.active_sport || undefined,
+                                    skill: poolPlayer.skill || undefined,
+                                    batting_hand: poolPlayer.batting_hand || undefined,
+                                    bowling_hand: poolPlayer.bowling_hand || undefined,
+                                    wing: poolPlayer.wing || undefined,
+                                    flat_no: poolPlayer.flat_no || undefined,
+                                    phone: poolPlayer.phone || undefined,
+                                    category: poolPlayer.category || undefined,
+                                    player_order: poolPlayer.player_order || undefined
+                                };
+                            });
                             
-                            if (skippedPlayersData && skippedPlayersData.length > 0) {
-                                const skippedFromTable: Player[] = skippedPlayersData.map((sp: any) => {
-                                    const poolPlayer = sp.auction_player_pool;
-                                    return {
-                                        name: poolPlayer.name,
-                                        photo: poolPlayer.photo || undefined,
-                                        age: poolPlayer.age || undefined,
-                                        played_s1: poolPlayer.played_s1 || undefined,
-                                        experience: poolPlayer.experience || undefined,
-                                        active_sport: poolPlayer.active_sport || undefined,
-                                        skill: poolPlayer.skill || undefined,
-                                        batting_hand: poolPlayer.batting_hand || undefined,
-                                        bowling_hand: poolPlayer.bowling_hand || undefined,
-                                        wing: poolPlayer.wing || undefined,
-                                        flat_no: poolPlayer.flat_no || undefined,
-                                        phone: poolPlayer.phone || undefined,
-                                        category: poolPlayer.category || undefined,
-                                        player_order: poolPlayer.player_order || undefined
-                                    };
-                                });
+                            // Always update ref first (for index calculations)
+                            playersRef.current = skippedFromTable;
+                            
+                            // Only update state if the list actually changed (prevents bid resets)
+                            // Check if length changed OR if player at current index changed
+                            const listChanged = players.length !== skippedFromTable.length || 
+                                (currentPlayerIndex < skippedFromTable.length && 
+                                 currentPlayerIndex < players.length &&
+                                 players[currentPlayerIndex]?.name !== skippedFromTable[currentPlayerIndex]?.name);
+                            
+                            if (listChanged) {
                                 setPlayers(skippedFromTable);
                                 setSkippedPlayers(skippedFromTable);
-                                playersRef.current = skippedFromTable;
-                            } else {
-                                // No skipped players - clear the list
+                            }
+                        } else {
+                            // No skipped players
+                            playersRef.current = [];
+                            if (players.length > 0) {
                                 setPlayers([]);
                                 setSkippedPlayers([]);
-                                playersRef.current = [];
                             }
                         }
                         
