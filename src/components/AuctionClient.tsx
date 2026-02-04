@@ -2911,7 +2911,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             const updateData: any = {
                     sold_player_info: soldPlayerInfo,
                 congratulations_modal_acknowledged: false, // Set to false to show modal to all users
-                    is_skipped_players_mode: isSkippedPlayersModeRef.current
+                    is_skipped_players_mode: isSkippedPlayersModeRef.current,
+                    current_bid_team_id: null // Clear team selection in first update to prevent subscription overwrite
             };
 
             // Save index to the appropriate column based on mode
@@ -2923,6 +2924,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 // In all players mode: save to current_player_index using originalPlayerPool index
                 updateData.current_player_index = nextPlayerOriginalIndex;
             }
+
+            // Set flag to prevent subscription from overwriting our changes
+            isUpdatingBidRef.current = true;
 
             await supabase
                 .from('auction_sessions')
@@ -2955,6 +2959,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setSelectedTeamId(null);
             setPlayerBids(new Map());
             
+            // Set flag to prevent subscription from overwriting our changes
+            isUpdatingBidRef.current = true;
+            
             // Update database to sync bid reset
             await supabase
                 .from('auction_sessions')
@@ -2963,6 +2970,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     current_bid_team_id: null
                 })
                 .eq('id', sessionId);
+            
+            // Clear flag after a short delay to allow database update to propagate
+            setTimeout(() => {
+                isUpdatingBidRef.current = false;
+            }, 300);
         } catch (error) {
             console.error('Error buying player:', error);
             alert('Failed to save auction state. Please try again.');
@@ -3093,6 +3105,9 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             setSelectedTeamId(null);
             setPlayerBids(new Map());
                 
+                // Set flag to prevent subscription from overwriting our changes
+                isUpdatingBidRef.current = true;
+                
                 // Update database to sync bid reset
                 await supabase
                     .from('auction_sessions')
@@ -3101,6 +3116,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         current_bid_team_id: null
                     })
                     .eq('id', sessionId);
+                
+                // Clear flag after a short delay to allow database update to propagate
+                setTimeout(() => {
+                    isUpdatingBidRef.current = false;
+                }, 300);
 
                 // Store action for undo
                 setLastAction({
