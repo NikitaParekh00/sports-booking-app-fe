@@ -1342,8 +1342,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         });
                         shouldUpdateIndex = false;
                     } else if (dbIsSkippedMode) {
-                        // Always query fresh data to ensure we have the latest skipped players (same as unbidded mode)
-                        // But only update state if the list actually changed to prevent bid resets
+                        // Query fresh data when index changes OR when we need to ensure list is up-to-date
+                        // But only update state when index changes to prevent bid resets
+                        const indexChanged = sessionNewIndex !== prevPlayerIndexRef.current && sessionNewIndex !== currentPlayerIndex;
+                        
+                        // Always query to get fresh data (for playersRef.current), but only update state when index changes
                         const { data: skippedPlayersData } = await supabase
                             .from('auction_skipped_players')
                             .select(`
@@ -1378,24 +1381,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 };
                             });
                             
-                            // Always update ref first (for index calculations)
+                            // Always update ref (for index calculations) - this ensures we have fresh data
                             playersRef.current = skippedFromTable;
                             
-                            // Only update state if the list actually changed (prevents bid resets)
-                            // Check if length changed OR if player at current index changed
-                            const listChanged = players.length !== skippedFromTable.length || 
-                                (currentPlayerIndex < skippedFromTable.length && 
-                                 currentPlayerIndex < players.length &&
-                                 players[currentPlayerIndex]?.name !== skippedFromTable[currentPlayerIndex]?.name);
-                            
-                            if (listChanged) {
+                            // Only update state when index changes (prevents bid resets on bid/team updates)
+                            if (indexChanged) {
                                 setPlayers(skippedFromTable);
                                 setSkippedPlayers(skippedFromTable);
                             }
                         } else {
                             // No skipped players
                             playersRef.current = [];
-                            if (players.length > 0) {
+                            if (indexChanged || players.length > 0) {
                                 setPlayers([]);
                                 setSkippedPlayers([]);
                             }
