@@ -5251,10 +5251,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     </div>
                                                 )}
 
-                                                {/* Active Sport */}
+                                                {/* Profession */}
                                                 {currentPlayer.active_sport && (
                                                     <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Active Sport</div>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Profession</div>
                                                         <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                                     </div>
                                                 )}
@@ -5592,7 +5592,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                                 {currentPlayer.active_sport && (
                                                     <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Active Sport</div>
+                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Profession</div>
                                                         <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                                     </div>
                                                 )}
