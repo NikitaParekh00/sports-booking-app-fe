@@ -3840,14 +3840,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 const playerTableStartX = margin;
                 const playerTableWidth = pageWidth - (2 * margin);
                 const playerRowHeight = 8;
-                // Adjusted column widths: S.No (5mm), Photo (fixed size matching auction UI), Name (flexible), Amount (35mm fixed)
+                // Adjusted column widths: S.No (5mm), Photo (fixed size matching auction UI), Name (flexible), Phone (30mm), Amount (35mm fixed)
                 const sNoWidth = 5; // Reduced from 10mm
                 // Fixed image size matching auction UI: w-72 (288px ≈ 76mm) h-96 (384px ≈ 102mm)
                 const imageWidth = 40; // Reduced width for player images
                 const imageHeight = 54; // Reduced height for player images (maintains 3:4 aspect ratio)
                 const imageRowHeight = imageHeight + 4; // Image height + 2mm padding top and bottom
+                const phoneWidth = 30;
                 const amountWidth = 35;
-                const nameWidth = playerTableWidth - sNoWidth - imageWidth - amountWidth - 2; // Extra 2mm for spacing
+                const nameWidth = playerTableWidth - sNoWidth - imageWidth - phoneWidth - amountWidth - 2; // Extra 2mm for spacing
 
                 // Table Header
                 pdf.setFillColor(220, 38, 38);
@@ -3858,20 +3859,25 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 pdf.text('No', playerTableStartX + sNoWidth / 2, yPosition + 5.5, { align: 'center' });
                 pdf.text('Photo', playerTableStartX + sNoWidth + imageWidth / 2, yPosition + 5.5, { align: 'center' });
                 pdf.text('Player Name', playerTableStartX + sNoWidth + imageWidth + nameWidth / 2, yPosition + 5.5, { align: 'center' });
-                pdf.text('Amount', playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Phone', playerTableStartX + sNoWidth + imageWidth + nameWidth + phoneWidth / 2, yPosition + 5.5, { align: 'center' });
+                pdf.text('Amount', playerTableStartX + sNoWidth + imageWidth + nameWidth + phoneWidth + amountWidth / 2, yPosition + 5.5, { align: 'center' });
                 yPosition += playerRowHeight;
 
-                // Fetch player photos from player pool
+                // Fetch player photos and phone numbers from player pool
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('name, photo')
+                    .select('name, photo, phone')
                     .eq('session_id', sessionId || '');
 
                 const playerPhotoMap = new Map<string, string>();
+                const playerPhoneMap = new Map<string, string>();
                 if (playerPoolData) {
                     for (const poolPlayer of playerPoolData) {
                         if (poolPlayer.photo) {
                             playerPhotoMap.set(poolPlayer.name, poolPlayer.photo);
+                        }
+                        if (poolPlayer.phone) {
+                            playerPhoneMap.set(poolPlayer.name, poolPlayer.phone);
                         }
                     }
                 }
@@ -4010,6 +4016,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     }
                     pdf.text(displayName, playerTableStartX + sNoWidth + imageWidth + 2, yPosition + currentRowHeight / 2);
 
+                    // Phone Number - centered vertically
+                    const playerPhone = playerPhoneMap.get(player.name) || '';
+                    const phoneX = playerTableStartX + sNoWidth + imageWidth + nameWidth + 2;
+                    pdf.text(playerPhone, phoneX, yPosition + currentRowHeight / 2);
+
                     // Bid Amount - right aligned within its column, centered vertically
                     const bidAmount = player.bidAmount || 0;
                     const bidText = formatNumber(bidAmount);
@@ -4020,7 +4031,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         // If amount is too long, use smaller font
                         pdf.setFontSize(8);
                     }
-                    const amountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
+                    const amountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + phoneWidth + amountWidth - 2;
                     pdf.text(displayAmount, amountX, yPosition + currentRowHeight / 2, { align: 'right' });
                     // Reset font size
                     pdf.setFontSize(9);
@@ -4047,7 +4058,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 if (pdf.getTextWidth(totalAmountText) > maxTotalWidth) {
                     pdf.setFontSize(9);
                 }
-                const totalAmountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + amountWidth - 2;
+                const totalAmountX = playerTableStartX + sNoWidth + imageWidth + nameWidth + phoneWidth + amountWidth - 2;
                 pdf.text(totalAmountText, totalAmountX, yPosition + 5.5, { align: 'right' });
             }
 
