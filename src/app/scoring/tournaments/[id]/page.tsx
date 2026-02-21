@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { opponentManager } from "@/lib/opponentManagement";
 import PhoneInput from "@/components/PhoneInput";
+import { parseParticipantCsv, BADMINTON_PARTICIPANT_CSV_TEMPLATE } from "@/lib/csvParticipantParser";
 
 interface Tournament {
     id: string;
@@ -29,6 +30,7 @@ interface Tournament {
     total_rounds?: number;
     brackets_generated?: boolean;
     groups_generated?: boolean;
+    tournament_mode?: 'individual' | 'team';
 }
 
 interface Participant {
@@ -39,6 +41,10 @@ interface Participant {
     phone: string | null;
     status: string;
     created_at: string;
+    email?: string | null;
+    category?: string | null;
+    seed_number?: number | null;
+    club?: string | null;
 }
 
 interface MatchPlayer {
@@ -52,6 +58,31 @@ interface TournamentMatch {
     match_date: string | null;
     status: string;
     match_players?: MatchPlayer[];
+    team_a_id?: string | null;
+    team_b_id?: string | null;
+    winner_team_id?: string | null;
+    court_number?: string | null;
+    final_score?: string | null;
+    match_number?: string | null;
+    team_a?: { id: string; name: string; short_name?: string | null };
+    team_b?: { id: string; name: string; short_name?: string | null };
+    winner_team?: { id: string; name: string } | null;
+}
+
+interface TournamentTeam {
+    id: string;
+    tournament_id: string;
+    name: string;
+    short_name: string | null;
+    created_at: string;
+}
+
+interface TournamentTeamMember {
+    id: string;
+    team_id: string;
+    participant_id: string;
+    position: number;
+    participant?: Participant;
 }
 
 export default function TournamentDetailPage() {
@@ -61,8 +92,9 @@ export default function TournamentDetailPage() {
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings';
+    type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
     const [activeTab, setActiveTab] = useState<TabType>('overview');
+    const isTeamTournament = (tournament?.tournament_mode ?? 'individual') === 'team';
     const [showAddParticipant, setShowAddParticipant] = useState(false);
     const supabase = createClient();
 
@@ -233,14 +265,26 @@ export default function TournamentDetailPage() {
             <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10">
                 <div className="max-w-6xl mx-auto px-4">
                     <div className="flex gap-3 md:gap-6 overflow-x-auto scrollbar-hide -mb-px">
-                        {[
-                            { id: 'overview', label: 'Overview' },
-                            { id: 'participants', label: `Participants (${participants.length})` },
-                            { id: 'groups', label: 'Groups' },
-                            { id: 'brackets', label: 'Brackets' },
-                            { id: 'matches', label: 'Matches' },
-                            { id: 'settings', label: 'Settings' },
-                        ].map((tab) => (
+                        {(isTeamTournament
+                            ? [
+                                { id: 'overview', label: 'Overview' },
+                                { id: 'participants', label: `Participants (${participants.length})` },
+                                { id: 'teams', label: 'Teams' },
+                                { id: 'schedule', label: 'Schedule' },
+                                { id: 'results', label: 'Results' },
+                                { id: 'team_stats', label: 'Team Stats' },
+                                { id: 'player_stats', label: 'Player Stats' },
+                                { id: 'settings', label: 'Settings' },
+                              ]
+                            : [
+                                { id: 'overview', label: 'Overview' },
+                                { id: 'participants', label: `Participants (${participants.length})` },
+                                { id: 'groups', label: 'Groups' },
+                                { id: 'brackets', label: 'Brackets' },
+                                { id: 'matches', label: 'Matches' },
+                                { id: 'settings', label: 'Settings' },
+                              ]
+                        ).map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as TabType)}
@@ -283,6 +327,22 @@ export default function TournamentDetailPage() {
 
                 {activeTab === 'matches' && (
                     <MatchesTab tournament={tournament} />
+                )}
+
+                {activeTab === 'teams' && isTeamTournament && (
+                    <TeamsTab tournament={tournament} participants={participants} onRefresh={fetchTournamentData} />
+                )}
+                {activeTab === 'schedule' && isTeamTournament && (
+                    <TeamScheduleTab tournament={tournament} onRefresh={fetchTournamentData} />
+                )}
+                {activeTab === 'results' && isTeamTournament && (
+                    <TeamResultsTab tournament={tournament} onRefresh={fetchTournamentData} />
+                )}
+                {activeTab === 'team_stats' && isTeamTournament && (
+                    <TeamStatsTab tournament={tournament} />
+                )}
+                {activeTab === 'player_stats' && isTeamTournament && (
+                    <PlayerStatsTab tournament={tournament} />
                 )}
 
                 {activeTab === 'settings' && (
@@ -382,6 +442,8 @@ function ParticipantsTab({
     const [newParticipantName, setNewParticipantName] = useState("");
     const [newParticipantPhone, setNewParticipantPhone] = useState("");
     const [isAdding, setIsAdding] = useState(false);
+    const [isUploadingCsv, setIsUploadingCsv] = useState(false);
+    const [csvUploadError, setCsvUploadError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState("");
     const supabase = createClient();
@@ -430,6 +492,64 @@ function ParticipantsTab({
             alert('Failed to add participant');
         } finally {
             setIsAdding(false);
+        }
+    };
+
+    const handleUploadCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        setCsvUploadError(null);
+        if (!file) return;
+        const text = await file.text();
+        const { participants: parsed, errors } = parseParticipantCsv(text);
+        if (parsed.length === 0) {
+            setCsvUploadError(errors.length > 0 ? errors.join(' ') : 'No valid rows in CSV.');
+            e.target.value = '';
+            return;
+        }
+        const max = tournament.max_participants;
+        const allowed = Math.max(0, max - participants.length);
+        const toAdd = parsed.slice(0, allowed);
+        if (toAdd.length === 0) {
+            setCsvUploadError(`Tournament is full (max ${max}).`);
+            e.target.value = '';
+            return;
+        }
+        if (toAdd.length < parsed.length) {
+            setCsvUploadError(`Only ${toAdd.length} of ${parsed.length} added; max ${max} participants.`);
+        }
+        setIsUploadingCsv(true);
+        try {
+            for (const p of toAdd) {
+                let userId = null;
+                if (p.phone) {
+                    const phoneValidation = opponentManager.validatePhoneNumber(p.phone);
+                    if (phoneValidation.isValid) {
+                        const opponentInfo = await opponentManager.findOrCreateOpponent(p.phone, p.name);
+                        userId = opponentInfo.user_id;
+                    }
+                }
+                const { error } = await supabase
+                    .from('tournament_participants')
+                    .insert({
+                        tournament_id: tournament.id,
+                        user_id: userId,
+                        player_name: p.name,
+                        phone: p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null,
+                        email: p.email || null,
+                        category: p.category || null,
+                        seed_number: p.seed ?? null,
+                        club: p.club || null,
+                        status: 'registered',
+                    });
+                if (error) throw error;
+            }
+            onParticipantsChange();
+        } catch (err) {
+            console.error('CSV upload error:', err);
+            setCsvUploadError('Failed to add some participants. Check format and try again.');
+        } finally {
+            setIsUploadingCsv(false);
+            e.target.value = '';
         }
     };
 
@@ -495,15 +615,35 @@ function ParticipantsTab({
             <div className="flex items-center justify-between">
                 <h2 className="text-xl font-semibold text-gray-900">Participants</h2>
                 {!showAddParticipant && (
-                    <button
-                        onClick={() => setShowAddParticipant(true)}
-                        disabled={participants.length >= tournament.max_participants}
-                        className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Add Participant
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <label className="cursor-pointer bg-gray-100 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-200 text-sm font-medium border border-gray-300">
+                            {isUploadingCsv ? 'Uploading...' : 'Upload CSV'}
+                            <input
+                                type="file"
+                                accept=".csv,.txt"
+                                className="sr-only"
+                                disabled={isUploadingCsv || participants.length >= tournament.max_participants}
+                                onChange={handleUploadCsv}
+                            />
+                        </label>
+                        <a
+                            href={`data:text/csv;charset=utf-8,${encodeURIComponent(BADMINTON_PARTICIPANT_CSV_TEMPLATE)}`}
+                            download="badminton_participants_template.csv"
+                            className="text-sm text-blue-600 hover:underline"
+                        >
+                            Template
+                        </a>
+                        <button
+                            onClick={() => setShowAddParticipant(true)}
+                            disabled={participants.length >= tournament.max_participants}
+                            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Add Participant
+                        </button>
+                    </div>
                 )}
             </div>
+            {csvUploadError && <p className="text-sm text-amber-700 mt-2">{csvUploadError}</p>}
 
             {showAddParticipant && (
                 <div className="bg-white border border-gray-200 rounded-lg p-4">
@@ -573,6 +713,7 @@ function ParticipantsTab({
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Phone</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Category</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                                 </tr>
@@ -611,6 +752,7 @@ function ParticipantsTab({
                                             )}
                                         </td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-600 hidden sm:table-cell">{participant.phone || '-'}</td>
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-600 hidden md:table-cell">{participant.category || '-'}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
                                             <select
                                                 value={participant.status}
@@ -764,6 +906,671 @@ function MatchesTab({ tournament }: { tournament: Tournament }) {
                     ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+// --- Team tournament tabs ---
+
+function TeamsTab({
+    tournament,
+    participants,
+    onRefresh,
+}: {
+    tournament: Tournament;
+    participants: Participant[];
+    onRefresh: () => void;
+}) {
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [membersByTeam, setMembersByTeam] = useState<Record<string, TournamentTeamMember[]>>({});
+    const [newTeamName, setNewTeamName] = useState("");
+    const [newTeamShortName, setNewTeamShortName] = useState("");
+    const [addingToTeamId, setAddingToTeamId] = useState<string | null>(null);
+    const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
+    const [position, setPosition] = useState<1 | 2>(1);
+    const supabase = createClient();
+
+    const loadTeams = useCallback(async () => {
+        const { data: teamsData, error: teamsError } = await supabase
+            .from("tournament_teams")
+            .select("*")
+            .eq("tournament_id", tournament.id)
+            .order("name");
+        if (teamsError) {
+            console.error(teamsError);
+            return;
+        }
+        setTeams(teamsData || []);
+        const teamIds = (teamsData || []).map((t) => t.id);
+        if (teamIds.length === 0) {
+            setMembersByTeam({});
+            return;
+        }
+        const { data: membersData, error: membersError } = await supabase
+            .from("tournament_team_members")
+            .select("*, participant:tournament_participants(*)")
+            .in("team_id", teamIds);
+        if (membersError) {
+            console.error(membersError);
+            return;
+        }
+        const byTeam: Record<string, TournamentTeamMember[]> = {};
+        teamIds.forEach((id) => (byTeam[id] = []));
+        (membersData || []).forEach((m: TournamentTeamMember & { participant?: Participant }) => {
+            if (!byTeam[m.team_id]) byTeam[m.team_id] = [];
+            byTeam[m.team_id].push(m);
+        });
+        setMembersByTeam(byTeam);
+    }, [tournament.id, supabase]);
+
+    useEffect(() => {
+        loadTeams();
+    }, [loadTeams]);
+
+    const handleCreateTeam = async () => {
+        if (!newTeamName.trim()) {
+            alert("Enter team name");
+            return;
+        }
+        try {
+            const { error } = await supabase.from("tournament_teams").insert({
+                tournament_id: tournament.id,
+                name: newTeamName.trim(),
+                short_name: newTeamShortName.trim() || null,
+            });
+            if (error) throw error;
+            setNewTeamName("");
+            setNewTeamShortName("");
+            loadTeams();
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create team");
+        }
+    };
+
+    const handleAddMember = async () => {
+        if (!addingToTeamId || !selectedParticipantId) return;
+        try {
+            const { error } = await supabase.from("tournament_team_members").insert({
+                team_id: addingToTeamId,
+                participant_id: selectedParticipantId,
+                position,
+            });
+            if (error) throw error;
+            setAddingToTeamId(null);
+            setSelectedParticipantId(null);
+            loadTeams();
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to add member");
+        }
+    };
+
+    const handleRemoveMember = async (memberId: string) => {
+        try {
+            const { error } = await supabase.from("tournament_team_members").delete().eq("id", memberId);
+            if (error) throw error;
+            loadTeams();
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to remove member");
+        }
+    };
+
+    const assignedParticipantIds = Object.values(membersByTeam).flat().map((m) => m.participant_id);
+    const availableParticipants = participants.filter((p) => !assignedParticipantIds.includes(p.id));
+
+    return (
+        <div className="space-y-6">
+            <h2 className="text-xl font-semibold text-gray-900">Teams</h2>
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team name</label>
+                    <input
+                        type="text"
+                        value={newTeamName}
+                        onChange={(e) => setNewTeamName(e.target.value)}
+                        placeholder="e.g. Eagles"
+                        className="w-48 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Short name</label>
+                    <input
+                        type="text"
+                        value={newTeamShortName}
+                        onChange={(e) => setNewTeamShortName(e.target.value)}
+                        placeholder="e.g. EGL"
+                        className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                </div>
+                <button
+                    type="button"
+                    onClick={handleCreateTeam}
+                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
+                >
+                    Add Team
+                </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+                {teams.map((team) => (
+                    <div key={team.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-gray-900">
+                                {team.name}
+                                {team.short_name && (
+                                    <span className="text-gray-500 font-normal ml-2">({team.short_name})</span>
+                                )}
+                            </h3>
+                        </div>
+                        <ul className="space-y-2 mb-3">
+                            {(membersByTeam[team.id] || []).map((m) => (
+                                <li key={m.id} className="flex items-center justify-between text-sm">
+                                    <span>
+                                        P{m.position}: {(m as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—"}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveMember(m.id)}
+                                        className="text-red-600 hover:underline"
+                                    >
+                                        Remove
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                        {addingToTeamId === team.id ? (
+                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
+                                <select
+                                    value={selectedParticipantId || ""}
+                                    onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                >
+                                    <option value="">Select participant</option>
+                                    {availableParticipants.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.player_name}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={position}
+                                    onChange={(e) => setPosition(parseInt(e.target.value) as 1 | 2)}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                >
+                                    <option value={1}>P1</option>
+                                    <option value={2}>P2</option>
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={handleAddMember}
+                                    className="bg-gray-700 text-white px-3 py-1 rounded text-sm"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setAddingToTeamId(null); setSelectedParticipantId(null); }}
+                                    className="text-gray-600 text-sm"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setAddingToTeamId(team.id)}
+                                disabled={availableParticipants.length === 0}
+                                className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                            >
+                                + Add member
+                            </button>
+                        )}
+                    </div>
+                ))}
+            </div>
+            {teams.length === 0 && (
+                <p className="text-gray-500 text-sm">Create teams and assign participants from the list. Participants must be added in the Participants tab first.</p>
+            )}
+        </div>
+    );
+}
+
+function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; onRefresh: () => void }) {
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [showAdd, setShowAdd] = useState(false);
+    const [newMatch, setNewMatch] = useState({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
+    }, [tournament.id, supabase]);
+    useEffect(() => {
+        supabase
+            .from("matches")
+            .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true })
+            .then(({ data }) => setMatches(data || []));
+    }, [tournament.id, supabase]);
+
+    const handleAddMatch = async () => {
+        if (!newMatch.team_a_id || !newMatch.team_b_id) {
+            alert("Select both teams");
+            return;
+        }
+        if (newMatch.team_a_id === newMatch.team_b_id) {
+            alert("Select two different teams");
+            return;
+        }
+        try {
+            const storedUser = localStorage.getItem("sf:user");
+            const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+            const { error } = await supabase.from("matches").insert({
+                tournament_id: tournament.id,
+                sport: tournament.sport,
+                match_type: "tournament",
+                status: "upcoming",
+                team_a_id: newMatch.team_a_id,
+                team_b_id: newMatch.team_b_id,
+                court_number: newMatch.court_number || null,
+                match_date: newMatch.match_date ? new Date(newMatch.match_date).toISOString() : null,
+                match_number: newMatch.match_number || null,
+                created_by,
+            });
+            if (error) throw error;
+            setNewMatch({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
+            setShowAdd(false);
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create match");
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Schedule</h2>
+                <button
+                    type="button"
+                    onClick={() => setShowAdd(!showAdd)}
+                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
+                >
+                    {showAdd ? "Cancel" : "Add Match"}
+                </button>
+            </div>
+            {showAdd && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Team A</label>
+                            <select
+                                value={newMatch.team_a_id}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, team_a_id: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            >
+                                <option value="">Select</option>
+                                {teams.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Team B</label>
+                            <select
+                                value={newMatch.team_b_id}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, team_b_id: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            >
+                                <option value="">Select</option>
+                                {teams.map((t) => (
+                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
+                            <input
+                                type="text"
+                                value={newMatch.court_number}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, court_number: e.target.value }))}
+                                placeholder="Court 1"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date & time</label>
+                            <input
+                                type="datetime-local"
+                                value={newMatch.match_date}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, match_date: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Match #</label>
+                            <input
+                                type="text"
+                                value={newMatch.match_number}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, match_number: e.target.value }))}
+                                placeholder="W01"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            />
+                        </div>
+                    </div>
+                    <button type="button" onClick={handleAddMatch} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm">
+                        Save Match
+                    </button>
+                </div>
+            )}
+            <div className="space-y-2">
+                {matches.map((match) => (
+                    <div key={match.id} className="bg-white border border-gray-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <span className="font-medium text-gray-900">
+                                {(match as TournamentMatch).team_a?.name ?? "TBD"} vs {(match as TournamentMatch).team_b?.name ?? "TBD"}
+                            </span>
+                            <div className="text-sm text-gray-500 mt-1">
+                                {match.match_date ? new Date(match.match_date).toLocaleString() : "—"} · Court: {match.court_number || "—"} · {match.match_number || "—"}
+                            </div>
+                        </div>
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            match.status === "completed" ? "bg-gray-100 text-gray-800" : match.status === "live" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
+                        }`}>
+                            {match.status}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            {matches.length === 0 && !showAdd && <p className="text-gray-500 text-sm">No matches yet. Add a match to build the schedule.</p>}
+        </div>
+    );
+}
+
+function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onRefresh: () => void }) {
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [winnerId, setWinnerId] = useState("");
+    const [finalScore, setFinalScore] = useState("");
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).then(({ data }) => setTeams(data || []));
+        supabase
+            .from("matches")
+            .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name), winner_team:tournament_teams!winner_team_id(id,name)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true })
+            .then(({ data }) => setMatches(data || []));
+    }, [tournament.id, supabase]);
+
+    const handleSaveResult = async (matchId: string) => {
+        try {
+            const { error } = await supabase
+                .from("matches")
+                .update({
+                    status: "completed",
+                    winner_team_id: winnerId || null,
+                    final_score: finalScore || null,
+                    completed_at: new Date().toISOString(),
+                })
+                .eq("id", matchId);
+            if (error) throw error;
+            setEditingId(null);
+            setWinnerId("");
+            setFinalScore("");
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name), winner_team:tournament_teams!winner_team_id(id,name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+        } catch (e) {
+            console.error(e);
+            alert("Failed to save result");
+        }
+    };
+
+    const startEdit = (m: TournamentMatch) => {
+        setEditingId(m.id);
+        setWinnerId(m.winner_team_id || "");
+        setFinalScore(m.final_score || "");
+    };
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900">Results</h2>
+            <p className="text-sm text-gray-500">Record winner and final score for completed matches.</p>
+            <div className="space-y-2">
+                {matches.map((match) => {
+                    const m = match as TournamentMatch;
+                    const isEditing = editingId === match.id;
+                    const matchTeams = [m.team_a, m.team_b].filter(Boolean);
+                    const winnerOptions = matchTeams.length >= 2 ? matchTeams : teams.filter((t) => t.id === m.team_a_id || t.id === m.team_b_id);
+                    return (
+                        <div key={match.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div>
+                                    <span className="font-medium text-gray-900">{m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD"} vs {m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD"}</span>
+                                    {match.status === "completed" && (
+                                        <span className="ml-2 text-gray-600">
+                                            Won by {(m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—"} {m.final_score ? ` · ${m.final_score}` : ""}
+                                        </span>
+                                    )}
+                                </div>
+                                {match.status !== "completed" ? (
+                                    isEditing ? (
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <select
+                                                value={winnerId}
+                                                onChange={(e) => setWinnerId(e.target.value)}
+                                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                            >
+                                                <option value="">Select winner</option>
+                                                {winnerOptions.map((t) => (
+                                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="text"
+                                                value={finalScore}
+                                                onChange={(e) => setFinalScore(e.target.value)}
+                                                placeholder="21-10"
+                                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                                            />
+                                            <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
+                                            <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setFinalScore(""); }} className="text-gray-600 text-sm">Cancel</button>
+                                        </div>
+                                    ) : (
+                                        <button type="button" onClick={() => startEdit(m)} className="bg-gray-700 text-white px-3 py-1 rounded text-sm">Enter result</button>
+                                    )
+                                ) : (
+                                    <span className="text-green-600 text-sm font-medium">Completed</span>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+            {matches.length === 0 && <p className="text-gray-500 text-sm">No matches. Add matches in the Schedule tab first.</p>}
+        </div>
+    );
+}
+
+function TeamStatsTab({ tournament }: { tournament: Tournament }) {
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
+        supabase
+            .from("matches")
+            .select("*, team_a:tournament_teams!team_a_id(id,name), team_b:tournament_teams!team_b_id(id,name), winner_team:tournament_teams!winner_team_id(id,name)")
+            .eq("tournament_id", tournament.id)
+            .eq("status", "completed")
+            .then(({ data }) => setMatches(data || []));
+    }, [tournament.id, supabase]);
+
+    const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> = {};
+    teams.forEach((t) => { stats[t.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 }; });
+    matches.forEach((m) => {
+        const ma = (m as TournamentMatch).team_a_id;
+        const mb = (m as TournamentMatch).team_b_id;
+        const winner = (m as TournamentMatch).winner_team_id;
+        if (ma && stats[ma]) {
+            stats[ma].played += 1;
+            if (winner === ma) stats[ma].won += 1; else stats[ma].lost += 1;
+        }
+        if (mb && stats[mb]) {
+            stats[mb].played += 1;
+            if (winner === mb) stats[mb].won += 1; else stats[mb].lost += 1;
+        }
+        const score = (m as TournamentMatch).final_score;
+        if (score && typeof score === "string") {
+            const parts = score.split("-").map((n) => parseInt(n.trim(), 10));
+            if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                if (ma && stats[ma]) { stats[ma].pointsFor += parts[0]; stats[ma].pointsAgainst += parts[1]; }
+                if (mb && stats[mb]) { stats[mb].pointsFor += parts[1]; stats[mb].pointsAgainst += parts[0]; }
+            }
+        }
+    });
+    const sorted = teams
+        .map((t) => ({ team: t, ...stats[t.id], pts: (stats[t.id].won * 2) + (stats[t.id].lost * 0) }))
+        .sort((a, b) => b.pts - a.pts);
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900">Team standings</h2>
+            <div className="overflow-x-auto">
+                <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">#</th>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">Team</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">TM</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PL</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">W</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">L</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PTS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sorted.map((row, idx) => (
+                            <tr key={row.team.id} className="border-t border-gray-200">
+                                <td className="py-2 px-3 text-sm">{idx + 1}</td>
+                                <td className="py-2 px-3 text-sm font-medium">{row.team.name}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.team.short_name || "—"}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.played}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.won}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.lost}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.pts}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="text-xs text-gray-500">TM = Team name short, PL = Played, W = Won, L = Lost, PTS = Points (2 per win).</p>
+        </div>
+    );
+}
+
+function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
+    const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant; team?: TournamentTeam })[]>([]);
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase
+            .from("tournament_team_members")
+            .select("*, participant:tournament_participants(*), team:tournament_teams(*)")
+            .then(({ data }) => {
+                const byTournament = (data || []).filter(
+                    (m: TournamentTeamMember & { team?: TournamentTeam }) => m.team?.tournament_id === tournament.id
+                );
+                setMembers(byTournament);
+            });
+        supabase
+            .from("matches")
+            .select("*, winner_team:tournament_teams!winner_team_id(id)")
+            .eq("tournament_id", tournament.id)
+            .eq("status", "completed")
+            .then(({ data }) => setMatches(data || []));
+    }, [tournament.id, supabase]);
+
+    const participantStats: Record<string, { played: number; won: number; lost: number }> = {};
+    members.forEach((m) => {
+        const pid = (m as TournamentTeamMember & { participant?: Participant }).participant_id;
+        if (pid) participantStats[pid] = { played: 0, won: 0, lost: 0 };
+    });
+    matches.forEach((match) => {
+        const winnerId = (match as TournamentMatch).winner_team_id;
+        const teamA = (match as TournamentMatch).team_a_id;
+        const teamB = (match as TournamentMatch).team_b_id;
+        members.forEach((mem) => {
+            const tid = (mem as TournamentTeamMember & { team?: TournamentTeam }).team_id;
+            const pid = (mem as TournamentTeamMember & { participant?: Participant }).participant_id;
+            if (!pid || !participantStats[pid]) return;
+            if (tid === teamA || tid === teamB) {
+                participantStats[pid].played += 1;
+                if (tid === winnerId) participantStats[pid].won += 1; else participantStats[pid].lost += 1;
+            }
+        });
+    });
+    const sorted = members
+        .map((m) => {
+            const mem = m as TournamentTeamMember & { participant?: Participant; team?: TournamentTeam };
+            const pid = mem.participant_id;
+            const s = participantStats[pid] || { played: 0, won: 0, lost: 0 };
+            return { member: mem, ...s, pts: s.won * 2 };
+        })
+        .filter((r) => r.member.participant)
+        .sort((a, b) => b.pts - a.pts);
+
+    return (
+        <div className="space-y-4">
+            <h2 className="text-xl font-semibold text-gray-900">Player stats</h2>
+            <div className="overflow-x-auto">
+                <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+                    <thead className="bg-gray-100">
+                        <tr>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">#</th>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">Player</th>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">Team</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PL</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">W</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">L</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PTS</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {sorted.map((row, idx) => (
+                            <tr key={row.member.id} className="border-t border-gray-200">
+                                <td className="py-2 px-3 text-sm">{idx + 1}</td>
+                                <td className="py-2 px-3 text-sm font-medium">{(row.member as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—"}</td>
+                                <td className="py-2 px-3 text-sm">{(row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—"}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.played}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.won}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.lost}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.pts}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
