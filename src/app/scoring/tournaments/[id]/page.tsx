@@ -1380,7 +1380,7 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
                                                 className="px-2 py-1 border border-gray-300 rounded text-sm"
                                             >
                                                 <option value="">Select winner</option>
-                                                {winnerOptions.map((t) => (
+                                                {winnerOptions.filter((t): t is NonNullable<typeof t> => t != null).map((t) => (
                                                     <option key={t.id} value={t.id}>{t.name}</option>
                                                 ))}
                                             </select>
