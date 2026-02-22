@@ -459,6 +459,20 @@ function ParticipantsTab({
             return;
         }
 
+        const formattedPhone = newParticipantPhone ? `+91-${newParticipantPhone.replace(/\D/g, '')}` : null;
+        if (formattedPhone) {
+            const { data: existing } = await supabase
+                .from('tournament_participants')
+                .select('id')
+                .eq('tournament_id', tournament.id)
+                .eq('phone', formattedPhone)
+                .maybeSingle();
+            if (existing) {
+                alert('This participant (phone number) is already in the tournament.');
+                return;
+            }
+        }
+
         setIsAdding(true);
         try {
             // If phone is provided, try to find or create user
@@ -477,7 +491,7 @@ function ParticipantsTab({
                     tournament_id: tournament.id,
                     user_id: userId,
                     player_name: newParticipantName,
-                    phone: newParticipantPhone ? `+91-${newParticipantPhone.replace(/\D/g, '')}` : null,
+                    phone: formattedPhone,
                     status: 'registered',
                 });
 
@@ -519,7 +533,14 @@ function ParticipantsTab({
         }
         setIsUploadingCsv(true);
         try {
+            const existingPhones = new Set(participants.filter((x) => x.phone).map((x) => x.phone!));
+            let skipped = 0;
             for (const p of toAdd) {
+                const phone = p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null;
+                if (phone && existingPhones.has(phone)) {
+                    skipped += 1;
+                    continue;
+                }
                 let userId = null;
                 if (p.phone) {
                     const phoneValidation = opponentManager.validatePhoneNumber(p.phone);
@@ -534,7 +555,7 @@ function ParticipantsTab({
                         tournament_id: tournament.id,
                         user_id: userId,
                         player_name: p.name,
-                        phone: p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null,
+                        phone: phone || null,
                         email: p.email || null,
                         category: p.category || null,
                         seed_number: p.seed ?? null,
@@ -542,7 +563,9 @@ function ParticipantsTab({
                         status: 'registered',
                     });
                 if (error) throw error;
+                if (phone) existingPhones.add(phone);
             }
+            if (skipped > 0) setCsvUploadError((prev) => `${prev || ''} Skipped ${skipped} duplicate(s) (already in tournament).`.trim());
             onParticipantsChange();
         } catch (err) {
             console.error('CSV upload error:', err);
@@ -1141,8 +1164,10 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [showAdd, setShowAdd] = useState(false);
+    const [isGenerating, setIsGenerating] = useState(false);
     const [newMatch, setNewMatch] = useState({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
     const supabase = createClient();
+    const isRoundRobin = tournament.format === "round_robin" || tournament.format === "round_robin_knockout";
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
@@ -1155,6 +1180,65 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
             .order("match_date", { ascending: true })
             .then(({ data }) => setMatches(data || []));
     }, [tournament.id, supabase]);
+
+    const handleGenerateRoundRobin = async () => {
+        if (teams.length < 2) {
+            alert("Add at least 2 teams to generate a round-robin schedule.");
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+        const existingPairs = new Set<string>();
+        matches.forEach((m) => {
+            const a = (m as TournamentMatch).team_a_id;
+            const b = (m as TournamentMatch).team_b_id;
+            if (a && b) existingPairs.add([a, b].sort().join(","));
+        });
+        const pairs: [string, string][] = [];
+        for (let i = 0; i < teams.length; i++) {
+            for (let j = i + 1; j < teams.length; j++) {
+                const key = [teams[i].id, teams[j].id].sort().join(",");
+                if (!existingPairs.has(key)) pairs.push([teams[i].id, teams[j].id]);
+            }
+        }
+        if (pairs.length === 0) {
+            alert("All round-robin matches already exist. No new matches to add.");
+            return;
+        }
+        setIsGenerating(true);
+        try {
+            let matchNum = matches.length;
+            for (const [teamAId, teamBId] of pairs) {
+                matchNum += 1;
+                const { error } = await supabase.from("matches").insert({
+                    tournament_id: tournament.id,
+                    sport: tournament.sport,
+                    match_type: "tournament",
+                    status: "upcoming",
+                    team_a_id: teamAId,
+                    team_b_id: teamBId,
+                    court_number: null,
+                    match_date: null,
+                    match_number: `M${matchNum}`,
+                    created_by,
+                });
+                if (error) throw error;
+            }
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+            alert(`Added ${pairs.length} match(es). You can set court and date for each match below.`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to generate schedule. Please try again.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
 
     const handleAddMatch = async () => {
         if (!newMatch.team_a_id || !newMatch.team_b_id) {
@@ -1198,16 +1282,33 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xl font-semibold text-gray-900">Schedule</h2>
-                <button
-                    type="button"
-                    onClick={() => setShowAdd(!showAdd)}
-                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
-                >
-                    {showAdd ? "Cancel" : "Add Match"}
-                </button>
+                <div className="flex items-center gap-2">
+                    {isRoundRobin && (
+                        <button
+                            type="button"
+                            onClick={handleGenerateRoundRobin}
+                            disabled={isGenerating || teams.length < 2}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        >
+                            {isGenerating ? "Generating…" : "Generate round-robin schedule"}
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => setShowAdd(!showAdd)}
+                        className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
+                    >
+                        {showAdd ? "Cancel" : "Add Match"}
+                    </button>
+                </div>
             </div>
+            {isRoundRobin && teams.length >= 2 && (
+                <p className="text-sm text-gray-500">
+                    Format is Round Robin. Use &quot;Generate round-robin schedule&quot; to create all {teams.length * (teams.length - 1) / 2} matches (each team vs every other team once).
+                </p>
+            )}
             {showAdd && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1298,12 +1399,29 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
     );
 }
 
+function parseFinalScoreToSets(score: string | null | undefined, numSets: number): string[] {
+    const arr = Array(numSets).fill("");
+    if (!score || typeof score !== "string") return arr;
+    const parts = score.split(",").map((s) => s.trim()).filter(Boolean);
+    parts.forEach((p, i) => { if (i < numSets) arr[i] = p; });
+    return arr;
+}
+
+function formatSetsForDisplay(score: string | null | undefined): string {
+    if (!score || typeof score !== "string") return "";
+    const parts = score.split(",").map((s) => s.trim()).filter(Boolean);
+    if (parts.length === 0) return "";
+    if (parts.length === 1) return parts[0];
+    return parts.map((p, i) => `Set ${i + 1}: ${p}`).join(", ");
+}
+
 function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onRefresh: () => void }) {
+    const numSets = Math.min(5, Math.max(1, Number(tournament.sets_per_match) || 3));
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [winnerId, setWinnerId] = useState("");
-    const [finalScore, setFinalScore] = useState("");
+    const [setScores, setSetScores] = useState<string[]>(() => Array(numSets).fill(""));
     const supabase = createClient();
 
     useEffect(() => {
@@ -1317,20 +1435,21 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
     }, [tournament.id, supabase]);
 
     const handleSaveResult = async (matchId: string) => {
+        const finalScoreStr = setScores.filter(Boolean).join(", ");
         try {
             const { error } = await supabase
                 .from("matches")
                 .update({
                     status: "completed",
                     winner_team_id: winnerId || null,
-                    final_score: finalScore || null,
+                    final_score: finalScoreStr || null,
                     completed_at: new Date().toISOString(),
                 })
                 .eq("id", matchId);
             if (error) throw error;
             setEditingId(null);
             setWinnerId("");
-            setFinalScore("");
+            setSetScores(Array(numSets).fill(""));
             onRefresh();
             supabase
                 .from("matches")
@@ -1347,13 +1466,13 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
     const startEdit = (m: TournamentMatch) => {
         setEditingId(m.id);
         setWinnerId(m.winner_team_id || "");
-        setFinalScore(m.final_score || "");
+        setSetScores(parseFinalScoreToSets(m.final_score, numSets));
     };
 
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Results</h2>
-            <p className="text-sm text-gray-500">Record winner and final score for completed matches.</p>
+                                            <p className="text-sm text-gray-500">Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set blank if the match ended early (e.g. 2-0).</p>
             <div className="space-y-2">
                 {matches.map((match) => {
                     const m = match as TournamentMatch;
@@ -1367,32 +1486,46 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
                                     <span className="font-medium text-gray-900">{m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD"} vs {m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD"}</span>
                                     {match.status === "completed" && (
                                         <span className="ml-2 text-gray-600">
-                                            Won by {(m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—"} {m.final_score ? ` · ${m.final_score}` : ""}
+                                            Won by {(m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—"}
+                                            {m.final_score ? ` · ${formatSetsForDisplay(m.final_score)}` : ""}
                                         </span>
                                     )}
                                 </div>
                                 {match.status !== "completed" ? (
                                     isEditing ? (
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <select
-                                                value={winnerId}
-                                                onChange={(e) => setWinnerId(e.target.value)}
-                                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                                            >
-                                                <option value="">Select winner</option>
-                                                {winnerOptions.filter((t): t is NonNullable<typeof t> => t != null).map((t) => (
-                                                    <option key={t.id} value={t.id}>{t.name}</option>
+                                        <div className="flex flex-col gap-3 w-full">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <select
+                                                    value={winnerId}
+                                                    onChange={(e) => setWinnerId(e.target.value)}
+                                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                                >
+                                                    <option value="">Select winner</option>
+                                                    {winnerOptions.filter((t): t is NonNullable<typeof t> => t != null).map((t) => (
+                                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                                    ))}
+                                                </select>
+                                                <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
+                                                <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setSetScores(Array(numSets).fill("")); }} className="text-gray-600 text-sm">Cancel</button>
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                {Array.from({ length: numSets }, (_, i) => (
+                                                    <div key={i} className="flex items-center gap-1">
+                                                        <label className="text-xs text-gray-600 whitespace-nowrap">Set {i + 1}</label>
+                                                        <input
+                                                            type="text"
+                                                            value={setScores[i] ?? ""}
+                                                            onChange={(e) => {
+                                                                const next = [...setScores];
+                                                                next[i] = e.target.value;
+                                                                setSetScores(next);
+                                                            }}
+                                                            placeholder="21-10"
+                                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                                                        />
+                                                    </div>
                                                 ))}
-                                            </select>
-                                            <input
-                                                type="text"
-                                                value={finalScore}
-                                                onChange={(e) => setFinalScore(e.target.value)}
-                                                placeholder="21-10"
-                                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                                            />
-                                            <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
-                                            <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setFinalScore(""); }} className="text-gray-600 text-sm">Cancel</button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <button type="button" onClick={() => startEdit(m)} className="bg-gray-700 text-white px-3 py-1 rounded text-sm">Enter result</button>

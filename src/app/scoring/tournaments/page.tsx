@@ -249,9 +249,16 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
 
             if (tournamentError) throw tournamentError;
 
-            // Add participants if any were provided
+            // Add participants if any were provided (dedupe by phone so same phone is only added once)
             if (participants.length > 0 && tournament) {
-                const participantPromises = participants.map(async (participant) => {
+                const seenPhones = new Set<string>();
+                const toInsert = participants.filter((p) => {
+                    const phone = p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null;
+                    if (phone && seenPhones.has(phone)) return false;
+                    if (phone) seenPhones.add(phone);
+                    return true;
+                });
+                const participantPromises = toInsert.map(async (participant) => {
                     let userId = null;
                     if (participant.phone) {
                         const phoneValidation = opponentManager.validatePhoneNumber(participant.phone);
