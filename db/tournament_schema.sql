@@ -5,7 +5,7 @@
 ALTER TABLE public.tournaments 
 ADD COLUMN IF NOT EXISTS format VARCHAR(50) DEFAULT 'single_elimination' 
   CHECK (format IN ('single_elimination', 'double_elimination', 'round_robin', 'round_robin_knockout', 'swiss')),
-ADD COLUMN IF NOT EXISTS sets_per_match INTEGER DEFAULT 3 CHECK (sets_per_match IN (3, 5)),
+ADD COLUMN IF NOT EXISTS sets_per_match INTEGER DEFAULT 3 CHECK (sets_per_match IN (1, 3, 5)),
 ADD COLUMN IF NOT EXISTS points_per_set INTEGER DEFAULT 21 CHECK (points_per_set IN (15, 21)),
 ADD COLUMN IF NOT EXISTS win_by_two BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS max_points INTEGER DEFAULT 30,

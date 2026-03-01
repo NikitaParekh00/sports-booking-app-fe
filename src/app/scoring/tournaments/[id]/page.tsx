@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
@@ -74,6 +75,7 @@ interface TournamentTeam {
     tournament_id: string;
     name: string;
     short_name: string | null;
+    category: string | null;
     created_at: string;
 }
 
@@ -85,6 +87,8 @@ interface TournamentTeamMember {
     participant?: Participant;
 }
 
+const ALLOWED_EDIT_PHONE = "+91-7506256356";
+
 export default function TournamentDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -92,11 +96,34 @@ export default function TournamentDetailPage() {
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [canEdit, setCanEdit] = useState(false);
     type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const isTeamTournament = (tournament?.tournament_mode ?? 'individual') === 'team';
     const [showAddParticipant, setShowAddParticipant] = useState(false);
     const supabase = createClient();
+
+    useEffect(() => {
+        const checkEditAccess = async () => {
+            try {
+                const storedUser = localStorage.getItem("sf:user");
+                if (!storedUser) {
+                    setCanEdit(false);
+                    setAuthLoading(false);
+                    return;
+                }
+                const userData = JSON.parse(storedUser);
+                const { data: profile } = await supabase.from("profiles").select("phone").eq("user_id", userData.user_id).single();
+                setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
+            } catch {
+                setCanEdit(false);
+            } finally {
+                setAuthLoading(false);
+            }
+        };
+        checkEditAccess();
+    }, [supabase]);
 
     const fetchTournamentData = useCallback(async () => {
         try {
@@ -158,22 +185,25 @@ export default function TournamentDetailPage() {
         }
     };
 
-    if (isLoading) {
+    if (authLoading || isLoading) {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="text-gray-500">Loading tournament...</div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
+                    <p className="text-gray-600">{authLoading ? "Checking access…" : "Loading tournament…"}</p>
+                </div>
             </div>
         );
     }
 
     if (!tournament) {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="text-center">
-                    <div className="text-red-600 mb-4">Tournament not found</div>
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+                <div className="text-center bg-white rounded-2xl shadow-lg p-6 max-w-md w-full border border-gray-200">
+                    <p className="text-red-600 mb-4">Tournament not found</p>
                     <button
-                        onClick={() => router.push('/scoring/tournaments')}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                        onClick={() => router.push("/scoring/tournaments")}
+                        className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
                     >
                         Back to Tournaments
                     </button>
@@ -206,19 +236,22 @@ export default function TournamentDetailPage() {
     };
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-gray-50">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                <div className="max-w-6xl mx-auto px-4 py-4">
-                    <button
-                        onClick={() => router.push('/scoring/tournaments')}
-                        className="flex items-center gap-2 text-gray-600 mb-4 text-sm md:text-base"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        Back to Tournaments
-                    </button>
+            <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
+                <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
+                    <div className="flex items-center justify-between gap-4 mb-4">
+                        <button
+                            onClick={() => router.push('/scoring/tournaments')}
+                            className="flex items-center gap-2 text-gray-600 hover:text-red-600 text-sm md:text-base touch-manipulation"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                            Back to Tournaments
+                        </button>
+                        <Image src="/logo.jpeg" alt="Simplifit" width={100} height={32} className="h-8 w-auto object-contain" />
+                    </div>
 
                     <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
@@ -248,10 +281,10 @@ export default function TournamentDetailPage() {
                             <div className={`px-2 md:px-3 py-1 rounded-full text-xs md:text-sm font-medium ${getStatusColor(tournament.status)}`}>
                                 {tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
                             </div>
-                            {tournament.status === 'upcoming' && (
+                            {tournament.status === 'upcoming' && canEdit && (
                                 <button
                                     onClick={handleStartTournament}
-                                    className="bg-green-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-md hover:bg-green-700 text-xs md:text-sm whitespace-nowrap"
+                                    className="bg-red-600 text-white px-3 md:px-4 py-1.5 md:py-2 rounded-lg hover:bg-red-700 text-xs md:text-sm whitespace-nowrap font-medium"
                                 >
                                     Start Tournament
                                 </button>
@@ -262,9 +295,9 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10">
-                <div className="max-w-6xl mx-auto px-4">
-                    <div className="flex gap-3 md:gap-6 overflow-x-auto scrollbar-hide -mb-px">
+            <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10 shadow-sm">
+                <div className="max-w-6xl mx-auto px-3 sm:px-4">
+                    <div className="flex gap-2 sm:gap-4 md:gap-6 overflow-x-auto scrollbar-hide -mb-px pb-px">
                         {(isTeamTournament
                             ? [
                                 { id: 'overview', label: 'Overview' },
@@ -302,7 +335,7 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Content */}
-            <div className="max-w-6xl mx-auto px-4 py-4 md:py-6">
+            <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 md:py-6">
                 {activeTab === 'overview' && (
                     <TournamentOverview tournament={tournament} participants={participants} />
                 )}
@@ -314,6 +347,7 @@ export default function TournamentDetailPage() {
                         onParticipantsChange={fetchTournamentData}
                         showAddParticipant={showAddParticipant}
                         setShowAddParticipant={setShowAddParticipant}
+                        canEdit={canEdit}
                     />
                 )}
 
@@ -330,23 +364,23 @@ export default function TournamentDetailPage() {
                 )}
 
                 {activeTab === 'teams' && isTeamTournament && (
-                    <TeamsTab tournament={tournament} participants={participants} onRefresh={fetchTournamentData} />
+                    <TeamsTab tournament={tournament} participants={participants} onRefresh={fetchTournamentData} canEdit={canEdit} />
                 )}
                 {activeTab === 'schedule' && isTeamTournament && (
-                    <TeamScheduleTab tournament={tournament} onRefresh={fetchTournamentData} />
+                    <TeamScheduleTab tournament={tournament} onRefresh={fetchTournamentData} canEdit={canEdit} />
                 )}
                 {activeTab === 'results' && isTeamTournament && (
-                    <TeamResultsTab tournament={tournament} onRefresh={fetchTournamentData} />
+                    <TeamResultsTab tournament={tournament} onRefresh={fetchTournamentData} canEdit={canEdit} />
                 )}
                 {activeTab === 'team_stats' && isTeamTournament && (
-                    <TeamStatsTab tournament={tournament} />
+                    <TeamStatsTab tournament={tournament} canEdit={canEdit} />
                 )}
                 {activeTab === 'player_stats' && isTeamTournament && (
                     <PlayerStatsTab tournament={tournament} />
                 )}
 
                 {activeTab === 'settings' && (
-                    <SettingsTab tournament={tournament} onTournamentUpdate={fetchTournamentData} />
+                    <SettingsTab tournament={tournament} onTournamentUpdate={fetchTournamentData} canEdit={canEdit} />
                 )}
             </div>
         </div>
@@ -363,47 +397,47 @@ function TournamentOverview({ tournament, participants }: { tournament: Tourname
         <div className="space-y-6">
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
-                    <div className="text-xs md:text-sm text-gray-600 mb-1">Total Participants</div>
-                    <div className="text-xl md:text-2xl font-semibold text-gray-900">{participants.length}</div>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 md:p-4">
+                    <div className={`text-xs md:text-sm text-gray-600 mb-1`}>Total Participants</div>
+                    <div className={`text-xl md:text-2xl font-semibold text-gray-900`}>{participants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
-                    <div className="text-xs md:text-sm text-gray-600 mb-1">Confirmed</div>
-                    <div className="text-xl md:text-2xl font-semibold text-green-600">{confirmedParticipants.length}</div>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 md:p-4">
+                    <div className={`text-xs md:text-sm text-gray-600 mb-1`}>Confirmed</div>
+                    <div className={`text-xl md:text-2xl font-semibold text-green-600`}>{confirmedParticipants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
-                    <div className="text-xs md:text-sm text-gray-600 mb-1">Eliminated</div>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 md:p-4">
+                    <div className={`text-xs md:text-sm text-gray-600 mb-1`}>Eliminated</div>
                     <div className="text-xl md:text-2xl font-semibold text-red-600">{eliminatedParticipants.length}</div>
                 </div>
-                <div className="bg-white border border-gray-200 rounded-lg p-3 md:p-4">
-                    <div className="text-xs md:text-sm text-gray-600 mb-1">Entry Fee</div>
-                    <div className="text-xl md:text-2xl font-semibold text-gray-900">₹{tournament.entry_fee}</div>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-3 md:p-4">
+                    <div className={`text-xs md:text-sm text-gray-600 mb-1`}>Entry Fee</div>
+                    <div className={`text-xl md:text-2xl font-semibold text-gray-900`}>₹{tournament.entry_fee}</div>
                 </div>
             </div>
 
             {/* Tournament Info */}
-            <div className="bg-white border border-gray-200 rounded-lg p-4 md:p-6">
-                <h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4">Tournament Information</h2>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+                <h2 className={`text-base md:text-lg font-semibold text-gray-900 mb-4`}>Tournament Information</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
                     <div>
                         <div className="text-gray-600 mb-1">Format</div>
-                        <div className="font-medium text-gray-900">
+                        <div className={`font-medium text-gray-900`}>
                             {tournament.format?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Single Elimination'}
                         </div>
                     </div>
                     <div>
                         <div className="text-gray-600 mb-1">Match Format</div>
-                        <div className="font-medium text-gray-900">
+                        <div className={`font-medium text-gray-900`}>
                             Best of {tournament.sets_per_match || 3} sets, {tournament.points_per_set || 21} points
                         </div>
                     </div>
                     <div>
                         <div className="text-gray-600 mb-1">Prize Pool</div>
-                        <div className="font-medium text-gray-900">₹{tournament.prize_pool}</div>
+                        <div className={`font-medium text-gray-900`}>₹{tournament.prize_pool}</div>
                     </div>
                     <div>
                         <div className="text-gray-600 mb-1">Start Date</div>
-                        <div className="font-medium text-gray-900">
+                        <div className={`font-medium text-gray-900`}>
                             {new Date(tournament.start_date).toLocaleString()}
                         </div>
                     </div>
@@ -411,7 +445,7 @@ function TournamentOverview({ tournament, participants }: { tournament: Tourname
             </div>
 
             {winner && (
-                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6">
+                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6">
                     <div className="flex items-center gap-3">
                         <span className="text-4xl">🏆</span>
                         <div>
@@ -432,12 +466,14 @@ function ParticipantsTab({
     onParticipantsChange,
     showAddParticipant,
     setShowAddParticipant,
+    canEdit = false,
 }: {
     tournament: Tournament;
     participants: Participant[];
     onParticipantsChange: () => void;
     showAddParticipant: boolean;
     setShowAddParticipant: (show: boolean) => void;
+    canEdit?: boolean;
 }) {
     const [newParticipantName, setNewParticipantName] = useState("");
     const [newParticipantPhone, setNewParticipantPhone] = useState("");
@@ -460,18 +496,6 @@ function ParticipantsTab({
         }
 
         const formattedPhone = newParticipantPhone ? `+91-${newParticipantPhone.replace(/\D/g, '')}` : null;
-        if (formattedPhone) {
-            const { data: existing } = await supabase
-                .from('tournament_participants')
-                .select('id')
-                .eq('tournament_id', tournament.id)
-                .eq('phone', formattedPhone)
-                .maybeSingle();
-            if (existing) {
-                alert('This participant (phone number) is already in the tournament.');
-                return;
-            }
-        }
 
         setIsAdding(true);
         try {
@@ -533,14 +557,8 @@ function ParticipantsTab({
         }
         setIsUploadingCsv(true);
         try {
-            const existingPhones = new Set(participants.filter((x) => x.phone).map((x) => x.phone!));
-            let skipped = 0;
             for (const p of toAdd) {
                 const phone = p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null;
-                if (phone && existingPhones.has(phone)) {
-                    skipped += 1;
-                    continue;
-                }
                 let userId = null;
                 if (p.phone) {
                     const phoneValidation = opponentManager.validatePhoneNumber(p.phone);
@@ -563,9 +581,7 @@ function ParticipantsTab({
                         status: 'registered',
                     });
                 if (error) throw error;
-                if (phone) existingPhones.add(phone);
             }
-            if (skipped > 0) setCsvUploadError((prev) => `${prev || ''} Skipped ${skipped} duplicate(s) (already in tournament).`.trim());
             onParticipantsChange();
         } catch (err) {
             console.error('CSV upload error:', err);
@@ -635,11 +651,11 @@ function ParticipantsTab({
 
     return (
         <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Participants</h2>
-                {!showAddParticipant && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className={`text-xl font-semibold text-gray-900`}>Participants</h2>
+                {canEdit && !showAddParticipant && (
                     <div className="flex items-center gap-2">
-                        <label className="cursor-pointer bg-gray-100 text-gray-800 px-4 py-2 rounded-md hover:bg-gray-200 text-sm font-medium border border-gray-300">
+                        <label className="cursor-pointer bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium border border-gray-300">
                             {isUploadingCsv ? 'Uploading...' : 'Upload CSV'}
                             <input
                                 type="file"
@@ -659,18 +675,19 @@ function ParticipantsTab({
                         <button
                             onClick={() => setShowAddParticipant(true)}
                             disabled={participants.length >= tournament.max_participants}
-                            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                         >
                             Add Participant
                         </button>
                     </div>
                 )}
+                {!canEdit && <p className="text-sm text-gray-500">View only</p>}
             </div>
             {csvUploadError && <p className="text-sm text-amber-700 mt-2">{csvUploadError}</p>}
 
-            {showAddParticipant && (
-                <div className="bg-white border border-gray-200 rounded-lg p-4">
-                    <h3 className="font-medium text-gray-900 mb-4">Add New Participant</h3>
+            {canEdit && showAddParticipant && (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+                    <h3 className={`font-medium text-gray-900 mb-4`}>Add New Participant</h3>
                     <div className="space-y-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -718,27 +735,50 @@ function ParticipantsTab({
             )}
 
             {participants.length === 0 ? (
-                <div className="text-center py-12 bg-gray-50 rounded-lg">
-                    <div className="text-gray-500 mb-4">No participants yet</div>
-                    <button
-                        onClick={() => setShowAddParticipant(true)}
-                        className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700"
-                    >
-                        Add First Participant
-                    </button>
+                <div className="text-center py-12 bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <div className="text-gray-600 mb-4">No participants yet</div>
+                    <p className="text-sm text-gray-500 mb-4">Add one by one or upload a CSV (name, phone, email, category, seed, club).</p>
+                    {canEdit && (
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                        <label className="cursor-pointer bg-gray-100 text-gray-800 px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium border border-gray-300">
+                            {isUploadingCsv ? 'Uploading...' : 'Upload CSV'}
+                            <input
+                                type="file"
+                                accept=".csv,.txt"
+                                className="sr-only"
+                                disabled={isUploadingCsv || participants.length >= tournament.max_participants}
+                                onChange={handleUploadCsv}
+                            />
+                        </label>
+                        <a
+                            href={`data:text/csv;charset=utf-8,${encodeURIComponent(BADMINTON_PARTICIPANT_CSV_TEMPLATE)}`}
+                            download="participants_template.csv"
+                            className="text-sm text-red-600 hover:underline px-2"
+                        >
+                            Download template
+                        </a>
+                        <span className="text-gray-500">or</span>
+                        <button
+                            onClick={() => setShowAddParticipant(true)}
+                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
+                        >
+                            Add First Participant
+                        </button>
+                    </div>
+                    )}
                 </div>
             ) : (
-                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-gray-100">
                                 <tr>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden sm:table-cell">Phone</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase hidden md:table-cell">Category</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase">#</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase">Name</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase hidden sm:table-cell">Phone</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase hidden md:table-cell">Category</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase">Status</th>
+                                    {canEdit && <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase">Actions</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
@@ -746,7 +786,7 @@ function ParticipantsTab({
                                     <tr key={participant.id} className="hover:bg-gray-50">
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">{index + 1}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
-                                            {editingId === participant.id ? (
+                                            {canEdit && editingId === participant.id ? (
                                                 <input
                                                     type="text"
                                                     value={editName}
@@ -762,7 +802,7 @@ function ParticipantsTab({
                                                     }}
                                                     autoFocus
                                                 />
-                                            ) : (
+                                            ) : canEdit ? (
                                                 <span
                                                     className="cursor-pointer hover:text-red-600"
                                                     onClick={() => {
@@ -772,22 +812,29 @@ function ParticipantsTab({
                                                 >
                                                     {participant.player_name}
                                                 </span>
+                                            ) : (
+                                                <span>{participant.player_name}</span>
                                             )}
                                         </td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-600 hidden sm:table-cell">{participant.phone || '-'}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-600 hidden md:table-cell">{participant.category || '-'}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
-                                            <select
-                                                value={participant.status}
-                                                onChange={(e) => handleUpdateStatus(participant.id, e.target.value)}
-                                                className="text-xs md:text-sm border border-gray-300 rounded px-1 md:px-2 py-1 w-full"
-                                            >
-                                                <option value="registered">Registered</option>
-                                                <option value="confirmed">Confirmed</option>
-                                                <option value="eliminated">Eliminated</option>
-                                                <option value="winner">Winner</option>
-                                            </select>
+                                            {canEdit ? (
+                                                <select
+                                                    value={participant.status}
+                                                    onChange={(e) => handleUpdateStatus(participant.id, e.target.value)}
+                                                    className="text-xs md:text-sm border border-gray-300 rounded px-1 md:px-2 py-1 w-full"
+                                                >
+                                                    <option value="registered">Registered</option>
+                                                    <option value="confirmed">Confirmed</option>
+                                                    <option value="eliminated">Eliminated</option>
+                                                    <option value="winner">Winner</option>
+                                                </select>
+                                            ) : (
+                                                <span>{participant.status}</span>
+                                            )}
                                         </td>
+                                        {canEdit && (
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
                                             <button
                                                 onClick={() => handleRemoveParticipant(participant.id)}
@@ -796,6 +843,7 @@ function ParticipantsTab({
                                                 Remove
                                             </button>
                                         </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>
@@ -821,11 +869,11 @@ function GroupsTab({ participants }: { tournament: Tournament; participants: Par
             </div>
             {participants.length < 2 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-                    <p className="text-gray-600">You need at least 2 participants to create groups.</p>
+                    <p className="text-gray-700">You need at least 2 participants to create groups.</p>
                 </div>
             ) : (
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <p className="text-gray-600">Groups will be displayed here once created.</p>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+                    <p className="text-gray-700">Groups will be displayed here once created.</p>
                 </div>
             )}
         </div>
@@ -846,11 +894,11 @@ function BracketsTab({ participants }: { tournament: Tournament; participants: P
             </div>
             {participants.length < 2 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-                    <p className="text-gray-600">You need at least 2 participants to generate brackets.</p>
+                    <p className="text-gray-700">You need at least 2 participants to generate brackets.</p>
                 </div>
             ) : (
-                <div className="bg-white border border-gray-200 rounded-lg p-6">
-                    <p className="text-gray-600">Bracket will be displayed here once generated.</p>
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+                    <p className="text-gray-700">Bracket will be displayed here once generated.</p>
                 </div>
             )}
         </div>
@@ -890,12 +938,12 @@ function MatchesTab({ tournament }: { tournament: Tournament }) {
             </div>
             {matches.length === 0 ? (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
-                    <p className="text-gray-600">No matches scheduled yet. Generate brackets to create matches.</p>
+                    <p className="text-gray-700">No matches scheduled yet. Generate brackets to create matches.</p>
                 </div>
             ) : (
                 <div className="space-y-3">
                     {matches.map((match) => (
-                        <div key={match.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <div className="font-medium text-gray-900">
@@ -903,7 +951,7 @@ function MatchesTab({ tournament }: { tournament: Tournament }) {
                                         {' vs '}
                                         {match.match_players?.find((p: MatchPlayer) => p.team === 'player_2')?.player_name || 'TBD'}
                                     </div>
-                                    <div className="text-sm text-gray-600 mt-1">
+                                    <div className="text-sm text-gray-700 mt-1">
                                         {match.match_date ? new Date(match.match_date).toLocaleString() : 'Not scheduled'}
                                     </div>
                                 </div>
@@ -939,10 +987,12 @@ function TeamsTab({
     tournament,
     participants,
     onRefresh,
+    canEdit = false,
 }: {
     tournament: Tournament;
     participants: Participant[];
     onRefresh: () => void;
+    canEdit?: boolean;
 }) {
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [membersByTeam, setMembersByTeam] = useState<Record<string, TournamentTeamMember[]>>({});
@@ -951,6 +1001,7 @@ function TeamsTab({
     const [addingToTeamId, setAddingToTeamId] = useState<string | null>(null);
     const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
     const [position, setPosition] = useState<1 | 2>(1);
+    const [isCreatingFromClubs, setIsCreatingFromClubs] = useState(false);
     const supabase = createClient();
 
     const loadTeams = useCallback(async () => {
@@ -1046,10 +1097,85 @@ function TeamsTab({
     const assignedParticipantIds = Object.values(membersByTeam).flat().map((m) => m.participant_id);
     const availableParticipants = participants.filter((p) => !assignedParticipantIds.includes(p.id));
 
+    const handleCreateTeamsFromClubs = async () => {
+        const withClub = participants.filter((p) => p.club != null && String(p.club).trim() !== "");
+        if (withClub.length === 0) {
+            alert("No participants have a club set. Upload CSV with a 'club' column (same number = one doubles team).");
+            return;
+        }
+        const byClub: Record<string, Participant[]> = {};
+        withClub.forEach((p) => {
+            const key = String(p.club).trim();
+            if (!byClub[key]) byClub[key] = [];
+            byClub[key].push(p);
+        });
+        const unassigned = participants.filter((p) => !assignedParticipantIds.includes(p.id));
+        const unassignedIds = new Set(unassigned.map((p) => p.id));
+        const toCreate: { club: string; participants: Participant[] }[] = [];
+        Object.entries(byClub).forEach(([club, list]) => {
+            const inList = list.filter((p) => unassignedIds.has(p.id));
+            if (inList.length >= 1) toCreate.push({ club, participants: inList });
+        });
+        if (toCreate.length === 0) {
+            alert("All participants with a club are already in a team.");
+            return;
+        }
+        setIsCreatingFromClubs(true);
+        try {
+            let created = 0;
+            for (const { club, participants: list } of toCreate) {
+                const cat = list[0]?.category?.trim() || null;
+                const name = cat ? `Club ${club} (${cat})` : `Club ${club}`;
+                const { data: team, error: teamErr } = await supabase
+                    .from("tournament_teams")
+                    .insert({ tournament_id: tournament.id, name, short_name: `C${club}`, category: cat })
+                    .select("id")
+                    .single();
+                if (teamErr) {
+                    if (teamErr.code === "23505") continue;
+                    throw teamErr;
+                }
+                const pos1 = list[0];
+                const pos2 = list[1];
+                if (pos1) {
+                    await supabase.from("tournament_team_members").insert({ team_id: team.id, participant_id: pos1.id, position: 1 });
+                }
+                if (pos2) {
+                    await supabase.from("tournament_team_members").insert({ team_id: team.id, participant_id: pos2.id, position: 2 });
+                }
+                created++;
+            }
+            await loadTeams();
+            onRefresh();
+            alert(`Created ${created} team(s) from clubs. Each club = one doubles team; category is used for round-robin scheduling.`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create teams from clubs.");
+        } finally {
+            setIsCreatingFromClubs(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Teams</h2>
-            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 flex flex-wrap items-end gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold text-gray-900">Teams</h2>
+                {!canEdit && <p className="text-sm text-gray-500">View only</p>}
+            </div>
+            {canEdit && (
+            <>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+                <button
+                    type="button"
+                    onClick={handleCreateTeamsFromClubs}
+                    disabled={isCreatingFromClubs || participants.length === 0}
+                    className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                >
+                    {isCreatingFromClubs ? "Creating…" : "Create teams from clubs (doubles)"}
+                </button>
+                <span className="text-xs text-gray-500">Same club number in CSV = one team (2 players). Category used for round-robin.</span>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 flex flex-wrap items-end gap-3 shadow-sm">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Team name</label>
                     <input
@@ -1057,7 +1183,7 @@ function TeamsTab({
                         value={newTeamName}
                         onChange={(e) => setNewTeamName(e.target.value)}
                         placeholder="e.g. Eagles"
-                        className="w-48 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        className="w-40 sm:w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     />
                 </div>
                 <div>
@@ -1067,22 +1193,24 @@ function TeamsTab({
                         value={newTeamShortName}
                         onChange={(e) => setNewTeamShortName(e.target.value)}
                         placeholder="e.g. EGL"
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        className="w-20 sm:w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm"
                     />
                 </div>
                 <button
                     type="button"
                     onClick={handleCreateTeam}
-                    className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
+                    className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
                 >
                     Add Team
                 </button>
             </div>
+            </>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
                 {teams.map((team) => (
-                    <div key={team.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                    <div key={team.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-gray-900">
+                            <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
                                 {team.name}
                                 {team.short_name && (
                                     <span className="text-gray-500 font-normal ml-2">({team.short_name})</span>
@@ -1095,22 +1223,24 @@ function TeamsTab({
                                     <span>
                                         P{m.position}: {(m as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—"}
                                     </span>
+                                    {canEdit && (
                                     <button
                                         type="button"
                                         onClick={() => handleRemoveMember(m.id)}
-                                        className="text-red-600 hover:underline"
+                                        className="text-red-600 hover:underline text-xs sm:text-sm"
                                     >
                                         Remove
                                     </button>
+                                    )}
                                 </li>
                             ))}
                         </ul>
-                        {addingToTeamId === team.id ? (
+                        {canEdit && (addingToTeamId === team.id ? (
                             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
                                 <select
                                     value={selectedParticipantId || ""}
                                     onChange={(e) => setSelectedParticipantId(e.target.value || null)}
-                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                    className="px-2 py-1 border border-gray-300 rounded-lg text-sm"
                                 >
                                     <option value="">Select participant</option>
                                     {availableParticipants.map((p) => (
@@ -1120,7 +1250,7 @@ function TeamsTab({
                                 <select
                                     value={position}
                                     onChange={(e) => setPosition(parseInt(e.target.value) as 1 | 2)}
-                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                    className="px-2 py-1 border border-gray-300 rounded-lg text-sm"
                                 >
                                     <option value={1}>P1</option>
                                     <option value={2}>P2</option>
@@ -1128,14 +1258,14 @@ function TeamsTab({
                                 <button
                                     type="button"
                                     onClick={handleAddMember}
-                                    className="bg-gray-700 text-white px-3 py-1 rounded text-sm"
+                                    className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm"
                                 >
                                     Add
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => { setAddingToTeamId(null); setSelectedParticipantId(null); }}
-                                    className="text-gray-600 text-sm"
+                                    className="text-gray-700 text-sm"
                                 >
                                     Cancel
                                 </button>
@@ -1145,11 +1275,11 @@ function TeamsTab({
                                 type="button"
                                 onClick={() => setAddingToTeamId(team.id)}
                                 disabled={availableParticipants.length === 0}
-                                className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                                className="text-sm text-red-600 hover:underline disabled:opacity-50"
                             >
                                 + Add member
                             </button>
-                        )}
+                        ))}
                     </div>
                 ))}
             </div>
@@ -1160,14 +1290,54 @@ function TeamsTab({
     );
 }
 
-function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; onRefresh: () => void }) {
+function useTeamMemberNames(teamIds: string[]) {
+    const [memberNamesByTeam, setMemberNamesByTeam] = useState<Record<string, string[]>>({});
+    const supabase = createClient();
+    useEffect(() => {
+        if (teamIds.length === 0) {
+            setMemberNamesByTeam({});
+            return;
+        }
+        supabase
+            .from("tournament_team_members")
+            .select("team_id, position, participant:tournament_participants(player_name)")
+            .in("team_id", teamIds)
+            .then(({ data }) => {
+                const byTeam: Record<string, { position: number; name: string }[]> = {};
+                teamIds.forEach((id) => (byTeam[id] = []));
+                (data || []).forEach((row: { team_id: string; position: number; participant?: { player_name?: string } | { player_name?: string }[] }) => {
+                    const p = Array.isArray(row.participant) ? row.participant[0] : row.participant;
+                    const name = p?.player_name ?? "—";
+                    if (!byTeam[row.team_id]) byTeam[row.team_id] = [];
+                    byTeam[row.team_id].push({ position: row.position, name });
+                });
+                const result: Record<string, string[]> = {};
+                Object.entries(byTeam).forEach(([id, list]) => {
+                    list.sort((a, b) => a.position - b.position);
+                    result[id] = list.map((x) => x.name);
+                });
+                setMemberNamesByTeam(result);
+            });
+    }, [teamIds.join(","), supabase]);
+    return memberNamesByTeam;
+}
+
+function formatTeamWithPlayers(teamName: string, playerNames: string[]) {
+    if (!playerNames.length) return teamName;
+    return `${teamName} (${playerNames.join(", ")})`;
+}
+
+function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournament: Tournament; onRefresh: () => void; canEdit?: boolean }) {
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [showAdd, setShowAdd] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [scheduleBaseDate, setScheduleBaseDate] = useState("");
     const [newMatch, setNewMatch] = useState({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
     const supabase = createClient();
     const isRoundRobin = tournament.format === "round_robin" || tournament.format === "round_robin_knockout";
+    const teamIds = teams.map((t) => t.id);
+    const memberNamesByTeam = useTeamMemberNames(teamIds);
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
@@ -1181,19 +1351,177 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
             .then(({ data }) => setMatches(data || []));
     }, [tournament.id, supabase]);
 
+    const existingPairs = new Set<string>();
+    matches.forEach((m) => {
+        const a = (m as TournamentMatch).team_a_id;
+        const b = (m as TournamentMatch).team_b_id;
+        if (a && b) existingPairs.add([a, b].sort().join(","));
+    });
+
+    const SCHEDULE_BY_COURT: { court: string; slotIndex: number; cat: string; i: number; j: number; matchLabel: string }[] = [
+        { court: "1", slotIndex: 0, cat: "A", i: 1, j: 2, matchLabel: "A-M1" }, { court: "1", slotIndex: 1, cat: "A", i: 3, j: 4, matchLabel: "A-M2" },
+        { court: "1", slotIndex: 2, cat: "A", i: 2, j: 3, matchLabel: "A-M3" }, { court: "1", slotIndex: 3, cat: "A", i: 4, j: 1, matchLabel: "A-M4" },
+        { court: "1", slotIndex: 4, cat: "A", i: 1, j: 3, matchLabel: "A-M5" }, { court: "1", slotIndex: 5, cat: "D", i: 1, j: 3, matchLabel: "D-M1" },
+        { court: "1", slotIndex: 6, cat: "A", i: 2, j: 4, matchLabel: "A-M6" }, { court: "1", slotIndex: 7, cat: "D", i: 1, j: 2, matchLabel: "D-M2" },
+        { court: "1", slotIndex: 8, cat: "D", i: 2, j: 3, matchLabel: "D-M3" }, { court: "1", slotIndex: 9, cat: "D", i: 4, j: 1, matchLabel: "D-M4" },
+        { court: "2", slotIndex: 0, cat: "B", i: 1, j: 2, matchLabel: "B-M1" }, { court: "2", slotIndex: 1, cat: "B", i: 3, j: 4, matchLabel: "B-M2" },
+        { court: "2", slotIndex: 2, cat: "B", i: 2, j: 3, matchLabel: "B-M3" }, { court: "2", slotIndex: 3, cat: "B", i: 4, j: 1, matchLabel: "B-M4" },
+        { court: "2", slotIndex: 4, cat: "B", i: 1, j: 3, matchLabel: "B-M5" }, { court: "2", slotIndex: 5, cat: "D", i: 2, j: 4, matchLabel: "D-M5" },
+        { court: "2", slotIndex: 6, cat: "B", i: 2, j: 4, matchLabel: "B-M6" }, { court: "2", slotIndex: 7, cat: "E", i: 1, j: 2, matchLabel: "E-M1" },
+        { court: "2", slotIndex: 8, cat: "E", i: 1, j: 3, matchLabel: "E-M2" }, { court: "2", slotIndex: 9, cat: "E", i: 2, j: 3, matchLabel: "E-M3" },
+        { court: "3", slotIndex: 0, cat: "C", i: 1, j: 2, matchLabel: "C-M1" }, { court: "3", slotIndex: 1, cat: "C", i: 3, j: 4, matchLabel: "C-M2" },
+        { court: "3", slotIndex: 2, cat: "C", i: 2, j: 3, matchLabel: "C-M3" }, { court: "3", slotIndex: 3, cat: "C", i: 4, j: 1, matchLabel: "C-M4" },
+        { court: "3", slotIndex: 4, cat: "C", i: 1, j: 3, matchLabel: "C-M5" }, { court: "3", slotIndex: 5, cat: "E", i: 3, j: 4, matchLabel: "E-M4" },
+        { court: "3", slotIndex: 6, cat: "C", i: 2, j: 4, matchLabel: "C-M6" }, { court: "3", slotIndex: 7, cat: "D", i: 3, j: 4, matchLabel: "D-M6" },
+        { court: "3", slotIndex: 8, cat: "E", i: 2, j: 4, matchLabel: "E-M5" }, { court: "3", slotIndex: 9, cat: "E", i: 4, j: 1, matchLabel: "E-M6" },
+    ];
+
+    const handleGenerateScheduleByCourtAndTime = async () => {
+        const byCategory: Record<string, TournamentTeam[]> = {};
+        teams.forEach((t) => {
+            const cat = (t.category != null && String(t.category).trim() !== "") ? String(t.category).trim() : "_";
+            if (!byCategory[cat]) byCategory[cat] = [];
+            byCategory[cat].push(t);
+        });
+        Object.keys(byCategory).forEach((cat) => {
+            byCategory[cat].sort((a, b) => (a.short_name || a.name).localeCompare(b.short_name || b.name, undefined, { numeric: true }));
+        });
+        const baseDate = scheduleBaseDate ? new Date(scheduleBaseDate) : (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+        baseDate.setSeconds(0, 0);
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+        const toInsert: { teamAId: string; teamBId: string; matchNumber: string; courtNumber: string; matchDate: Date }[] = [];
+        for (const row of SCHEDULE_BY_COURT) {
+            const catTeams = byCategory[row.cat];
+            if (!catTeams || catTeams.length < Math.max(row.i, row.j)) continue;
+            const teamA = catTeams[row.i - 1];
+            const teamB = catTeams[row.j - 1];
+            if (!teamA || !teamB || teamA.id === teamB.id) continue;
+            const key = [teamA.id, teamB.id].sort().join(",");
+            if (existingPairs.has(key)) continue;
+            const matchDate = new Date(baseDate);
+            matchDate.setMinutes(baseDate.getMinutes() + row.slotIndex * 15);
+            toInsert.push({
+                teamAId: teamA.id,
+                teamBId: teamB.id,
+                matchNumber: row.matchLabel,
+                courtNumber: row.court,
+                matchDate,
+            });
+        }
+        if (toInsert.length === 0) {
+            alert("No new matches to add (all schedule slots already exist or category/team count doesn’t match).");
+            return;
+        }
+        setIsGenerating(true);
+        try {
+            for (const { teamAId, teamBId, matchNumber, courtNumber, matchDate } of toInsert) {
+                const { error } = await supabase.from("matches").insert({
+                    tournament_id: tournament.id,
+                    sport: tournament.sport,
+                    match_type: "tournament",
+                    status: "upcoming",
+                    team_a_id: teamAId,
+                    team_b_id: teamBId,
+                    court_number: courtNumber,
+                    match_date: matchDate.toISOString(),
+                    match_number: matchNumber,
+                    created_by,
+                });
+                if (error) throw error;
+            }
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+            alert(`Added ${toInsert.length} match(es) on 3 courts with 15-min slots. Use "Generate quarter-finals" after round-robin for QF/Semi/Final.`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to generate schedule.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleGenerateRoundRobinByCategory = async () => {
+        const byCategory: Record<string, TournamentTeam[]> = {};
+        teams.forEach((t) => {
+            const cat = (t.category != null && String(t.category).trim() !== "") ? String(t.category).trim() : "_";
+            if (!byCategory[cat]) byCategory[cat] = [];
+            byCategory[cat].push(t);
+        });
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+        const categoryList = Object.keys(byCategory).sort();
+        const toInsert: { teamAId: string; teamBId: string; matchNumber: string; courtNumber: string }[] = [];
+        categoryList.forEach((cat, catIndex) => {
+            const catTeams = byCategory[cat];
+            if (catTeams.length < 2) return;
+            const courtNum = String((catIndex % 3) + 1);
+            const prefix = cat === "_" ? "M" : `${cat}-M`;
+            let n = 0;
+            for (let i = 0; i < catTeams.length; i++) {
+                for (let j = i + 1; j < catTeams.length; j++) {
+                    const key = [catTeams[i].id, catTeams[j].id].sort().join(",");
+                    if (!existingPairs.has(key)) {
+                        n++;
+                        toInsert.push({ teamAId: catTeams[i].id, teamBId: catTeams[j].id, matchNumber: `${prefix}${n}`, courtNumber: courtNum });
+                    }
+                }
+            }
+        });
+        if (toInsert.length === 0) {
+            alert("All category round-robin matches already exist. No new matches to add.");
+            return;
+        }
+        setIsGenerating(true);
+        try {
+            for (const { teamAId, teamBId, matchNumber, courtNumber } of toInsert) {
+                const { error } = await supabase.from("matches").insert({
+                    tournament_id: tournament.id,
+                    sport: tournament.sport,
+                    match_type: "tournament",
+                    status: "upcoming",
+                    team_a_id: teamAId,
+                    team_b_id: teamBId,
+                    court_number: courtNumber,
+                    match_date: null,
+                    match_number: matchNumber,
+                    created_by,
+                });
+                if (error) throw error;
+            }
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+            alert(`Added ${toInsert.length} match(es) by category on 3 courts (Court 1, 2, 3). Set date/time below if needed.`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to generate schedule. Please try again.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     const handleGenerateRoundRobin = async () => {
         if (teams.length < 2) {
             alert("Add at least 2 teams to generate a round-robin schedule.");
             return;
         }
+        const teamsWithCategory = teams.filter((t) => t.category != null && String(t.category).trim() !== "");
+        if (teamsWithCategory.length >= 2) {
+            await handleGenerateRoundRobinByCategory();
+            return;
+        }
         const storedUser = localStorage.getItem("sf:user");
         const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
-        const existingPairs = new Set<string>();
-        matches.forEach((m) => {
-            const a = (m as TournamentMatch).team_a_id;
-            const b = (m as TournamentMatch).team_b_id;
-            if (a && b) existingPairs.add([a, b].sort().join(","));
-        });
         const pairs: [string, string][] = [];
         for (let i = 0; i < teams.length; i++) {
             for (let j = i + 1; j < teams.length; j++) {
@@ -1284,40 +1612,64 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-xl font-semibold text-gray-900">Schedule</h2>
-                <div className="flex items-center gap-2">
+                {canEdit ? (
+                <div className="flex flex-wrap items-center gap-2">
                     {isRoundRobin && (
                         <button
                             type="button"
                             onClick={handleGenerateRoundRobin}
                             disabled={isGenerating || teams.length < 2}
-                            className="bg-emerald-600 text-white px-4 py-2 rounded-md hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                         >
                             {isGenerating ? "Generating…" : "Generate round-robin schedule"}
                         </button>
                     )}
+                    {isRoundRobin && teams.some((t) => t.category) && (
+                        <>
+                            <input
+                                type="datetime-local"
+                                value={scheduleBaseDate}
+                                onChange={(e) => setScheduleBaseDate(e.target.value)}
+                                className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-0"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleGenerateScheduleByCourtAndTime}
+                                disabled={isGenerating || teams.length < 2}
+                                className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                            >
+                                {isGenerating ? "Generating…" : "Generate schedule (courts & times)"}
+                            </button>
+                        </>
+                    )}
                     <button
                         type="button"
                         onClick={() => setShowAdd(!showAdd)}
-                        className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 text-sm"
+                        className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
                     >
                         {showAdd ? "Cancel" : "Add Match"}
                     </button>
                 </div>
+                ) : <p className="text-sm text-gray-500">View only</p>}
             </div>
             {isRoundRobin && teams.length >= 2 && (
                 <p className="text-sm text-gray-500">
-                    Format is Round Robin. Use &quot;Generate round-robin schedule&quot; to create all {teams.length * (teams.length - 1) / 2} matches (each team vs every other team once).
+                    {teams.some((t) => t.category) ? (
+                        <>Teams have categories. &quot;Generate round-robin schedule&quot; creates matches <strong>within each category</strong> (Category A vs A, B vs B, C vs C). Match numbers: A-M1, B-M1, etc.</>
+                    ) : (
+                        <>Format is Round Robin. Use &quot;Generate round-robin schedule&quot; to create all {teams.length * (teams.length - 1) / 2} matches (each team vs every other team once).</>
+                    )}
                 </p>
             )}
-            {showAdd && (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+            {canEdit && showAdd && (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3 shadow-sm">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team A</label>
                             <select
                                 value={newMatch.team_a_id}
                                 onChange={(e) => setNewMatch((m) => ({ ...m, team_a_id: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                             >
                                 <option value="">Select</option>
                                 {teams.map((t) => (
@@ -1370,29 +1722,56 @@ function TeamScheduleTab({ tournament, onRefresh }: { tournament: Tournament; on
                             />
                         </div>
                     </div>
-                    <button type="button" onClick={handleAddMatch} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm">
+                    <button type="button" onClick={handleAddMatch} className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700">
                         Save Match
                     </button>
                 </div>
             )}
-            <div className="space-y-2">
-                {matches.map((match) => (
-                    <div key={match.id} className="bg-white border border-gray-200 rounded-lg p-4 flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                            <span className="font-medium text-gray-900">
-                                {(match as TournamentMatch).team_a?.name ?? "TBD"} vs {(match as TournamentMatch).team_b?.name ?? "TBD"}
-                            </span>
-                            <div className="text-sm text-gray-500 mt-1">
-                                {match.match_date ? new Date(match.match_date).toLocaleString() : "—"} · Court: {match.court_number || "—"} · {match.match_number || "—"}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                {["1", "2", "3"].map((courtKey) => {
+                    const courtMatches = matches.filter((m) => {
+                        const c = (m as TournamentMatch).court_number;
+                        if (!c) return courtKey === "1";
+                        const num = c.replace(/\D/g, "") || c;
+                        return num === courtKey || c === `Court ${courtKey}`;
+                    }).sort((a, b) => {
+                        const da = a.match_date ? new Date(a.match_date).getTime() : 0;
+                        const db = b.match_date ? new Date(b.match_date).getTime() : 0;
+                        return da - db;
+                    });
+                    return (
+                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                            <div className="bg-gray-100 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
+                            <div className="divide-y divide-gray-100">
+                                {courtMatches.map((match) => {
+                                    const m = match as TournamentMatch;
+                                    const nameA = m.team_a?.name ?? "TBD";
+                                    const nameB = m.team_b?.name ?? "TBD";
+                                    const playersA = (m.team_a_id && memberNamesByTeam[m.team_a_id]) || [];
+                                    const playersB = (m.team_b_id && memberNamesByTeam[m.team_b_id]) || [];
+                                    return (
+                                        <div key={match.id} className="p-3 flex flex-wrap items-center justify-between gap-2 bg-white">
+                                            <div className="min-w-0 flex-1">
+                                                <span className="font-medium text-gray-900 text-sm block">
+                                                    {formatTeamWithPlayers(nameA, playersA)} vs {formatTeamWithPlayers(nameB, playersB)}
+                                                </span>
+                                                <div className="text-xs text-gray-500 mt-0.5">
+                                                    {match.match_date ? new Date(match.match_date).toLocaleString() : "—"} · {match.match_number || "—"}
+                                                </div>
+                                            </div>
+                                            <span className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                                                match.status === "completed" ? "bg-gray-100 text-gray-800" : match.status === "live" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
+                                            }`}>
+                                                {match.status}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
                             </div>
+                            {courtMatches.length === 0 && <p className="p-3 text-sm text-gray-500">No matches</p>}
                         </div>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            match.status === "completed" ? "bg-gray-100 text-gray-800" : match.status === "live" ? "bg-green-100 text-green-800" : "bg-blue-100 text-blue-800"
-                        }`}>
-                            {match.status}
-                        </span>
-                    </div>
-                ))}
+                    );
+                })}
             </div>
             {matches.length === 0 && !showAdd && <p className="text-gray-500 text-sm">No matches yet. Add a match to build the schedule.</p>}
         </div>
@@ -1415,7 +1794,7 @@ function formatSetsForDisplay(score: string | null | undefined): string {
     return parts.map((p, i) => `Set ${i + 1}: ${p}`).join(", ");
 }
 
-function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onRefresh: () => void }) {
+function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament: Tournament; onRefresh: () => void; canEdit?: boolean }) {
     const numSets = Math.min(5, Math.max(1, Number(tournament.sets_per_match) || 3));
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
@@ -1423,6 +1802,8 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
     const [winnerId, setWinnerId] = useState("");
     const [setScores, setSetScores] = useState<string[]>(() => Array(numSets).fill(""));
     const supabase = createClient();
+    const teamIds = teams.map((t) => t.id);
+    const memberNamesByTeam = useTeamMemberNames(teamIds);
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).then(({ data }) => setTeams(data || []));
@@ -1471,8 +1852,11 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
 
     return (
         <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-900">Results</h2>
-                                            <p className="text-sm text-gray-500">Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set blank if the match ended early (e.g. 2-0).</p>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold text-gray-900">Results</h2>
+                {!canEdit && <p className="text-sm text-gray-500">View only</p>}
+            </div>
+            {canEdit && <p className="text-sm text-gray-500">Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set blank if the match ended early (e.g. 2-0).</p>}
             <div className="space-y-2">
                 {matches.map((match) => {
                     const m = match as TournamentMatch;
@@ -1480,38 +1864,42 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
                     const matchTeams = [m.team_a, m.team_b].filter(Boolean);
                     const winnerOptions = matchTeams.length >= 2 ? matchTeams : teams.filter((t) => t.id === m.team_a_id || t.id === m.team_b_id);
                     return (
-                        <div key={match.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                        <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div>
-                                    <span className="font-medium text-gray-900">{m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD"} vs {m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD"}</span>
+                                <div className="min-w-0 flex-1">
+                                    <span className="font-medium text-gray-900 text-sm sm:text-base">
+                                        {formatTeamWithPlayers(m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD", (m.team_a_id && memberNamesByTeam[m.team_a_id]) || [])}
+                                        {" vs "}
+                                        {formatTeamWithPlayers(m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD", (m.team_b_id && memberNamesByTeam[m.team_b_id]) || [])}
+                                    </span>
                                     {match.status === "completed" && (
-                                        <span className="ml-2 text-gray-600">
+                                        <span className="ml-2 text-gray-700 text-sm block sm:inline">
                                             Won by {(m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—"}
                                             {m.final_score ? ` · ${formatSetsForDisplay(m.final_score)}` : ""}
                                         </span>
                                     )}
                                 </div>
                                 {match.status !== "completed" ? (
-                                    isEditing ? (
-                                        <div className="flex flex-col gap-3 w-full">
+                                    canEdit && isEditing ? (
+                                        <div className="flex flex-col gap-3 w-full mt-2">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <select
                                                     value={winnerId}
                                                     onChange={(e) => setWinnerId(e.target.value)}
-                                                    className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                                    className="px-2 py-1 border border-gray-300 rounded-lg text-sm"
                                                 >
                                                     <option value="">Select winner</option>
                                                     {winnerOptions.filter((t): t is NonNullable<typeof t> => t != null).map((t) => (
                                                         <option key={t.id} value={t.id}>{t.name}</option>
                                                     ))}
                                                 </select>
-                                                <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-green-600 text-white px-3 py-1 rounded text-sm">Save</button>
-                                                <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setSetScores(Array(numSets).fill("")); }} className="text-gray-600 text-sm">Cancel</button>
+                                                <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium">Save</button>
+                                                <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setSetScores(Array(numSets).fill("")); }} className="text-gray-700 text-sm">Cancel</button>
                                             </div>
                                             <div className="flex flex-wrap items-center gap-3">
                                                 {Array.from({ length: numSets }, (_, i) => (
                                                     <div key={i} className="flex items-center gap-1">
-                                                        <label className="text-xs text-gray-600 whitespace-nowrap">Set {i + 1}</label>
+                                                        <label className="text-xs text-gray-700 whitespace-nowrap">Set {i + 1}</label>
                                                         <input
                                                             type="text"
                                                             value={setScores[i] ?? ""}
@@ -1521,17 +1909,19 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
                                                                 setSetScores(next);
                                                             }}
                                                             placeholder="21-10"
-                                                            className="w-16 px-2 py-1 border border-gray-300 rounded text-sm"
+                                                            className="w-16 px-2 py-1 border border-gray-300 rounded-lg text-sm"
                                                         />
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
+                                    ) : canEdit ? (
+                                        <button type="button" onClick={() => startEdit(m)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium shrink-0">Enter result</button>
                                     ) : (
-                                        <button type="button" onClick={() => startEdit(m)} className="bg-gray-700 text-white px-3 py-1 rounded text-sm">Enter result</button>
+                                        <span className="text-gray-500 text-sm">Upcoming</span>
                                     )
                                 ) : (
-                                    <span className="text-green-600 text-sm font-medium">Completed</span>
+                                    <span className="text-green-600 text-sm font-medium shrink-0">Completed</span>
                                 )}
                             </div>
                         </div>
@@ -1543,10 +1933,86 @@ function TeamResultsTab({ tournament, onRefresh }: { tournament: Tournament; onR
     );
 }
 
-function TeamStatsTab({ tournament }: { tournament: Tournament }) {
+function GeneratePlayoffsBlock({
+    tournament,
+    qualifiedTeams,
+    onRefresh,
+}: {
+    tournament: Tournament;
+    qualifiedTeams: TournamentTeam[];
+    onRefresh: () => void;
+}) {
+    const [existingQF, setExistingQF] = useState<TournamentMatch[]>([]);
+    const [generating, setGenerating] = useState(false);
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase
+            .from("matches")
+            .select("*, team_a:tournament_teams!team_a_id(id,name), team_b:tournament_teams!team_b_id(id,name)")
+            .eq("tournament_id", tournament.id)
+            .in("match_number", ["QF1", "QF2", "QF3", "QF4"])
+            .then(({ data }) => setExistingQF((data || []) as TournamentMatch[]));
+    }, [tournament.id, supabase]);
+
+    const handleGenerate = async () => {
+        if (qualifiedTeams.length < 8) return;
+        setGenerating(true);
+        try {
+            const storedUser = localStorage.getItem("sf:user");
+            const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+            const t = qualifiedTeams;
+            await supabase.from("matches").insert([
+                { tournament_id: tournament.id, sport: tournament.sport, match_type: "tournament", status: "upcoming", team_a_id: t[0].id, team_b_id: t[7].id, match_number: "QF1", court_number: "1", created_by },
+                { tournament_id: tournament.id, sport: tournament.sport, match_type: "tournament", status: "upcoming", team_a_id: t[3].id, team_b_id: t[4].id, match_number: "QF2", court_number: "2", created_by },
+                { tournament_id: tournament.id, sport: tournament.sport, match_type: "tournament", status: "upcoming", team_a_id: t[1].id, team_b_id: t[6].id, match_number: "QF3", court_number: "3", created_by },
+                { tournament_id: tournament.id, sport: tournament.sport, match_type: "tournament", status: "upcoming", team_a_id: t[2].id, team_b_id: t[5].id, match_number: "QF4", court_number: "1", created_by },
+            ]);
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name), team_b:tournament_teams!team_b_id(id,name)")
+                .eq("tournament_id", tournament.id)
+                .in("match_number", ["QF1", "QF2", "QF3", "QF4"])
+                .then(({ data }) => setExistingQF((data || []) as TournamentMatch[]));
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create quarter-final matches.");
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    if (qualifiedTeams.length < 8) return null;
+    return (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h3 className="font-medium text-gray-900 mb-2">Playoffs: Quarter-finals → Semis → Finals</h3>
+            {existingQF.length >= 4 ? (
+                <p className="text-sm text-gray-700">QF1–QF4 already created (3 courts). Enter results in Results tab; then add Semi 1, Semi 2, and Final matches in Schedule when ready.</p>
+            ) : (
+                <>
+                    <p className="text-sm text-gray-700 mb-2">8 qualified: {qualifiedTeams.map((t) => t.name).join(", ")}</p>
+                    <p className="text-xs text-gray-500 mb-2">QF1 (Court 1): 1st vs 8th · QF2 (Court 2): 4th vs 5th · QF3 (Court 3): 2nd vs 7th · QF4 (Court 1): 3rd vs 6th. Winners go to semis, then final.</p>
+                    <button
+                        type="button"
+                        onClick={handleGenerate}
+                        disabled={generating}
+                        className="px-3 py-1.5 rounded bg-emerald-600 text-white text-sm disabled:opacity-50"
+                    >
+                        {generating ? "Creating…" : "Generate quarter-finals (QF1–QF4) on 3 courts"}
+                    </button>
+                </>
+            )}
+        </div>
+    );
+}
+
+function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament; canEdit?: boolean }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const supabase = createClient();
+    const teamIds = teams.map((t) => t.id);
+    const memberNamesByTeam = useTeamMemberNames(teamIds);
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
@@ -1574,49 +2040,108 @@ function TeamStatsTab({ tournament }: { tournament: Tournament }) {
         }
         const score = (m as TournamentMatch).final_score;
         if (score && typeof score === "string") {
-            const parts = score.split("-").map((n) => parseInt(n.trim(), 10));
-            if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                if (ma && stats[ma]) { stats[ma].pointsFor += parts[0]; stats[ma].pointsAgainst += parts[1]; }
-                if (mb && stats[mb]) { stats[mb].pointsFor += parts[1]; stats[mb].pointsAgainst += parts[0]; }
-            }
+            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+            let pfA = 0, pfB = 0;
+            sets.forEach((setStr) => {
+                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    pfA += parts[0];
+                    pfB += parts[1];
+                }
+            });
+            if (ma && stats[ma]) { stats[ma].pointsFor += pfA; stats[ma].pointsAgainst += pfB; }
+            if (mb && stats[mb]) { stats[mb].pointsFor += pfB; stats[mb].pointsAgainst += pfA; }
         }
     });
-    const sorted = teams
-        .map((t) => ({ team: t, ...stats[t.id], pts: (stats[t.id].won * 2) + (stats[t.id].lost * 0) }))
-        .sort((a, b) => b.pts - a.pts);
+    const withPts = teams.map((t) => ({
+        team: t,
+        ...stats[t.id],
+        pts: stats[t.id].won * 1,
+        pointsDifference: stats[t.id].pointsFor - stats[t.id].pointsAgainst,
+    }));
+    const sorted = withPts.sort((a, b) => {
+        if (a.pts !== b.pts) return b.pts - a.pts;
+        return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
+    });
+
+    const byCategory: Record<string, typeof sorted> = {};
+    sorted.forEach((row) => {
+        const cat = (row.team.category != null && String(row.team.category).trim() !== "") ? String(row.team.category).trim() : "—";
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(row);
+    });
+    const categoriesOrdered = Object.keys(byCategory).sort();
+    categoriesOrdered.forEach((cat) => {
+        byCategory[cat].sort((a, b) => {
+            if (a.pts !== b.pts) return b.pts - a.pts;
+            return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
+        });
+    });
+    const eligible = sorted.filter((r) => r.played >= 1 && r.pts >= 1);
+    const topPerCategory = categoriesOrdered
+        .map((cat) => byCategory[cat].find((r) => r.played >= 1 && r.pts >= 1))
+        .filter((r): r is NonNullable<typeof r> => Boolean(r));
+    const needEightQF = 8;
+    const qualifiedForQF = [...topPerCategory];
+    if (qualifiedForQF.length < needEightQF && eligible.length > topPerCategory.length) {
+        const alreadyIn = new Set(qualifiedForQF.map((r) => r.team.id));
+        const rest = eligible.filter((r) => !alreadyIn.has(r.team.id));
+        for (let i = 0; i < rest.length && qualifiedForQF.length < needEightQF; i++) {
+            qualifiedForQF.push(rest[i]);
+        }
+    }
 
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Team standings</h2>
+            <p className="text-sm text-gray-700">Ranked by PTS, then point difference (PD). Only teams with at least one win (PTS ≥ 1) can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF → Semis → Finals.</p>
             <div className="overflow-x-auto">
                 <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">#</th>
+                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">Cat</th>
                             <th className="text-left py-2 px-3 text-sm font-medium text-gray-900">Team</th>
                             <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">TM</th>
                             <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PL</th>
                             <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">W</th>
                             <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">L</th>
                             <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PTS</th>
+                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-900">PD</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {sorted.map((row, idx) => (
-                            <tr key={row.team.id} className="border-t border-gray-200">
+                        {sorted.map((row, idx) => {
+                            const isQualified = qualifiedForQF.some((q) => q && q.team && q.team.id === row.team.id);
+                            return (
+                            <tr key={row.team.id} className={`border-t border-gray-200 ${isQualified ? "bg-emerald-50" : ""}`}>
                                 <td className="py-2 px-3 text-sm">{idx + 1}</td>
-                                <td className="py-2 px-3 text-sm font-medium">{row.team.name}</td>
+                                <td className="py-2 px-3 text-sm text-gray-700">{row.team.category || "—"}</td>
+                                <td className="py-2 px-3 text-sm font-medium">
+                                    {formatTeamWithPlayers(row.team.name, memberNamesByTeam[row.team.id] || [])}
+                                    {isQualified && <span className="ml-2 text-emerald-600 text-xs font-medium">→ QF</span>}
+                                </td>
                                 <td className="py-2 px-3 text-sm text-center">{row.team.short_name || "—"}</td>
                                 <td className="py-2 px-3 text-sm text-center">{row.played}</td>
                                 <td className="py-2 px-3 text-sm text-center">{row.won}</td>
                                 <td className="py-2 px-3 text-sm text-center">{row.lost}</td>
                                 <td className="py-2 px-3 text-sm text-center">{row.pts}</td>
+                                <td className="py-2 px-3 text-sm text-center">{row.pointsDifference != null ? (row.pointsDifference >= 0 ? `+${row.pointsDifference}` : String(row.pointsDifference)) : "—"}</td>
                             </tr>
-                        ))}
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>
-            <p className="text-xs text-gray-500">TM = Team name short, PL = Played, W = Won, L = Lost, PTS = Points (2 per win).</p>
+            <p className="text-xs text-gray-500">Cat = Category. TM = short name, PL = Played, W = Won, L = Lost, PTS = Points (1 per win), PD = Point difference (for–against). Tiebreaker: PTS then PD.</p>
+
+            {canEdit && qualifiedForQF.length >= 4 && (
+                <GeneratePlayoffsBlock
+                    tournament={tournament}
+                    qualifiedTeams={qualifiedForQF.map((r) => r.team)}
+                    onRefresh={() => window.location.reload()}
+                />
+            )}
         </div>
     );
 }
@@ -1668,7 +2193,7 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
             const mem = m as TournamentTeamMember & { participant?: Participant; team?: TournamentTeam };
             const pid = mem.participant_id;
             const s = participantStats[pid] || { played: 0, won: 0, lost: 0 };
-            return { member: mem, ...s, pts: s.won * 2 };
+            return { member: mem, ...s, pts: s.won * 1 };
         })
         .filter((r) => r.member.participant)
         .sort((a, b) => b.pts - a.pts);
@@ -1709,8 +2234,9 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
 }
 
 // Settings Tab Component
-function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournament; onTournamentUpdate: () => void }) {
+function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tournament: Tournament; onTournamentUpdate: () => void; canEdit?: boolean }) {
     const [settings, setSettings] = useState({
+        tournament_mode: (tournament.tournament_mode || 'individual') as 'individual' | 'team',
         format: tournament.format || 'single_elimination',
         sets_per_match: tournament.sets_per_match || 3,
         points_per_set: tournament.points_per_set || 21,
@@ -1742,17 +2268,36 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
 
     return (
         <div className="space-y-6">
-            <h2 className="text-xl font-semibold text-gray-900">Tournament Settings</h2>
-            
-            <div className="bg-white border border-gray-200 rounded-lg p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold text-gray-900">Tournament Settings</h2>
+                {!canEdit && <p className="text-sm text-gray-500">View only</p>}
+            </div>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6 space-y-4 shadow-sm">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Tournament Mode
+                    </label>
+                    <select
+                        value={settings.tournament_mode}
+                        onChange={(e) => canEdit && setSettings({ ...settings, tournament_mode: e.target.value as 'individual' | 'team' })}
+                        disabled={!canEdit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
+                    >
+                        <option value="individual">Individual (player vs player)</option>
+                        <option value="team">Team (team vs team — shows Teams, Schedule, Results, Stats)</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Team mode shows Teams, Schedule, Results, Team Stats and Player Stats tabs.</p>
+                </div>
+
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                         Tournament Format
                     </label>
                     <select
                         value={settings.format}
-                        onChange={(e) => setSettings({ ...settings, format: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                        onChange={(e) => canEdit && setSettings({ ...settings, format: e.target.value })}
+                        disabled={!canEdit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                     >
                         <option value="single_elimination">Single Elimination</option>
                         <option value="double_elimination">Double Elimination</option>
@@ -1768,9 +2313,11 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                         </label>
                         <select
                             value={settings.sets_per_match}
-                            onChange={(e) => setSettings({ ...settings, sets_per_match: parseInt(e.target.value) })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            onChange={(e) => canEdit && setSettings({ ...settings, sets_per_match: parseInt(e.target.value) })}
+                            disabled={!canEdit}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                         >
+                            <option value={1}>1 game only</option>
                             <option value={3}>Best of 3</option>
                             <option value={5}>Best of 5</option>
                         </select>
@@ -1782,8 +2329,9 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                         </label>
                         <select
                             value={settings.points_per_set}
-                            onChange={(e) => setSettings({ ...settings, points_per_set: parseInt(e.target.value) })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            onChange={(e) => canEdit && setSettings({ ...settings, points_per_set: parseInt(e.target.value) })}
+                            disabled={!canEdit}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                         >
                             <option value={15}>15 points</option>
                             <option value={21}>21 points</option>
@@ -1796,8 +2344,9 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                         <input
                             type="checkbox"
                             checked={settings.win_by_two}
-                            onChange={(e) => setSettings({ ...settings, win_by_two: e.target.checked })}
-                            className="rounded border-gray-300"
+                            onChange={(e) => canEdit && setSettings({ ...settings, win_by_two: e.target.checked })}
+                            disabled={!canEdit}
+                            className="rounded border-gray-300 disabled:opacity-60"
                         />
                         <span className="text-sm text-gray-700">Win by 2 points</span>
                     </label>
@@ -1810,10 +2359,11 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                     <input
                         type="number"
                         value={settings.max_points}
-                        onChange={(e) => setSettings({ ...settings, max_points: parseInt(e.target.value) })}
+                        onChange={(e) => canEdit && setSettings({ ...settings, max_points: parseInt(e.target.value) })}
+                        disabled={!canEdit}
                         min="21"
                         max="30"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                     />
                 </div>
 
@@ -1823,8 +2373,9 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                     </label>
                     <select
                         value={settings.seeding_method}
-                        onChange={(e) => setSettings({ ...settings, seeding_method: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                        onChange={(e) => canEdit && setSettings({ ...settings, seeding_method: e.target.value })}
+                        disabled={!canEdit}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-50 disabled:cursor-not-allowed"
                     >
                         <option value="random">Random</option>
                         <option value="manual">Manual</option>
@@ -1833,13 +2384,15 @@ function SettingsTab({ tournament, onTournamentUpdate }: { tournament: Tournamen
                     </select>
                 </div>
 
+                {canEdit && (
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 disabled:opacity-50"
+                    className="w-full bg-red-600 text-white py-2.5 px-4 rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
                 >
                     {isSaving ? 'Saving...' : 'Save Settings'}
                 </button>
+                )}
             </div>
         </div>
     );

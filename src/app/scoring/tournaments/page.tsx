@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabaseClient";
 import PhoneInput from "@/components/PhoneInput";
 import { opponentManager } from "@/lib/opponentManagement";
@@ -89,7 +90,10 @@ export default function TournamentsPage() {
         <div className="min-h-screen bg-white p-4 md:p-6">
             <div className="max-w-4xl mx-auto">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-                    <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Tournaments</h1>
+                    <div className="flex items-center gap-3">
+                        <Image src="/logo.jpeg" alt="Simplifit" width={120} height={40} className="h-8 w-auto object-contain" />
+                        <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Tournaments</h1>
+                    </div>
                     <button
                         onClick={() => setShowCreateForm(true)}
                         className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm md:text-base w-full sm:w-auto"
@@ -249,16 +253,9 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
 
             if (tournamentError) throw tournamentError;
 
-            // Add participants if any were provided (dedupe by phone so same phone is only added once)
+            // Add participants if any were provided
             if (participants.length > 0 && tournament) {
-                const seenPhones = new Set<string>();
-                const toInsert = participants.filter((p) => {
-                    const phone = p.phone ? `+91-${p.phone.replace(/\D/g, '')}` : null;
-                    if (phone && seenPhones.has(phone)) return false;
-                    if (phone) seenPhones.add(phone);
-                    return true;
-                });
-                const participantPromises = toInsert.map(async (participant) => {
+                const participantPromises = participants.map(async (participant) => {
                     let userId = null;
                     if (participant.phone) {
                         const phoneValidation = opponentManager.validatePhoneNumber(participant.phone);
@@ -511,6 +508,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         onChange={(e) => setFormData({ ...formData, sets_per_match: parseInt(e.target.value) })}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
                                     >
+                                        <option value={1}>1 game only</option>
                                         <option value={3}>Best of 3 {(isPickleball || isBadminton) && '(Standard)'}</option>
                                         <option value={5}>Best of 5</option>
                                     </select>
