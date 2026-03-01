@@ -236,29 +236,29 @@ export default function TournamentDetailPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-gray-50 w-full min-w-0 overflow-x-hidden">
             {/* Header */}
             <div className="bg-white border-b border-gray-200 sticky top-0 z-10 shadow-sm">
-                <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4">
-                    <div className="flex items-center justify-between gap-4 mb-4">
+                <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 min-w-0">
+                    <div className="flex items-center justify-between gap-2 sm:gap-4 mb-4 min-w-0">
                         <button
                             onClick={() => router.push('/scoring/tournaments')}
-                            className="flex items-center gap-2 text-gray-600 hover:text-red-600 text-sm md:text-base touch-manipulation"
+                            className="flex items-center gap-1.5 sm:gap-2 text-gray-600 hover:text-red-600 text-sm md:text-base touch-manipulation flex-shrink-0 min-w-0"
                         >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                             </svg>
-                            Back to Tournaments
+                            <span className="truncate">Back to Tournaments</span>
                         </button>
-                        <Image src="/logo.jpeg" alt="Simplifit" width={100} height={32} className="h-8 w-auto object-contain" />
+                        <Image src="/logo.jpeg" alt="Simplifit" width={100} height={32} className="h-6 sm:h-8 w-auto object-contain flex-shrink-0 max-w-[72px] sm:max-w-none" />
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-3 mb-2">
-                                <span className="text-3xl md:text-4xl flex-shrink-0">{sportIcons[tournament.sport]}</span>
-                                <div className="min-w-0 flex-1">
-                                    <h1 className="text-xl md:text-2xl font-semibold text-gray-900 truncate">{tournament.name}</h1>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4 min-w-0">
+                        <div className="flex-1 min-w-0 w-full">
+                            <div className="flex items-start gap-3 mb-2 min-w-0">
+                                <span className="text-2xl sm:text-3xl md:text-4xl flex-shrink-0">{sportIcons[tournament.sport]}</span>
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                    <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 break-words line-clamp-2">{tournament.name}</h1>
                                     <p className="text-gray-600 text-xs md:text-sm mt-1 line-clamp-2">{tournament.description || 'No description'}</p>
                                 </div>
                             </div>
@@ -295,9 +295,9 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Tabs */}
-            <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10 shadow-sm">
-                <div className="max-w-6xl mx-auto px-3 sm:px-4">
-                    <div className="flex gap-2 sm:gap-4 md:gap-6 overflow-x-auto scrollbar-hide -mb-px pb-px">
+            <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10 shadow-sm min-w-0">
+                <div className="max-w-6xl mx-auto px-3 sm:px-4 min-w-0">
+                    <div className="flex gap-2 sm:gap-4 md:gap-6 overflow-x-auto scrollbar-hide -mb-px pb-px min-w-0">
                         {(isTeamTournament
                             ? [
                                 { id: 'overview', label: 'Overview' },
@@ -335,7 +335,7 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Content */}
-            <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 md:py-6">
+            <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 md:py-6 min-w-0 w-full overflow-x-hidden">
                 {activeTab === 'overview' && (
                     <TournamentOverview tournament={tournament} participants={participants} />
                 )}
@@ -1609,17 +1609,17 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     };
 
     return (
-        <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xl font-semibold text-gray-900">Schedule</h2>
+        <div className="space-y-4 min-w-0 w-full overflow-hidden">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900 shrink-0">Schedule</h2>
                 {canEdit ? (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto">
                     {isRoundRobin && (
                         <button
                             type="button"
                             onClick={handleGenerateRoundRobin}
                             disabled={isGenerating || teams.length < 2}
-                            className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                            className="w-full sm:w-auto bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
                         >
                             {isGenerating ? "Generating…" : "Generate round-robin schedule"}
                         </button>
@@ -1630,13 +1630,13 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 type="datetime-local"
                                 value={scheduleBaseDate}
                                 onChange={(e) => setScheduleBaseDate(e.target.value)}
-                                className="px-3 py-2 border border-gray-300 rounded-lg text-sm min-w-0"
+                                className="w-full sm:min-w-0 px-3 py-2 border border-gray-300 rounded-lg text-sm max-w-full"
                             />
                             <button
                                 type="button"
                                 onClick={handleGenerateScheduleByCourtAndTime}
                                 disabled={isGenerating || teams.length < 2}
-                                className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                                className="w-full sm:w-auto bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
                             >
                                 {isGenerating ? "Generating…" : "Generate schedule (courts & times)"}
                             </button>
@@ -1645,7 +1645,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     <button
                         type="button"
                         onClick={() => setShowAdd(!showAdd)}
-                        className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
+                        className="w-full sm:w-auto bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
                     >
                         {showAdd ? "Cancel" : "Add Match"}
                     </button>
@@ -1653,7 +1653,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 ) : <p className="text-sm text-gray-500">View only</p>}
             </div>
             {isRoundRobin && teams.length >= 2 && (
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 break-words">
                     {teams.some((t) => t.category) ? (
                         <>Teams have categories. &quot;Generate round-robin schedule&quot; creates matches <strong>within each category</strong> (Category A vs A, B vs B, C vs C). Match numbers: A-M1, B-M1, etc.</>
                     ) : (
@@ -1727,7 +1727,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     </button>
                 </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 min-w-0">
                 {["1", "2", "3"].map((courtKey) => {
                     const courtMatches = matches.filter((m) => {
                         const c = (m as TournamentMatch).court_number;
@@ -1740,7 +1740,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         return da - db;
                     });
                     return (
-                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
                             <div className="bg-gray-100 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
                             <div className="divide-y divide-gray-100">
                                 {courtMatches.map((match) => {
@@ -1750,9 +1750,9 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                     const playersA = (m.team_a_id && memberNamesByTeam[m.team_a_id]) || [];
                                     const playersB = (m.team_b_id && memberNamesByTeam[m.team_b_id]) || [];
                                     return (
-                                        <div key={match.id} className="p-3 flex flex-wrap items-center justify-between gap-2 bg-white">
-                                            <div className="min-w-0 flex-1">
-                                                <span className="font-medium text-gray-900 text-sm block">
+                                        <div key={match.id} className="p-3 flex flex-wrap items-center justify-between gap-2 bg-white min-w-0">
+                                            <div className="min-w-0 flex-1 overflow-hidden">
+                                                <span className="font-medium text-gray-900 text-sm block break-words">
                                                     {formatTeamWithPlayers(nameA, playersA)} vs {formatTeamWithPlayers(nameB, playersB)}
                                                 </span>
                                                 <div className="text-xs text-gray-500 mt-0.5">
