@@ -80,19 +80,19 @@ export default function TournamentsPage() {
 
     if (isLoading) {
         return (
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="text-gray-500">Loading tournaments...</div>
+            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0F172A' }}>
+                <div className="text-gray-400">Loading tournaments...</div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-white p-4 md:p-6 w-full min-w-0 overflow-x-hidden">
+        <div className="min-h-screen p-4 md:p-6 w-full min-w-0 overflow-x-hidden" style={{ backgroundColor: '#0F172A' }}>
             <div className="max-w-4xl mx-auto min-w-0">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 min-w-0">
                     <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
                         <Image src="/logo.jpeg" alt="Simplifit" width={120} height={40} className="h-6 sm:h-8 w-auto object-contain flex-shrink-0 max-w-[72px] sm:max-w-none" />
-                        <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-gray-900 truncate min-w-0">Tournaments</h1>
+                        <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-gray-100 truncate min-w-0">Tournaments</h1>
                     </div>
                     <button
                         onClick={() => setShowCreateForm(true)}
@@ -104,7 +104,7 @@ export default function TournamentsPage() {
 
                 {tournaments.length === 0 ? (
                     <div className="text-center py-12">
-                        <div className="text-gray-500 mb-4">No tournaments found</div>
+                        <div className="text-gray-400 mb-4">No tournaments found</div>
                         <button
                             onClick={() => setShowCreateForm(true)}
                             className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700"
@@ -115,22 +115,22 @@ export default function TournamentsPage() {
                 ) : (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                         {tournaments.map((tournament) => (
-                            <div key={tournament.id} className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div key={tournament.id} className="rounded-lg p-4 hover:shadow-md transition-shadow border border-[#1F2937]" style={{ backgroundColor: '#111827' }}>
                                 <div className="flex items-center gap-2 mb-2">
                                     <span className="text-2xl">{sports.find(s => s.id === tournament.sport)?.icon}</span>
-                                    <h3 className="font-semibold text-gray-900">{tournament.name}</h3>
+                                    <h3 className="font-semibold text-gray-100">{tournament.name}</h3>
                                 </div>
-                                <p className="text-gray-600 text-sm mb-2">{tournament.description}</p>
-                                <div className="text-xs text-gray-500 space-y-1">
+                                <p className="text-gray-400 text-sm mb-2">{tournament.description}</p>
+                                <div className="text-xs text-gray-400 space-y-1">
                                     <div>Sport: {sports.find(s => s.id === tournament.sport)?.name}</div>
                                     <div>Location: {tournament.location}</div>
                                     <div>Entry Fee: ₹{tournament.entry_fee}</div>
                                     <div>Prize Pool: ₹{tournament.prize_pool}</div>
-                                    <div>Status: <span className={`font-medium ${tournament.status === 'live' ? 'text-green-600' : tournament.status === 'completed' ? 'text-gray-600' : 'text-blue-600'}`}>{tournament.status}</span></div>
+                                    <div>Status: <span className={`font-medium ${tournament.status === 'live' ? 'text-green-400' : tournament.status === 'completed' ? 'text-gray-400' : 'text-blue-400'}`}>{tournament.status}</span></div>
                                 </div>
                                 <a
                                     href={`/scoring/tournaments/${tournament.id}`}
-                                    className="block w-full mt-4 bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 text-center"
+                                    className="block w-full mt-4 bg-gray-800 text-gray-200 py-2 px-4 rounded-md hover:bg-gray-700 text-center border border-[#1F2937]"
                                 >
                                     View Details
                                 </a>
@@ -141,16 +141,17 @@ export default function TournamentsPage() {
 
                 {!selectedSport && (
                     <div className="mt-8">
-                        <h2 className="text-xl font-semibold text-gray-900 mb-4">Create New Tournament</h2>
+                        <h2 className="text-xl font-semibold text-gray-100 mb-4">Create New Tournament</h2>
                         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
                             {sports.map((sport) => (
                                 <button
                                     key={sport.id}
                                     onClick={() => handleSportSelect(sport.id)}
-                                    className="flex flex-col items-center p-4 bg-white border border-gray-200 rounded-xl hover:shadow-sm transition-shadow"
+                                    className="flex flex-col items-center p-4 rounded-xl hover:shadow-sm transition-shadow border border-[#1F2937]"
+                                    style={{ backgroundColor: '#111827' }}
                                 >
                                     <div className="text-4xl mb-2">{sport.icon}</div>
-                                    <span className="text-sm text-gray-800 text-center">{sport.name}</span>
+                                    <span className="text-sm text-gray-200 text-center">{sport.name}</span>
                                 </button>
                             ))}
                         </div>
@@ -299,27 +300,27 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
     };
 
     return (
-        <div className="min-h-screen bg-white p-4 md:p-6">
+        <div className="min-h-screen p-4 md:p-6" style={{ backgroundColor: '#0F172A' }}>
             <div className="max-w-4xl mx-auto">
                 <div className="mb-6">
                     <button
                         onClick={onBack}
-                        className="flex items-center gap-2 text-gray-600 mb-4 text-sm md:text-base"
+                        className="flex items-center gap-2 text-gray-400 hover:text-gray-200 mb-4 text-sm md:text-base"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                         Back to Tournaments
                     </button>
-                    <h1 className="text-2xl md:text-3xl font-semibold text-gray-900">Create Tournament</h1>
-                    <p className="text-gray-600 mt-1 text-sm md:text-base">
+                    <h1 className="text-2xl md:text-3xl font-semibold text-gray-100">Create Tournament</h1>
+                    <p className="text-gray-400 mt-1 text-sm md:text-base">
                         {sports.find(s => s.id === sport)?.name}
                     </p>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
                             Tournament Name
                         </label>
                         <input
@@ -327,42 +328,42 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                             required
                             value={formData.name}
                             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100"
                         />
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
                             Tournament Mode
                         </label>
                         <select
                             value={formData.tournament_mode}
                             onChange={(e) => setFormData({ ...formData, tournament_mode: e.target.value as 'individual' | 'team' })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                         >
                             <option value="individual">Individual (player vs player)</option>
                             <option value="team">Team (team vs team, e.g. league)</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">
+                        <p className="text-xs text-gray-400 mt-1">
                             Team mode: create teams, assign participants, schedule team vs team matches and track standings.
                         </p>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
                             Description
                         </label>
                         <textarea
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                             rows={3}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100"
                         />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Start Date
                             </label>
                             <input
@@ -370,11 +371,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 required
                                 value={formData.start_date}
                                 onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 End Date
                             </label>
                             <input
@@ -382,13 +383,13 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 required
                                 value={formData.end_date}
                                 onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-300 mb-2">
                             Location
                         </label>
                         <input
@@ -396,13 +397,13 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                             required
                             value={formData.location}
                             onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100"
                         />
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Max Participants
                             </label>
                             <input
@@ -413,11 +414,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                     const value = e.target.value === '' ? 16 : parseInt(e.target.value) || 16;
                                     setFormData({ ...formData, max_participants: value });
                                 }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Entry Fee (₹)
                             </label>
                             <input
@@ -428,11 +429,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                     const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
                                     setFormData({ ...formData, entry_fee: value });
                                 }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-300 mb-2">
                                 Prize Pool (₹)
                             </label>
                             <input
@@ -443,24 +444,24 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                     const value = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
                                     setFormData({ ...formData, prize_pool: value });
                                 }}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                             />
                         </div>
                     </div>
 
                     {/* Tournament Format Section */}
                     <div className="border-t border-gray-200 pt-6 mt-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Tournament Format</h2>
+                        <h2 className="text-lg font-semibold text-gray-100 mb-4">Tournament Format</h2>
                         
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                <label className="block text-sm font-medium text-gray-300 mb-2">
                                     Tournament Type *
                                 </label>
                                 <select
                                     value={formData.format}
                                     onChange={(e) => setFormData({ ...formData, format: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                    className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                     required
                                 >
                                     <option value="single_elimination">Single Elimination</option>
@@ -469,7 +470,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                     <option value="round_robin_knockout">Round Robin + Knockout</option>
                                     <option value="swiss">Swiss System</option>
                                 </select>
-                                <p className="text-xs text-gray-500 mt-1">
+                                <p className="text-xs text-gray-400 mt-1">
                                     {formData.format === 'single_elimination' && (isPickleball 
                                         ? 'Players/teams are eliminated after one loss. Standard for most pickleball tournaments.'
                                         : isBadminton
@@ -500,35 +501,35 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Games per Match {isPickleball && '(Pickleball)'} {isBadminton && '(Badminton)'}
                                     </label>
                                     <select
                                         value={formData.sets_per_match}
                                         onChange={(e) => setFormData({ ...formData, sets_per_match: parseInt(e.target.value) })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                     >
                                         <option value={1}>1 game only</option>
                                         <option value={3}>Best of 3 {(isPickleball || isBadminton) && '(Standard)'}</option>
                                         <option value={5}>Best of 5</option>
                                     </select>
                                     {isPickleball && (
-                                        <p className="text-xs text-gray-500 mt-1">Pickleball matches are typically best of 3 games</p>
+                                        <p className="text-xs text-gray-400 mt-1">Pickleball matches are typically best of 3 games</p>
                                     )}
                                     {isBadminton && (
-                                        <p className="text-xs text-gray-500 mt-1">Badminton matches are typically best of 3 games (first to 2)</p>
+                                        <p className="text-xs text-gray-400 mt-1">Badminton matches are typically best of 3 games (first to 2)</p>
                                     )}
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Points per Game {isPickleball && '(Pickleball)'} {isBadminton && '(Badminton)'}
                                     </label>
                                     {isPickleball ? (
                                         <select
                                             value={formData.points_per_set}
                                             onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                         >
                                             <option value={11}>11 points (Standard)</option>
                                             <option value={15}>15 points</option>
@@ -538,7 +539,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         <select
                                             value={formData.points_per_set}
                                             onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                         >
                                             <option value={21}>21 points (Standard)</option>
                                             <option value={15}>15 points (Legacy)</option>
@@ -547,24 +548,24 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         <select
                                             value={formData.points_per_set}
                                             onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                            className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                         >
                                             <option value={15}>15 points</option>
                                             <option value={21}>21 points</option>
                                         </select>
                                     )}
                                     {isPickleball && (
-                                        <p className="text-xs text-gray-500 mt-1">Standard pickleball games are played to 11 points (win by 2)</p>
+                                        <p className="text-xs text-gray-400 mt-1">Standard pickleball games are played to 11 points (win by 2)</p>
                                     )}
                                     {isBadminton && (
-                                        <p className="text-xs text-gray-500 mt-1">Standard badminton games are played to 21 points (win by 2, cap at 30)</p>
+                                        <p className="text-xs text-gray-400 mt-1">Standard badminton games are played to 21 points (win by 2, cap at 30)</p>
                                     )}
                                 </div>
                             </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Maximum Points (Cap)
                                     </label>
                                     <input
@@ -573,9 +574,9 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         max={isPickleball ? "21" : "30"}
                                         value={formData.max_points}
                                         onChange={(e) => setFormData({ ...formData, max_points: parseInt(e.target.value) || defaultMaxPoints })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                     />
-                                    <p className="text-xs text-gray-500 mt-1">
+                                    <p className="text-xs text-gray-400 mt-1">
                                         {isPickleball 
                                             ? "Maximum points in a game (typically 15 for 11-point games, prevents infinite deuce)"
                                             : isBadminton
@@ -585,13 +586,13 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                 </div>
 
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Seeding Method
                                     </label>
                                     <select
                                         value={formData.seeding_method}
                                         onChange={(e) => setFormData({ ...formData, seeding_method: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                     >
                                         <option value="random">Random</option>
                                         <option value="manual">Manual</option>
@@ -610,11 +611,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         className="rounded border-gray-300"
                                         disabled={isPickleball || isBadminton}
                                     />
-                                    <span className="text-sm text-gray-700">
+                                    <span className="text-sm text-gray-300">
                                         Win by 2 points {(isPickleball || isBadminton) && '(Required)'}
                                     </span>
                                 </label>
-                                <p className="text-xs text-gray-500 mt-1 ml-6">
+                                <p className="text-xs text-gray-400 mt-1 ml-6">
                                     {isPickleball 
                                         ? "Pickleball requires winning by 2 points (e.g., 11-9, not 11-10). If score reaches cap, next point wins."
                                         : isBadminton
@@ -627,15 +628,15 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
 
                     {/* Participants Section */}
                     <div className="border-t border-gray-200 pt-6 mt-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Add Participants (Optional)</h2>
+                        <h2 className="text-lg font-semibold text-gray-100 mb-4">Add Participants (Optional)</h2>
                         <p className="text-sm text-gray-600 mb-4">You can add participants now or later from the tournament page. Use the sheet upload for bulk add (CSV with name, phone, email, category, seed, club).</p>
                         
                         {/* Sheet / CSV upload */}
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4 space-y-3">
-                            <h3 className="text-sm font-medium text-gray-800">Upload from sheet (CSV)</h3>
+                            <h3 className="text-sm font-medium text-gray-200">Upload from sheet (CSV)</h3>
                             <p className="text-xs text-gray-600">First row can be header: name, phone, email, category, seed, club. Name is required.</p>
                             <div className="flex flex-wrap items-center gap-3">
-                                <label className="cursor-pointer bg-white border border-gray-300 rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                                <label className="cursor-pointer bg-gray-800 border border-[#1F2937] rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700">
                                     Choose CSV file
                                     <input
                                         type="file"
@@ -680,7 +681,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Participant Name
                                     </label>
                                     <input
@@ -688,11 +689,11 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                         value={newParticipantName}
                                         onChange={(e) => setNewParticipantName(e.target.value)}
                                         placeholder="Enter name"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base"
+                                        className="w-full px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-800 text-gray-100 text-sm md:text-base"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    <label className="block text-sm font-medium text-gray-300 mb-2">
                                         Phone Number (Optional)
                                     </label>
                                     <PhoneInput
@@ -723,14 +724,14 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
 
                         {participants.length > 0 && (
                             <div className="mt-4">
-                                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                                <h3 className="text-sm font-medium text-gray-300 mb-2">
                                     Added Participants ({participants.length})
                                 </h3>
-                                <div className="bg-white border border-gray-200 rounded-lg divide-y divide-gray-200 max-h-48 overflow-y-auto">
+                                <div className="bg-gray-900 border border-[#1F2937] rounded-lg divide-y divide-[#1F2937] max-h-48 overflow-y-auto">
                                     {participants.map((participant, index) => (
                                         <div key={index} className="flex items-center justify-between p-3">
                                             <div>
-                                                <div className="text-sm font-medium text-gray-900">{participant.name}</div>
+                                                <div className="text-sm font-medium text-gray-100">{participant.name}</div>
                                                 <div className="text-xs text-gray-500">
                                                     {[participant.phone, participant.email, participant.category, participant.club].filter(Boolean).join(' · ') || '—'}
                                                 </div>
