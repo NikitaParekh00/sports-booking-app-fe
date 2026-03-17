@@ -1223,8 +1223,8 @@ function TeamsTab({
                         </div>
                         <ul className="space-y-2 mb-3">
                             {(membersByTeam[team.id] || []).map((m) => (
-                                <li key={m.id} className="flex items-center justify-between text-sm">
-                                    <span>
+                                <li key={m.id} className="flex items-center justify-between text-sm text-gray-200">
+                                    <span className="text-gray-200">
                                         P{m.position}: {(m as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—"}
                                     </span>
                                     {canEdit && (
@@ -2121,9 +2121,14 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
                     <tbody>
                         {sorted.map((row, idx) => {
                             const isQualified = qualifiedForQF.some((q) => q && q.team && q.team.id === row.team.id);
+                            const rank = idx + 1;
+                            const rankDisplay = rank === 1 ? <span className="text-xl" title="1st" aria-label="1st">🥇</span>
+                                : rank === 2 ? <span className="text-xl" title="2nd" aria-label="2nd">🥈</span>
+                                : rank === 3 ? <span className="text-xl" title="3rd" aria-label="3rd">🥉</span>
+                                : <span className="text-gray-300">{rank}</span>;
                             return (
                             <tr key={row.team.id} className={`border-t border-[#1F2937] ${isQualified ? "bg-emerald-900/30" : ""}`}>
-                                <td className="py-2 px-3 text-sm text-gray-300">{idx + 1}</td>
+                                <td className="py-2 px-3 text-sm">{rankDisplay}</td>
                                 <td className="py-2 px-3 text-sm text-gray-300">{row.team.category || "—"}</td>
                                 <td className="py-2 px-3 text-sm font-medium text-gray-300">
                                     {formatTeamWithPlayers(row.team.name, memberNamesByTeam[row.team.id] || [])}
@@ -2208,34 +2213,70 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
 
     return (
         <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-100">Player stats</h2>
-            <div className="overflow-x-auto">
-                <table className="min-w-full border border-[#1F2937] rounded-lg overflow-hidden">
-                    <thead className="bg-gray-800">
-                        <tr>
-                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-100">#</th>
-                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-100">Player</th>
-                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-100">Team</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-100">PL</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-100">W</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-100">L</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-100">PTS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {sorted.map((row, idx) => (
-                            <tr key={row.member.id} className="border-t border-[#1F2937]">
-                                <td className="py-2 px-3 text-sm text-gray-300">{idx + 1}</td>
-                                <td className="py-2 px-3 text-sm font-medium text-gray-300">{(row.member as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—"}</td>
-                                <td className="py-2 px-3 text-sm text-gray-300">{(row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—"}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-300">{row.played}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-300">{row.won}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-300">{row.lost}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-300">{row.pts}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+            <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-semibold text-gray-100">Player stats</h2>
+                <div className="text-xs text-gray-400">Sorted by PTS (wins)</div>
+            </div>
+
+            <div className="rounded-xl border border-[#1F2937] overflow-hidden" style={{ backgroundColor: '#111827' }}>
+                {sorted.length === 0 ? (
+                    <div className="p-4 text-sm text-gray-400">No completed matches yet.</div>
+                ) : (
+                    <div className="divide-y divide-[#1F2937]">
+                        {sorted.map((row, idx) => {
+                            const rank = idx + 1;
+                            const paddedRank = String(rank).padStart(3, "0");
+                            const participantName =
+                                (row.member as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—";
+                            const teamName =
+                                (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
+
+                            const medal =
+                                rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
+
+                            const initials = participantName
+                                .split(" ")
+                                .filter(Boolean)
+                                .slice(0, 2)
+                                .map((p) => p[0]?.toUpperCase())
+                                .join("") || "P";
+
+                            return (
+                                <div
+                                    key={row.member.id}
+                                    className="flex items-center justify-between gap-4 px-4 py-3"
+                                    style={{ backgroundColor: idx % 2 === 0 ? "#0F172A" : "#111827" }}
+                                >
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="relative flex-shrink-0">
+                                            <div className="h-11 w-11 rounded-full flex items-center justify-center border border-[#1F2937] bg-gray-800 text-gray-100 font-semibold">
+                                                {initials}
+                                            </div>
+                                            {medal && (
+                                                <span className="absolute -bottom-2 -left-2 text-lg" aria-label={`Rank ${rank}`}>
+                                                    {medal}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="min-w-0">
+                                            <div className="text-sm sm:text-base font-semibold text-gray-100 truncate">
+                                                {participantName}
+                                            </div>
+                                            <div className="text-xs sm:text-sm text-gray-400 truncate">
+                                                {teamName} • PL: {row.played} • W: {row.won} • L: {row.lost} • PTS: {row.pts}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex-shrink-0 text-2xl sm:text-3xl font-semibold tracking-wide text-gray-200">
+                                        {paddedRank}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
         </div>
     );
