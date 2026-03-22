@@ -1,6 +1,9 @@
 /**
  * Parse CSV for tournament participants (badminton-style).
  * Expected columns: name (required), phone, email, category, seed, club
+ * - club: same value for everyone on one squad → one team when you click "Create teams from club or seed".
+ * - seed: if club is empty, same numeric seed for everyone on a squad → one team (use as team id instead of club).
+ *   If both club and seed are set, the app groups by club first.
  * First row can be header (case-insensitive); otherwise first row is data.
  */
 
@@ -99,8 +102,17 @@ export function parseParticipantCsv(csvText: string): {
   return { participants, errors };
 }
 
-/** CSV template content for download (badminton participants). */
+/**
+ * Example A: same club for all 6 on a squad.
+ * Example B: seed-only — same seed number, leave club column empty (trailing comma).
+ */
 export const BADMINTON_PARTICIPANT_CSV_TEMPLATE = `name,phone,email,category,seed,club
-John Doe,9876543210,john@example.com,MS,1,Club A
-Jane Smith,9876543211,jane@example.com,WS,2,
+Player One,9876543210,one@example.com,Advanced,1,Team A
+Player Two,9876543211,two@example.com,Intermediate,1,Team A
+Player Three,9876543212,three@example.com,Emerging,1,Team A
+SeedOnly A1,9876543213,a1@example.com,Advanced,1,
+SeedOnly A2,9876543214,a2@example.com,Intermediate,1,
+SeedOnly A3,9876543215,a3@example.com,Emerging,1,
+SeedOnly B1,9876543216,b1@example.com,Advanced,2,
+SeedOnly B2,9876543217,b2@example.com,Intermediate,2,
 `;
