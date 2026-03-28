@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { opponentManager } from "@/lib/opponentManagement";
 import PhoneInput from "@/components/PhoneInput";
@@ -23,12 +24,14 @@ import {
 } from "@/lib/assignMatchTimeSlots";
 import { buildScheduleExportRows, downloadSchedulePdf, downloadScheduleXlsx } from "@/lib/exportTournamentSchedule";
 import { allowedPointsPerSetForSport, normalizePointsPerSetForSport } from "@/lib/tournamentPointsPerSet";
+import { allUnorderedPairs, roundRobinGroupSlug } from "@/lib/generateGroupRoundRobin";
 import {
     bracketRoundName,
     buildRoundOnePairings,
     nextPowerOfTwo,
     orderParticipantsForBracket,
 } from "@/lib/singleEliminationBracket";
+import { formatSetsForDisplay, parseFinalScoreToSets } from "@/lib/tournamentSetScoreUtils";
 
 /** Clamp saved/display court count (DB column may be null before migration). */
 function clampCourtCount(n: unknown): number {
@@ -39,6 +42,16 @@ function clampCourtCount(n: unknown): number {
 
 function getCourtCount(t: Tournament): number {
     return clampCourtCount(t.number_of_courts);
+}
+
+/** Match slot length for “Assign match times” / court-time generation (aligned with assignMatchTimeSlots). */
+const ASSIGN_SLOT_MINUTES_MIN = 1;
+const ASSIGN_SLOT_MINUTES_MAX = 180;
+const DEFAULT_ASSIGN_SLOT_MINUTES = 15;
+
+function clampAssignSlotMinutes(n: number): number {
+    if (!Number.isFinite(n)) return DEFAULT_ASSIGN_SLOT_MINUTES;
+    return Math.min(ASSIGN_SLOT_MINUTES_MAX, Math.max(ASSIGN_SLOT_MINUTES_MIN, Math.floor(n)));
 }
 
 interface Tournament {
@@ -87,6 +100,7 @@ interface MatchPlayer {
     id: string;
     player_name: string;
     team: string;
+    user_id?: string | null;
 }
 
 interface TournamentMatch {
@@ -94,10 +108,12 @@ interface TournamentMatch {
     match_date: string | null;
     status: string;
     notes?: string | null;
+    match_type?: string;
     match_players?: MatchPlayer[];
     team_a_id?: string | null;
     team_b_id?: string | null;
     winner_team_id?: string | null;
+    winner_id?: string | null;
     court_number?: string | null;
     final_score?: string | null;
     match_number?: string | null;
@@ -128,13 +144,14 @@ const ALLOWED_EDIT_PHONE = "+91-7506256356";
 export default function TournamentDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const tournamentId = params.id as string;
     const [tournament, setTournament] = useState<Tournament | null>(null);
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [authLoading, setAuthLoading] = useState(true);
     const [canEdit, setCanEdit] = useState(false);
-    type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'matches' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
+    type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
     const [activeTab, setActiveTab] = useState<TabType>('overview');
     const isTeamTournament = (tournament?.tournament_mode ?? 'individual') === 'team';
     const [showAddParticipant, setShowAddParticipant] = useState(false);
@@ -196,6 +213,13 @@ export default function TournamentDetailPage() {
             fetchTournamentData();
         }
     }, [tournamentId, fetchTournamentData]);
+
+    useEffect(() => {
+        const t = searchParams.get("tab");
+        if (t === "results") setActiveTab("results");
+        if (t === "schedule") setActiveTab("schedule");
+        if (t === "player_stats") setActiveTab("player_stats");
+    }, [searchParams]);
 
     const handleStartTournament = async () => {
         if (!tournament) return;
@@ -340,7 +364,9 @@ export default function TournamentDetailPage() {
                                     { id: 'participants', label: `Participants (${participants.length})` },
                                     { id: 'groups', label: 'Groups' },
                                     { id: 'brackets', label: 'Brackets' },
-                                    { id: 'matches', label: 'Matches' },
+                                    { id: 'schedule', label: 'Schedule' },
+                                    { id: 'results', label: 'Results' },
+                                    { id: 'player_stats', label: 'Player Stats' },
                                     { id: 'settings', label: 'Settings' },
                                   ]
                             ).map((tab) => (
@@ -399,8 +425,13 @@ export default function TournamentDetailPage() {
                     <BracketsTab tournament={tournament} participants={participants} canEdit={canEdit} onRefresh={fetchTournamentData} />
                 )}
 
-                {activeTab === 'matches' && (
-                    <MatchesTab tournament={tournament} />
+                {activeTab === "schedule" && !isTeamTournament && (
+                    <IndividualScheduleTab
+                        tournament={tournament}
+                        participants={participants}
+                        onRefresh={fetchTournamentData}
+                        canEdit={canEdit}
+                    />
                 )}
 
                 {activeTab === 'teams' && isTeamTournament && (
@@ -412,11 +443,23 @@ export default function TournamentDetailPage() {
                 {activeTab === 'results' && isTeamTournament && (
                     <TeamResultsTab tournament={tournament} onRefresh={fetchTournamentData} canEdit={canEdit} />
                 )}
+                {activeTab === "results" && !isTeamTournament && (
+                    <BracketResultsTab
+                        tournament={tournament}
+                        participants={participants}
+                        onRefresh={fetchTournamentData}
+                        canEdit={canEdit}
+                        resultMatchId={searchParams.get("resultMatch")}
+                    />
+                )}
                 {activeTab === 'team_stats' && isTeamTournament && (
                     <TeamStatsTab tournament={tournament} canEdit={canEdit} />
                 )}
                 {activeTab === 'player_stats' && isTeamTournament && (
                     <PlayerStatsTab tournament={tournament} />
+                )}
+                {activeTab === "player_stats" && !isTeamTournament && (
+                    <IndividualPlayerStatsTab tournament={tournament} participants={participants} />
                 )}
 
                 {activeTab === 'settings' && (
@@ -1133,14 +1176,30 @@ function BracketsTab({
 }) {
     const [bracketRows, setBracketRows] = useState<BracketDbRow[]>([]);
     const [matchById, setMatchById] = useState<Map<string, TournamentMatch>>(new Map());
+    const [groupStageMatches, setGroupStageMatches] = useState<TournamentMatch[]>([]);
     const [bracketSize, setBracketSize] = useState(0);
     const [loading, setLoading] = useState(true);
     const [generating, setGenerating] = useState(false);
     const supabase = createClient();
+    const format = tournament.format || "single_elimination";
+    const isRRFormat = format === "round_robin" || format === "round_robin_knockout";
 
     const loadBracket = useCallback(async () => {
         setLoading(true);
         try {
+            const { data: rrMs, error: rrErr } = await supabase
+                .from("matches")
+                .select("*, match_players(*)")
+                .eq("tournament_id", tournament.id)
+                .like("match_number", "RR-%")
+                .order("match_date", { ascending: true });
+            if (rrErr) {
+                console.error(rrErr);
+                setGroupStageMatches([]);
+            } else {
+                setGroupStageMatches((rrMs || []) as TournamentMatch[]);
+            }
+
             const { data: rows, error: e1 } = await supabase
                 .from("tournament_brackets")
                 .select("id, round_number, match_position, match_id, bracket_type")
@@ -1181,16 +1240,168 @@ function BracketsTab({
 
     const handleGenerate = async () => {
         if (!canEdit || participants.length < 2) return;
-        const fmt = tournament.format || "single_elimination";
-        if (fmt === "round_robin") {
-            const ok = window.confirm(
-                "Tournament format is round robin. Generating a bracket will add single-elimination matches (numbers B-R1-…) in addition to any schedule you already have. Continue?"
-            );
-            if (!ok) return;
+
+        if (isRRFormat) {
+            if (bracketRows.length > 0 || groupStageMatches.length > 0) {
+                const ok = window.confirm(
+                    "This removes all group round-robin matches (RR-…) and any knockout bracket rows (B-…). Continue?"
+                );
+                if (!ok) return;
+            }
+            setGenerating(true);
+            try {
+                const storedUser = localStorage.getItem("sf:user");
+                const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+                const nc = getCourtCount(tournament);
+
+                const { data: grps, error: eg } = await supabase
+                    .from("tournament_groups")
+                    .select("id, group_name, group_order")
+                    .eq("tournament_id", tournament.id)
+                    .order("group_order", { ascending: true });
+                if (eg) throw eg;
+                if (!grps?.length) {
+                    alert(
+                        "No groups found. Open the Groups tab and use “Create groups from clubs” (or rebuild), then try again."
+                    );
+                    return;
+                }
+
+                const gids = grps.map((g) => g.id);
+                const { data: links, error: el } = await supabase
+                    .from("tournament_group_participants")
+                    .select("group_id, participant_id, position")
+                    .in("group_id", gids);
+                if (el) throw el;
+
+                const pmap = new Map(participants.map((p) => [p.id, p]));
+                type GroupBundle = {
+                    group: (typeof grps)[number];
+                    members: Participant[];
+                };
+                const bundles: GroupBundle[] = grps.map((g) => {
+                    const memberLinks = (links || [])
+                        .filter((l) => l.group_id === g.id)
+                        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+                    const members = memberLinks
+                        .map((l) => pmap.get(l.participant_id))
+                        .filter((p): p is Participant => Boolean(p));
+                    return { group: g, members };
+                });
+
+                const playable = bundles.filter((b) => b.members.length >= 2);
+                if (playable.length === 0) {
+                    alert("Each group needs at least 2 participants linked to the tournament. Check the Groups tab.");
+                    return;
+                }
+
+                const { error: delB } = await supabase.from("tournament_brackets").delete().eq("tournament_id", tournament.id);
+                if (delB) throw delB;
+
+                const { data: allTourMatches, error: selAll } = await supabase
+                    .from("matches")
+                    .select("id, match_number")
+                    .eq("tournament_id", tournament.id);
+                if (selAll) throw selAll;
+                const wipeIds = (allTourMatches || [])
+                    .filter(
+                        (m) =>
+                            typeof m.match_number === "string" &&
+                            (m.match_number.startsWith("B-") || m.match_number.startsWith("RR-"))
+                    )
+                    .map((m) => m.id);
+                if (wipeIds.length > 0) {
+                    const { error: delM } = await supabase.from("matches").delete().in("id", wipeIds);
+                    if (delM) throw delM;
+                }
+
+                let globalIdx = 0;
+                let totalCreated = 0;
+                const skipped: string[] = [];
+
+                for (const { group: g, members } of bundles) {
+                    if (members.length < 2) {
+                        skipped.push(g.group_name);
+                        continue;
+                    }
+                    const slug = roundRobinGroupSlug(g.group_name, g.group_order);
+                    const pairs = allUnorderedPairs(members);
+                    let mi = 0;
+                    for (const [fullA, fullB] of pairs) {
+                        mi += 1;
+                        globalIdx += 1;
+                        const match_number = `RR-${slug}-${String(mi).padStart(2, "0")}`;
+                        const { data: insMatch, error: mErr } = await supabase
+                            .from("matches")
+                            .insert({
+                                tournament_id: tournament.id,
+                                sport: tournament.sport,
+                                match_type: "tournament",
+                                status: "upcoming",
+                                created_by,
+                                match_number,
+                                match_date: null,
+                                court_number: String(((globalIdx - 1) % nc) + 1),
+                            })
+                            .select("id")
+                            .single();
+                        if (mErr) throw mErr;
+                        const mid = insMatch.id;
+                        const { error: p1e } = await supabase.from("match_players").insert({
+                            match_id: mid,
+                            user_id: fullA.user_id ?? null,
+                            player_name: fullA.player_name,
+                            phone: fullA.phone ?? null,
+                            team: "player_1",
+                            is_captain: false,
+                        });
+                        if (p1e) throw p1e;
+                        const { error: p2e } = await supabase.from("match_players").insert({
+                            match_id: mid,
+                            user_id: fullB.user_id ?? null,
+                            player_name: fullB.player_name,
+                            phone: fullB.phone ?? null,
+                            team: "player_2",
+                            is_captain: false,
+                        });
+                        if (p2e) throw p2e;
+                        totalCreated += 1;
+                    }
+                }
+
+                const { error: upBr } = await supabase
+                    .from("tournaments")
+                    .update({ brackets_generated: false })
+                    .eq("id", tournament.id);
+                if (upBr) console.warn("brackets_generated update:", upBr);
+
+                await loadBracket();
+                onRefresh();
+                const skipMsg =
+                    skipped.length > 0
+                        ? `\n\nSkipped groups with fewer than 2 players: ${skipped.join(", ")}.`
+                        : "";
+                alert(
+                    `Round robin created: ${totalCreated} match(es) in ${playable.length} group(s). Everyone plays everyone else within each group.${skipMsg}`
+                );
+            } catch (err) {
+                console.error(err);
+                const code =
+                    typeof err === "object" && err !== null && "code" in err ? String((err as { code?: string }).code) : "";
+                const hint =
+                    code === "42501"
+                        ? " Run db/fix_tournament_brackets_rls_localstorage_auth.sql and db/fix_tournament_matches_insert_rls.sql in Supabase."
+                        : "";
+                alert(err instanceof Error ? `${err.message}${hint}` : `Failed to generate round robin.${hint}`);
+            } finally {
+                setGenerating(false);
+            }
+            return;
         }
+
         if (bracketRows.length > 0) {
             const ok = window.confirm(
-                "This removes existing bracket rows and all matches whose numbers start with B- (bracket matches only). Continue?"
+                "This removes existing bracket rows and all B- and RR- tournament matches for this draw. Continue?"
             );
             if (!ok) return;
         }
@@ -1198,21 +1409,25 @@ function BracketsTab({
         try {
             const storedUser = localStorage.getItem("sf:user");
             const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+            const nc = getCourtCount(tournament);
 
             const { error: delB } = await supabase.from("tournament_brackets").delete().eq("tournament_id", tournament.id);
             if (delB) throw delB;
 
             const { data: oldMatches, error: selErr } = await supabase
                 .from("matches")
-                .select("id")
-                .eq("tournament_id", tournament.id)
-                .like("match_number", "B-%");
+                .select("id, match_number")
+                .eq("tournament_id", tournament.id);
             if (selErr) throw selErr;
-            if (oldMatches?.length) {
-                const { error: delM } = await supabase.from("matches").delete().in(
-                    "id",
-                    oldMatches.map((x) => x.id)
-                );
+            const delIds = (oldMatches || [])
+                .filter(
+                    (m) =>
+                        typeof m.match_number === "string" &&
+                        (m.match_number.startsWith("B-") || m.match_number.startsWith("RR-"))
+                )
+                .map((m) => m.id);
+            if (delIds.length > 0) {
+                const { error: delM } = await supabase.from("matches").delete().in("id", delIds);
                 if (delM) throw delM;
             }
 
@@ -1251,6 +1466,7 @@ function BracketsTab({
                             created_by,
                             match_number,
                             match_date: null,
+                            court_number: String(((r1pos - 1) % nc) + 1),
                         })
                         .select("id")
                         .single();
@@ -1336,15 +1552,44 @@ function BracketsTab({
 
     const sortedRoundNums = useMemo(() => [...roundsMap.keys()].sort((a, b) => a - b), [roundsMap]);
 
+    const hasGroupStage = groupStageMatches.length > 0;
+    const hasKnockoutBracket = bracketRows.length > 0;
+
     return (
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
                     <h2 className="text-xl font-semibold text-gray-900">Tournament brackets</h2>
-                    <p className="text-sm text-gray-600 mt-1 max-w-2xl">
-                        <strong>Single elimination</strong> main draw. Players ordered by <strong>seed</strong> (lower = stronger; empty seed last), padded to a power of two with byes at the bottom of the list.
-                        Match numbers <code className="text-[11px] bg-gray-100 px-1 rounded">B-R1-01</code>… appear on the Matches tab. Later rounds are TBD until you create/link matches.
-                    </p>
+                    {isRRFormat ? (
+                        <p className="text-sm text-gray-600 mt-1 max-w-2xl">
+                            <strong>Round robin</strong> within each <strong>group</strong> from the Groups tab (everyone plays everyone else in the same group once). Match numbers look like{" "}
+                            <code className="text-[11px] bg-gray-100 px-1 rounded">RR-A0-01</code>. Courts rotate from Settings. Use the{" "}
+                            <Link href={`/scoring/tournaments/${tournament.id}?tab=schedule`} className="text-red-600 font-medium hover:text-red-800">
+                                Schedule
+                            </Link>{" "}
+                            tab for filters, export, and times.{" "}
+                            {format === "round_robin_knockout" && (
+                                <span className="block mt-1">
+                                    <strong>Knockout</strong> after the group stage is not generated automatically yet; set tournament format to single elimination if you only want a bracket.
+                                </span>
+                            )}
+                        </p>
+                    ) : (
+                        <p className="text-sm text-gray-600 mt-1 max-w-2xl">
+                            <strong>Single elimination</strong> main draw. Players ordered by <strong>seed</strong> (lower = stronger; empty seed last), padded to a power of two with byes at the bottom of the list.
+                            <strong> Round 1</strong> is shown below <strong>by court</strong> (same layout as the Schedule tab). Use the{" "}
+                            <Link href={`/scoring/tournaments/${tournament.id}?tab=schedule`} className="text-red-600 font-medium hover:text-red-800">
+                                Schedule
+                            </Link>{" "}
+                            tab for filters, export, and assigning match times. Later bracket rounds stay as a simple list until those matches exist.
+                        </p>
+                    )}
+                    {tournament.groups_generated && !isRRFormat && (
+                        <p className="text-xs text-amber-800 mt-2 max-w-2xl">
+                            You have <strong>Groups</strong> set up. For <strong>round robin inside each group</strong> (everyone vs everyone in the same club/group), set tournament{" "}
+                            <strong>Format</strong> to <strong>Round Robin</strong> on the <strong>Settings</strong> tab, then use <strong>Generate round robin</strong> here.
+                        </p>
+                    )}
                     {(tournament.format === "double_elimination" || tournament.format === "swiss") && (
                         <p className="text-xs text-amber-800 mt-1">Only the <strong>main</strong> bracket is generated here; losers bracket / Swiss logic is not automated yet.</p>
                     )}
@@ -1356,7 +1601,15 @@ function BracketsTab({
                         disabled={generating}
                         className="shrink-0 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
                     >
-                        {generating ? "Generating…" : bracketRows.length ? "Regenerate bracket" : "Generate bracket"}
+                        {generating
+                            ? "Generating…"
+                            : isRRFormat
+                              ? hasGroupStage
+                                  ? "Regenerate round robin"
+                                  : "Generate round robin"
+                              : hasKnockoutBracket
+                                ? "Regenerate bracket"
+                                : "Generate bracket"}
                     </button>
                 )}
             </div>
@@ -1369,15 +1622,98 @@ function BracketsTab({
                 </div>
             ) : loading ? (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 text-center text-gray-600 text-sm">Loading bracket…</div>
-            ) : bracketRows.length === 0 ? (
+            ) : !hasGroupStage && !hasKnockoutBracket ? (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-                    <p className="text-gray-700">No bracket yet. {canEdit ? "Click Generate bracket to build the draw from participants (and seeds)." : ""}</p>
+                    <p className="text-gray-700">
+                        {isRRFormat ? (
+                            <>
+                                No round robin matches yet.{" "}
+                                {canEdit ? (
+                                    <>
+                                        Create groups on the <strong>Groups</strong> tab, then click <strong>Generate round robin</strong>.
+                                    </>
+                                ) : (
+                                    ""
+                                )}
+                            </>
+                        ) : (
+                            <>
+                                No bracket yet.{" "}
+                                {canEdit ? "Click Generate bracket to build the draw from participants (and seeds)." : ""}
+                            </>
+                        )}
+                    </p>
                 </div>
             ) : (
                 <div className="space-y-6">
-                    {sortedRoundNums.map((rn) => {
+                    {isRRFormat && hasGroupStage && (
+                        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                            <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                                <span className="font-semibold text-gray-900">Group stage — round robin</span>
+                                <Link
+                                    href={`/scoring/tournaments/${tournament.id}?tab=schedule`}
+                                    className="text-sm font-medium text-red-600 hover:text-red-800 shrink-0"
+                                >
+                                    Open Schedule tab
+                                </Link>
+                            </div>
+                            <div className="p-3 sm:p-4">
+                                <IndividualCourtScheduleGrid
+                                    matches={groupStageMatches}
+                                    participants={participants}
+                                    tournament={tournament}
+                                    poolSize={groupStageMatches.length}
+                                />
+                            </div>
+                        </div>
+                    )}
+                    {hasKnockoutBracket &&
+                    sortedRoundNums.map((rn) => {
                         const rows = roundsMap.get(rn) || [];
                         const label = bracketRoundName(rn, bracketSize > 0 ? bracketSize : 2 ** sortedRoundNums.length);
+                        if (rn === 1) {
+                            const r1Matches = rows
+                                .map((row) => (row.match_id ? matchById.get(row.match_id) : null))
+                                .filter((tm): tm is TournamentMatch => Boolean(tm));
+                            const r1Awaiting = rows.filter((row) => !row.match_id);
+                            return (
+                                <div key={rn} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                    <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <span className="font-semibold text-gray-900">Round {rn}</span>
+                                            <span className="text-gray-500 text-sm ml-2">— {label}</span>
+                                        </div>
+                                        <Link
+                                            href={`/scoring/tournaments/${tournament.id}?tab=schedule`}
+                                            className="text-sm font-medium text-red-600 hover:text-red-800 shrink-0"
+                                        >
+                                            Open Schedule tab
+                                        </Link>
+                                    </div>
+                                    <div className="p-3 sm:p-4">
+                                        {r1Matches.length > 0 ? (
+                                            <IndividualCourtScheduleGrid
+                                                matches={r1Matches}
+                                                participants={participants}
+                                                tournament={tournament}
+                                                poolSize={r1Matches.length}
+                                            />
+                                        ) : (
+                                            <p className="text-sm text-gray-600">No round 1 matches in the draw yet.</p>
+                                        )}
+                                        {r1Awaiting.length > 0 && (
+                                            <ul className="mt-4 divide-y divide-gray-100 border border-gray-100 rounded-lg overflow-hidden">
+                                                {r1Awaiting.map((row) => (
+                                                    <li key={row.id} className="px-4 py-2.5 text-sm text-gray-600 bg-gray-50/50">
+                                                        Bye or slot pending — no match row yet (position {row.match_position})
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        }
                         return (
                             <div key={rn} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                                 <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
@@ -1417,12 +1753,12 @@ function BracketsTab({
                                                         >
                                                             {tm.status}
                                                         </span>
-                                                        <a
-                                                            href={`/scoring/match/${tm.id}`}
+                                                        <Link
+                                                            href={`/scoring/tournaments/${tournament.id}?tab=results&resultMatch=${tm.id}`}
                                                             className="text-red-600 hover:text-red-800 text-xs font-medium"
                                                         >
-                                                            Open scoring
-                                                        </a>
+                                                            Enter results
+                                                        </Link>
                                                     </div>
                                                 )}
                                             </li>
@@ -1438,77 +1774,310 @@ function BracketsTab({
     );
 }
 
-// Matches Tab Component
-function MatchesTab({ tournament }: { tournament: Tournament }) {
+function isIndividualDrawMatch(m: TournamentMatch): boolean {
+    return !m.team_a_id && !m.team_b_id && (m.match_type === "tournament" || m.match_type == null);
+}
+
+function individualMatchForExport(m: TournamentMatch) {
+    const p1 = m.match_players?.find((x) => x.team === "player_1");
+    const p2 = m.match_players?.find((x) => x.team === "player_2");
+    return {
+        match_number: m.match_number,
+        match_date: m.match_date,
+        court_number: m.court_number,
+        status: m.status,
+        notes: m.notes,
+        team_a: { name: p1?.player_name || "TBD" },
+        team_b: { name: p2?.player_name || "TBD" },
+    };
+}
+
+/** Court-column schedule for individual tournaments (same layout as team Schedule tab). */
+function IndividualScheduleTab({
+    tournament,
+    participants,
+    onRefresh,
+    canEdit = false,
+}: {
+    tournament: Tournament;
+    participants: Participant[];
+    onRefresh: () => void;
+    canEdit?: boolean;
+}) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [assignSessionStart, setAssignSessionStart] = useState(() => {
+        const d = new Date(2026, 3, 11, 18, 0, 0, 0);
+        const p = (n: number) => String(n).padStart(2, "0");
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+    });
+    const [assignOverwriteTimes, setAssignOverwriteTimes] = useState(false);
+    const [assignSlotMinutes, setAssignSlotMinutes] = useState(DEFAULT_ASSIGN_SLOT_MINUTES);
+    const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
     const supabase = createClient();
 
-    useEffect(() => {
-        const fetchMatches = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('matches')
-                    .select('*, match_players(*)')
-                    .eq('tournament_id', tournament.id)
-                    .order('match_date', { ascending: true });
+    const drawMatches = useMemo(
+        () => matches.filter((m) => isIndividualDrawMatch(m as TournamentMatch)),
+        [matches],
+    );
 
-                if (error) throw error;
-                setMatches(data || []);
-            } catch (error) {
-                console.error('Error fetching matches:', error);
-            }
-        };
+    const filteredMatches = useMemo(() => {
+        const q = scheduleFilterPlayer.trim().toLowerCase();
+        if (!q) return drawMatches;
+        return drawMatches.filter((m) => {
+            const tm = m as TournamentMatch;
+            const names = (tm.match_players || []).map((x) => (x.player_name || "").toLowerCase());
+            return names.some((n) => n.includes(q));
+        });
+    }, [drawMatches, scheduleFilterPlayer]);
 
-        if (tournament.id) {
-            fetchMatches();
-        }
+    const scheduleExportFilterNote = useMemo(() => {
+        if (!scheduleFilterPlayer.trim()) return undefined;
+        return `Player contains: ${scheduleFilterPlayer.trim()}`;
+    }, [scheduleFilterPlayer]);
+
+    const refreshMatches = useCallback(() => {
+        supabase
+            .from("matches")
+            .select("*, match_players(*)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true })
+            .then(({ data }) => setMatches((data || []) as TournamentMatch[]));
     }, [tournament.id, supabase]);
 
+    useEffect(() => {
+        refreshMatches();
+    }, [refreshMatches]);
+
+    const handleScheduleDownloadXlsx = useCallback(() => {
+        if (filteredMatches.length === 0) {
+            alert("No matches to export.");
+            return;
+        }
+        const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
+        downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+
+    const handleScheduleDownloadPdf = useCallback(() => {
+        if (filteredMatches.length === 0) {
+            alert("No matches to export.");
+            return;
+        }
+        const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
+        downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+
+    const handleAssignTimesToExistingMatches = async () => {
+        if (!assignSessionStart.trim()) {
+            alert("Choose session start (e.g. Apr 11, 6:00 PM).");
+            return;
+        }
+        const anchor = new Date(assignSessionStart);
+        if (Number.isNaN(anchor.getTime())) {
+            alert("Invalid date/time.");
+            return;
+        }
+        const defaultCourtKey = "1";
+        const list = drawMatches.filter((m) => {
+            if (assignOverwriteTimes) return true;
+            return !(m as TournamentMatch).match_date;
+        });
+        if (list.length === 0) {
+            alert(
+                assignOverwriteTimes
+                    ? "No matches to update."
+                    : "Every match already has a time, or there are no matches. Turn on “Overwrite existing times” to re-assign.",
+            );
+            return;
+        }
+        const slotM = clampAssignSlotMinutes(assignSlotMinutes);
+        const enriched = list.map((m) => {
+            const tm = m as TournamentMatch;
+            return {
+                id: tm.id,
+                court_number: tm.court_number,
+                match_number: tm.match_number,
+                playerParticipantIds: participantIdsFromBracketMatch(tm, participants),
+            };
+        });
+        let updates: { id: string; match_date: string }[];
+        try {
+            if (shouldUsePlayerAwareAssignment(enriched)) {
+                updates = assignMatchTimesWithPlayerConstraints(enriched, {
+                    anchorDate: anchor,
+                    dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                    dailyEnd: { hour: 24, minute: 0 },
+                    slotMinutes: slotM,
+                    defaultCourtKey,
+                    maxConsecutivePlayingSlots: 2,
+                });
+            } else {
+                updates = assignMatchTimesByCourt(
+                    enriched.map(({ id, court_number, match_number }) => ({ id, court_number, match_number })),
+                    {
+                        anchorDate: anchor,
+                        dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                        dailyEnd: { hour: 24, minute: 0 },
+                        slotMinutes: slotM,
+                        defaultCourtKey,
+                    },
+                );
+            }
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Could not build time slots.");
+            return;
+        }
+        const smartNote = shouldUsePlayerAwareAssignment(enriched)
+            ? `\n\nPlayer-aware: same rules as team schedule (no double-booking; max 2 consecutive ${slotM}-minute matches per player).`
+            : "\n\nPer-court timing only (link players to tournament participants for smarter slots).";
+        if (
+            !confirm(
+                `Assign ${updates.length} match time(s)?\n\nSession from ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} until midnight each day.${smartNote}`,
+            )
+        ) {
+            return;
+        }
+        setIsGenerating(true);
+        try {
+            for (const u of updates) {
+                const { error } = await supabase.from("matches").update({ match_date: u.match_date }).eq("id", u.id);
+                if (error) throw error;
+            }
+            onRefresh();
+            refreshMatches();
+            alert(`Updated ${updates.length} match time(s).`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to update match times.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
     return (
-        <div className="space-y-4">
-            <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">Tournament Matches</h2>
+        <div className="space-y-4 min-w-0 w-full overflow-hidden">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between min-w-0">
+                <h2 className="text-xl font-semibold text-gray-900 shrink-0">Schedule</h2>
+                {!canEdit && <p className="text-sm text-gray-600">View only</p>}
             </div>
-            {matches.length === 0 ? (
-                <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
-                    <p className="text-gray-700">No matches scheduled yet. Generate brackets to create matches.</p>
-                </div>
-            ) : (
-                <div className="space-y-3">
-                    {matches.map((match) => (
-                        <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <div className="font-medium text-gray-900">
-                                        {match.match_players?.find((p: MatchPlayer) => p.team === 'player_1')?.player_name || 'TBD'} 
-                                        {' vs '}
-                                        {match.match_players?.find((p: MatchPlayer) => p.team === 'player_2')?.player_name || 'TBD'}
-                                    </div>
-                                    <div className="text-sm text-gray-600 mt-1">
-                                        {match.match_date ? new Date(match.match_date).toLocaleString() : 'Not scheduled'}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                        match.status === 'live' ? 'bg-green-100 text-green-800' :
-                                        match.status === 'completed' ? 'bg-gray-800 text-gray-200' :
-                                        'bg-blue-100 text-blue-800'
-                                    }`}>
-                                        {match.status}
-                                    </span>
-                                    {match.status === 'live' && (
-                                        <a
-                                            href={`/scoring/match/${match.id}`}
-                                            className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                                        >
-                                            Score
-                                        </a>
-                                    )}
-                                </div>
-                            </div>
+            {canEdit && drawMatches.length > 0 && (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4 space-y-2">
+                    <p className="text-sm font-medium text-gray-900">Assign match times</p>
+                    <p className="text-xs text-gray-600">
+                        <strong>{clampAssignSlotMinutes(assignSlotMinutes)} minutes</strong> per match (change below). When both players link to tournament participants (name or user),
+                        scheduling is <strong>player-aware</strong> like the team schedule. Otherwise times fill{" "}
+                        <strong>per court</strong>. Matches with no court use Court 1.
+                    </p>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                        <div className="min-w-0">
+                            <label htmlFor="indiv-assign-session-start" className="block text-xs font-medium text-gray-600 mb-1">
+                                Session start (day 1)
+                            </label>
+                            <input
+                                id="indiv-assign-session-start"
+                                type="datetime-local"
+                                value={assignSessionStart}
+                                onChange={(e) => setAssignSessionStart(e.target.value)}
+                                className="w-full max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
                         </div>
-                    ))}
+                        <div className="min-w-0">
+                            <label htmlFor="indiv-assign-slot-minutes" className="block text-xs font-medium text-gray-600 mb-1">
+                                Minutes per match
+                            </label>
+                            <input
+                                id="indiv-assign-slot-minutes"
+                                type="number"
+                                min={ASSIGN_SLOT_MINUTES_MIN}
+                                max={ASSIGN_SLOT_MINUTES_MAX}
+                                value={assignSlotMinutes}
+                                onChange={(e) => {
+                                    const v = parseInt(e.target.value, 10);
+                                    setAssignSlotMinutes(clampAssignSlotMinutes(Number.isFinite(v) ? v : DEFAULT_ASSIGN_SLOT_MINUTES));
+                                }}
+                                className="w-full max-w-[7rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                        </div>
+                        <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={assignOverwriteTimes}
+                                onChange={(e) => setAssignOverwriteTimes(e.target.checked)}
+                                className="rounded border-gray-300"
+                            />
+                            Overwrite existing times
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => void handleAssignTimesToExistingMatches()}
+                            disabled={isGenerating}
+                            className="w-full sm:w-auto px-4 py-2 rounded-lg text-sm font-medium bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                        >
+                            {isGenerating ? "Updating…" : "Assign times to matches"}
+                        </button>
+                    </div>
                 </div>
+            )}
+            <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
+                <div className="text-sm font-medium text-gray-900">Filter schedule</div>
+                <div>
+                    <label htmlFor="indiv-sched-filter-player" className="block text-xs font-medium text-gray-600 mb-1">
+                        Player name contains
+                    </label>
+                    <input
+                        id="indiv-sched-filter-player"
+                        type="search"
+                        value={scheduleFilterPlayer}
+                        onChange={(e) => setScheduleFilterPlayer(e.target.value)}
+                        placeholder="e.g. Adityaraj"
+                        className="w-full max-w-md px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    />
+                </div>
+                {drawMatches.length > 0 && (
+                    <p className="text-xs text-gray-600">
+                        Showing <strong>{filteredMatches.length}</strong> of <strong>{drawMatches.length}</strong> match
+                        {drawMatches.length === 1 ? "" : "es"}
+                        {scheduleFilterPlayer.trim() ? " matching filter" : ""}.
+                    </p>
+                )}
+                {drawMatches.length > 0 && (
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
+                        <span className="text-xs text-gray-600 shrink-0">Export schedule</span>
+                        <div className="flex flex-wrap gap-2">
+                            <button
+                                type="button"
+                                onClick={handleScheduleDownloadXlsx}
+                                disabled={filteredMatches.length === 0}
+                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                Download .xlsx
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleScheduleDownloadPdf}
+                                disabled={filteredMatches.length === 0}
+                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                Download .pdf
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <IndividualCourtScheduleGrid
+                matches={filteredMatches.map((m) => m as TournamentMatch)}
+                participants={participants}
+                tournament={tournament}
+                poolSize={drawMatches.length}
+            />
+            {drawMatches.length === 0 && (
+                <p className="text-gray-600 text-sm">No singles/bracket matches yet. Generate brackets to create matches.</p>
+            )}
+            {drawMatches.length > 0 && filteredMatches.length === 0 && scheduleFilterPlayer.trim() && (
+                <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    No matches match your filter. Try another name or clear the search.
+                </p>
             )}
         </div>
     );
@@ -1958,6 +2527,136 @@ function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titl
     );
 }
 
+function categoryForParticipantName(participants: Participant[], name: string | undefined | null): string | null {
+    if (!name) return null;
+    const row = participants.find((x) => x.player_name === name);
+    const c = row?.category;
+    return c != null && String(c).trim() ? String(c).trim() : null;
+}
+
+/** Singles-only: blue/amber shells match team schedule; player line matches doubles (semibold name, grey category). */
+function BracketSinglesLineupBlocks({
+    nameA,
+    nameB,
+    categoryA,
+    categoryB,
+}: {
+    nameA: string;
+    nameB: string;
+    categoryA: string | null;
+    categoryB: string | null;
+}) {
+    return (
+        <div className="space-y-2 pt-1">
+            <div className="rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-2">
+                <ul className="text-sm text-gray-900 space-y-1">
+                    <li className="leading-snug">
+                        <span className="font-semibold text-gray-900">{nameA || "TBD"}</span>
+                        {categoryA ? (
+                            <span className="text-gray-600 text-xs font-normal"> ({categoryA})</span>
+                        ) : null}
+                    </li>
+                </ul>
+            </div>
+            <div className="flex justify-center py-0.5">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">vs</span>
+            </div>
+            <div className="rounded-lg border border-amber-100 bg-amber-50/80 px-2.5 py-2">
+                <ul className="text-sm text-gray-900 space-y-1">
+                    <li className="leading-snug">
+                        <span className="font-semibold text-gray-900">{nameB || "TBD"}</span>
+                        {categoryB ? (
+                            <span className="text-gray-600 text-xs font-normal"> ({categoryB})</span>
+                        ) : null}
+                    </li>
+                </ul>
+            </div>
+        </div>
+    );
+}
+
+function participantIdsFromBracketMatch(m: TournamentMatch, participants: Participant[]): string[] {
+    const ps = m.match_players || [];
+    const ids: string[] = [];
+    for (const mp of ps) {
+        const uid = mp.user_id;
+        let p = uid ? participants.find((x) => x.user_id === uid) : undefined;
+        if (!p) {
+            const nm = (mp.player_name || "").trim();
+            p = participants.find((x) => (x.player_name || "").trim() === nm);
+        }
+        if (p) ids.push(p.id);
+    }
+    return [...new Set(ids)];
+}
+
+function participantIdForMatchPlayer(mp: MatchPlayer | undefined, participants: Participant[]): string | null {
+    if (!mp) return null;
+    if (mp.user_id) {
+        const p = participants.find((x) => x.user_id === mp.user_id);
+        if (p) return p.id;
+    }
+    const nm = (mp.player_name || "").trim();
+    const p = participants.find((x) => (x.player_name || "").trim() === nm);
+    return p?.id ?? null;
+}
+
+function IndividualScheduleMatchCard({
+    match,
+    participants,
+    tournamentId,
+}: {
+    match: TournamentMatch;
+    participants: Participant[];
+    tournamentId: string;
+}) {
+    const m = match;
+    const p1 = m.match_players?.find((x) => x.team === "player_1");
+    const p2 = m.match_players?.find((x) => x.team === "player_2");
+    const n1 = p1?.player_name ?? "TBD";
+    const n2 = p2?.player_name ?? "TBD";
+    const cat1 = categoryForParticipantName(participants, n1);
+    const cat2 = categoryForParticipantName(participants, n2);
+    return (
+        <div className="p-3 flex gap-2 items-start bg-white min-w-0">
+            <div className="min-w-0 flex-1 overflow-hidden space-y-2">
+                <BracketSinglesLineupBlocks nameA={n1} nameB={n2} categoryA={cat1} categoryB={cat2} />
+                <div className="pt-2 border-t border-gray-100 space-y-1">
+                    <div className="text-sm font-semibold text-gray-800">
+                        {m.match_date
+                            ? new Date(m.match_date).toLocaleString(undefined, {
+                                  weekday: "short",
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "numeric",
+                                  minute: "2-digit",
+                              })
+                            : "No time set"}
+                    </div>
+                    <div className="text-xs text-gray-500 font-mono">{m.match_number || "—"}</div>
+                    <Link
+                        href={`/scoring/tournaments/${tournamentId}?tab=results&resultMatch=${m.id}`}
+                        className="inline-block text-red-600 hover:text-red-800 text-xs font-medium mt-0.5"
+                    >
+                        {m.status === "completed" ? "View results" : "Enter results"}
+                    </Link>
+                </div>
+            </div>
+            <span
+                className={`shrink-0 px-2 py-0.5 rounded text-xs font-medium ${
+                    m.status === "completed"
+                        ? "bg-gray-100 text-gray-700"
+                        : m.status === "live"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-blue-100 text-blue-700"
+                }`}
+            >
+                {m.status}
+            </span>
+        </div>
+    );
+}
+
 function scheduleMatchDateMs(m: TournamentMatch): number {
     return m.match_date ? new Date(m.match_date).getTime() : Number.POSITIVE_INFINITY;
 }
@@ -1965,6 +2664,83 @@ function scheduleMatchDateMs(m: TournamentMatch): number {
 function scheduleMatchNumKey(m: TournamentMatch): number {
     const x = (m.match_number || "").match(/\d+/);
     return x ? parseInt(x[0], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+function scheduleCourtNumKey(m: TournamentMatch): number {
+    const d = String(m.court_number ?? "").replace(/\D/g, "");
+    const n = parseInt(d, 10);
+    return Number.isFinite(n) ? n : 999;
+}
+
+/** Court columns + match cards (shared by individual Schedule tab and Brackets round 1). */
+function IndividualCourtScheduleGrid({
+    matches,
+    participants,
+    tournament,
+    poolSize,
+    hideCourtsNote,
+}: {
+    matches: TournamentMatch[];
+    participants: Participant[];
+    tournament: Tournament;
+    /** When filtering: total unfiltered count (for empty-state copy). */
+    poolSize: number;
+    hideCourtsNote?: boolean;
+}) {
+    const numCourts = getCourtCount(tournament);
+    const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
+    return (
+        <>
+            {!hideCourtsNote && (
+                <p className="text-xs text-gray-500 mb-2">
+                    Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change{" "}
+                    <strong>Number of courts</strong> in Settings if needed.
+                </p>
+            )}
+            <div
+                className={`grid grid-cols-1 gap-3 sm:gap-4 min-w-0 w-full overflow-x-auto ${numCourts <= 12 ? ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6", "md:grid-cols-7", "md:grid-cols-8", "md:grid-cols-9", "md:grid-cols-10", "md:grid-cols-11", "md:grid-cols-12"][numCourts] || "md:grid-cols-12" : ""}`}
+                style={numCourts > 12 ? { gridTemplateColumns: `repeat(${numCourts}, minmax(140px, 1fr))` } : undefined}
+            >
+                {courtKeys.map((courtKey) => {
+                    const courtMatches = matches
+                        .filter((m) => {
+                            const c = m.court_number;
+                            if (!c) return courtKey === "1";
+                            const num = c.replace(/\D/g, "") || c;
+                            return num === courtKey || c === `Court ${courtKey}`;
+                        })
+                        .sort((a, b) => {
+                            const da = scheduleMatchDateMs(a);
+                            const db = scheduleMatchDateMs(b);
+                            if (da !== db) return da - db;
+                            return scheduleMatchNumKey(a) - scheduleMatchNumKey(b);
+                        });
+                    return (
+                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
+                            <div className="bg-gray-50 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
+                            <div className="divide-y divide-gray-200">
+                                {courtMatches.map((match) => (
+                                    <IndividualScheduleMatchCard
+                                        key={match.id}
+                                        match={match}
+                                        participants={participants}
+                                        tournamentId={tournament.id}
+                                    />
+                                ))}
+                            </div>
+                            {courtMatches.length === 0 && (
+                                <p className="p-3 text-sm text-gray-600">
+                                    {poolSize > 0 && matches.length === 0
+                                        ? "No matches match filters."
+                                        : "No matches"}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </>
+    );
 }
 
 function ScheduleMatchCard({ match }: { match: TournamentMatch }) {
@@ -2025,6 +2801,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
     });
     const [assignOverwriteTimes, setAssignOverwriteTimes] = useState(false);
+    const [assignSlotMinutes, setAssignSlotMinutes] = useState(DEFAULT_ASSIGN_SLOT_MINUTES);
     const [newMatch, setNewMatch] = useState({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
     const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(12);
     const [scheduleFilterTeamId, setScheduleFilterTeamId] = useState("");
@@ -2165,8 +2942,9 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 if (existingPairs.has(key)) return;
                 const courtNumber = String((k % numCourts) + 1);
                 const extraSlots = Math.floor(k / numCourts);
+                const slotM = clampAssignSlotMinutes(assignSlotMinutes);
                 const matchDate = new Date(baseDate);
-                matchDate.setMinutes(baseDate.getMinutes() + si * 15 + extraSlots * 15);
+                matchDate.setMinutes(baseDate.getMinutes() + si * slotM + extraSlots * slotM);
                 toInsert.push({
                     teamAId: teamA.id,
                     teamBId: teamB.id,
@@ -2204,7 +2982,9 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 .eq("tournament_id", tournament.id)
                 .order("match_date", { ascending: true })
                 .then(({ data }) => setMatches(data || []));
-            alert(`Added ${toInsert.length} match(es) on ${numCourts} court(s) with 15-min slots. Use "Generate quarter-finals" after round-robin for QF/Semi/Final.`);
+            alert(
+                `Added ${toInsert.length} match(es) on ${numCourts} court(s) with ${clampAssignSlotMinutes(assignSlotMinutes)}-min slots. Use "Generate quarter-finals" after round-robin for QF/Semi/Final.`,
+            );
         } catch (e) {
             console.error(e);
             alert("Failed to generate schedule.");
@@ -2518,6 +3298,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             );
             return;
         }
+        const slotM = clampAssignSlotMinutes(assignSlotMinutes);
         const teamIds = [
             ...new Set(
                 list.flatMap((m) => {
@@ -2565,7 +3346,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     anchorDate: anchor,
                     dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
                     dailyEnd: { hour: 24, minute: 0 },
-                    slotMinutes: 15,
+                    slotMinutes: slotM,
                     defaultCourtKey,
                     maxConsecutivePlayingSlots: 2,
                 });
@@ -2576,7 +3357,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         anchorDate: anchor,
                         dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
                         dailyEnd: { hour: 24, minute: 0 },
-                        slotMinutes: 15,
+                        slotMinutes: slotM,
                         defaultCourtKey,
                     }
                 );
@@ -2588,7 +3369,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         }
         const sessionLabel = anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
             const smartNote = shouldUsePlayerAwareAssignment(enriched)
-            ? "\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive 15-min matches per player without a gap."
+            ? `\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive ${slotM}-minute matches per player without a gap.`
             : "\n\n(No participant lineups in notes / rosters — per-court timing only.)";
         if (
             !confirm(
@@ -2643,6 +3424,21 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 onChange={(e) => setScheduleBaseDate(e.target.value)}
                                 className="w-full sm:min-w-0 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm max-w-full"
                             />
+                            <label className="flex items-center gap-2 text-sm text-gray-800 shrink-0">
+                                <span className="text-xs text-gray-600 whitespace-nowrap">Min/match</span>
+                                <input
+                                    type="number"
+                                    min={ASSIGN_SLOT_MINUTES_MIN}
+                                    max={ASSIGN_SLOT_MINUTES_MAX}
+                                    value={assignSlotMinutes}
+                                    onChange={(e) => {
+                                        const v = parseInt(e.target.value, 10);
+                                        setAssignSlotMinutes(clampAssignSlotMinutes(Number.isFinite(v) ? v : DEFAULT_ASSIGN_SLOT_MINUTES));
+                                    }}
+                                    className="w-16 px-2 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                    aria-label="Minutes per match for generated schedule"
+                                />
+                            </label>
                             <button
                                 type="button"
                                 onClick={handleGenerateScheduleByCourtAndTime}
@@ -2667,7 +3463,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-900">Assign match times</p>
                     <p className="text-xs text-gray-600">
-                        <strong>15 minutes</strong> per match. When lineups exist (doubles in match notes + rosters), times are{" "}
+                        <strong>{clampAssignSlotMinutes(assignSlotMinutes)} minutes</strong> per match (change below). When lineups exist (doubles in match notes + rosters), times are{" "}
                         <strong>player-aware</strong>: each clock slot uses <strong>all courts that can start there</strong> (disjoint players). No double-booking; max{" "}
                         <strong>two matches in a row</strong> per player without a gap. Tie-break uses match number. Each
                         evening runs until <strong>midnight</strong>, then the <strong>next evening</strong> at the same start. Matches with no court use Court 1.
@@ -2683,6 +3479,23 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 value={assignSessionStart}
                                 onChange={(e) => setAssignSessionStart(e.target.value)}
                                 className="w-full max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                        </div>
+                        <div className="min-w-0">
+                            <label htmlFor="assign-slot-minutes" className="block text-xs font-medium text-gray-600 mb-1">
+                                Minutes per match
+                            </label>
+                            <input
+                                id="assign-slot-minutes"
+                                type="number"
+                                min={ASSIGN_SLOT_MINUTES_MIN}
+                                max={ASSIGN_SLOT_MINUTES_MAX}
+                                value={assignSlotMinutes}
+                                onChange={(e) => {
+                                    const v = parseInt(e.target.value, 10);
+                                    setAssignSlotMinutes(clampAssignSlotMinutes(Number.isFinite(v) ? v : DEFAULT_ASSIGN_SLOT_MINUTES));
+                                }}
+                                className="w-full max-w-[7rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             />
                         </div>
                         <label className="flex items-center gap-2 text-sm text-gray-800 cursor-pointer select-none">
@@ -2954,20 +3767,285 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     );
 }
 
-function parseFinalScoreToSets(score: string | null | undefined, numSets: number): string[] {
-    const arr = Array(numSets).fill("");
-    if (!score || typeof score !== "string") return arr;
-    const parts = score.split(",").map((s) => s.trim()).filter(Boolean);
-    parts.forEach((p, i) => { if (i < numSets) arr[i] = p; });
-    return arr;
+function bracketIndividualMatchSortRound(m: TournamentMatch): number {
+    const mn = m.match_number || "";
+    const bracket = mn.match(/R(\d+)/i);
+    return bracket ? parseInt(bracket[1], 10) : 999;
 }
 
-function formatSetsForDisplay(score: string | null | undefined): string {
-    if (!score || typeof score !== "string") return "";
-    const parts = score.split(",").map((s) => s.trim()).filter(Boolean);
-    if (parts.length === 0) return "";
-    if (parts.length === 1) return parts[0];
-    return parts.map((p, i) => `Set ${i + 1}: ${p}`).join(", ");
+/** Results / enter-scores list: scheduled matches by time and court; unscheduled by bracket round + label. */
+function compareIndividualBracketResultsMatches(a: TournamentMatch, b: TournamentMatch): number {
+    const ta = scheduleMatchDateMs(a);
+    const tb = scheduleMatchDateMs(b);
+    if (ta !== tb) return ta - tb;
+    const ca = scheduleCourtNumKey(a);
+    const cb = scheduleCourtNumKey(b);
+    if (ca !== cb) return ca - cb;
+    const ra = bracketIndividualMatchSortRound(a);
+    const rb = bracketIndividualMatchSortRound(b);
+    if (ra !== rb) return ra - rb;
+    return (a.match_number || "").localeCompare(b.match_number || "", undefined, { numeric: true });
+}
+
+function BracketResultsTab({
+    tournament,
+    participants,
+    onRefresh,
+    canEdit = false,
+    resultMatchId,
+}: {
+    tournament: Tournament;
+    participants: Participant[];
+    onRefresh: () => void;
+    canEdit?: boolean;
+    resultMatchId: string | null;
+}) {
+    const numSets = Math.min(5, Math.max(1, Number(tournament.sets_per_match) || 3));
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [winnerPlayerId, setWinnerPlayerId] = useState("");
+    const [setScores, setSetScores] = useState<string[]>(() => Array(numSets).fill(""));
+    const supabase = createClient();
+    const router = useRouter();
+    const handledResultParamRef = useRef<string | null>(null);
+
+    const bracketMatches = useMemo(() => {
+        const rows = matches.filter(
+            (m) => !m.team_a_id && !m.team_b_id && (m.match_type === "tournament" || m.match_type == null),
+        );
+        return [...rows].sort(compareIndividualBracketResultsMatches);
+    }, [matches]);
+
+    const refreshMatches = useCallback(() => {
+        supabase
+            .from("matches")
+            .select("*, match_players(*)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true })
+            .then(({ data }) => setMatches((data || []) as TournamentMatch[]));
+    }, [tournament.id, supabase]);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        supabase
+            .from("matches")
+            .select("*, match_players(*)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true })
+            .then(({ data, error }) => {
+                if (cancelled) return;
+                if (error) console.error(error);
+                setMatches((data || []) as TournamentMatch[]);
+                setLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [tournament.id, supabase]);
+
+    useEffect(() => {
+        if (!resultMatchId) {
+            handledResultParamRef.current = null;
+            return;
+        }
+        if (loading) return;
+        if (handledResultParamRef.current === resultMatchId) return;
+
+        const m = bracketMatches.find((x) => x.id === resultMatchId);
+        handledResultParamRef.current = resultMatchId;
+
+        if (m && m.status !== "completed") {
+            setEditingId(m.id);
+            setWinnerPlayerId(m.winner_id || "");
+            setSetScores(parseFinalScoreToSets(m.final_score, numSets));
+        }
+
+        router.replace(`/scoring/tournaments/${tournament.id}?tab=results`, { scroll: false });
+    }, [resultMatchId, loading, bracketMatches, tournament.id, router, numSets]);
+
+    const handleSaveResult = async (matchId: string) => {
+        const finalScoreStr = setScores.filter(Boolean).join(", ");
+        try {
+            const { error } = await supabase
+                .from("matches")
+                .update({
+                    status: "completed",
+                    winner_id: winnerPlayerId || null,
+                    final_score: finalScoreStr || null,
+                    completed_at: new Date().toISOString(),
+                })
+                .eq("id", matchId);
+            if (error) throw error;
+            setEditingId(null);
+            setWinnerPlayerId("");
+            setSetScores(Array(numSets).fill(""));
+            onRefresh();
+            refreshMatches();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to save result");
+        }
+    };
+
+    const startEdit = (m: TournamentMatch) => {
+        setEditingId(m.id);
+        setWinnerPlayerId(m.winner_id || "");
+        setSetScores(parseFinalScoreToSets(m.final_score, numSets));
+    };
+
+    const sidePlayer = (m: TournamentMatch, side: "player_1" | "player_2") =>
+        m.match_players?.find((x) => x.team === side);
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-xl font-semibold text-gray-900">Results</h2>
+                {!canEdit && <p className="text-sm text-gray-600">View only</p>}
+            </div>
+            {canEdit && (
+                <p className="text-sm text-gray-600">
+                    Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set
+                    blank if the match ended early (e.g. 2-0).
+                </p>
+            )}
+            {loading ? (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 text-center text-gray-600 text-sm">
+                    Loading results…
+                </div>
+            ) : (
+                <div className="space-y-2">
+                    {bracketMatches.map((match) => {
+                        const m = match as TournamentMatch;
+                        const isEditing = editingId === match.id;
+                        const p1 = sidePlayer(m, "player_1");
+                        const p2 = sidePlayer(m, "player_2");
+                        const n1 = p1?.player_name ?? "TBD";
+                        const n2 = p2?.player_name ?? "TBD";
+                        const cat1 = categoryForParticipantName(participants, n1);
+                        const cat2 = categoryForParticipantName(participants, n2);
+                        const winnerP = m.match_players?.find((x) => x.id === m.winner_id);
+                        const winnerLine = winnerP?.player_name ?? "—";
+                        const winnerOptions = [p1, p2].filter(Boolean) as MatchPlayer[];
+
+                        return (
+                            <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="min-w-0 flex-1">
+                                        <BracketSinglesLineupBlocks
+                                            nameA={n1}
+                                            nameB={n2}
+                                            categoryA={cat1}
+                                            categoryB={cat2}
+                                        />
+                                        {m.match_date || (m.court_number != null && String(m.court_number).trim() !== "") ? (
+                                            <div className="text-sm font-semibold text-gray-800 mt-2">
+                                                {m.match_date
+                                                    ? new Date(m.match_date).toLocaleString(undefined, {
+                                                          weekday: "short",
+                                                          month: "short",
+                                                          day: "numeric",
+                                                          hour: "numeric",
+                                                          minute: "2-digit",
+                                                      })
+                                                    : "No time set"}
+                                                {m.court_number != null && String(m.court_number).trim() !== ""
+                                                    ? ` · Court ${String(m.court_number).trim()}`
+                                                    : ""}
+                                            </div>
+                                        ) : null}
+                                        {m.match_number ? (
+                                            <div className="text-xs text-gray-500 font-mono mt-1">{m.match_number}</div>
+                                        ) : null}
+                                        {match.status === "completed" && (
+                                            <span className="text-gray-600 text-sm block sm:inline mt-2">
+                                                Won by {winnerLine}
+                                                {m.final_score ? ` · ${formatSetsForDisplay(m.final_score)}` : ""}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {match.status !== "completed" ? (
+                                        canEdit && isEditing ? (
+                                            <div className="flex flex-col gap-3 w-full mt-2">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <select
+                                                        value={winnerPlayerId}
+                                                        onChange={(e) => setWinnerPlayerId(e.target.value)}
+                                                        className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                                    >
+                                                        <option value="">Select winner</option>
+                                                        {winnerOptions.map((p) => (
+                                                            <option key={p.id} value={p.id}>
+                                                                {p.player_name}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleSaveResult(match.id)}
+                                                        className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingId(null);
+                                                            setWinnerPlayerId("");
+                                                            setSetScores(Array(numSets).fill(""));
+                                                        }}
+                                                        className="text-gray-700 hover:text-gray-900 text-sm font-medium"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-3">
+                                                    {Array.from({ length: numSets }, (_, i) => (
+                                                        <div key={i} className="flex items-center gap-1">
+                                                            <label className="text-xs text-gray-600 whitespace-nowrap">
+                                                                Set {i + 1}
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                value={setScores[i] ?? ""}
+                                                                onChange={(e) => {
+                                                                    const next = [...setScores];
+                                                                    next[i] = e.target.value;
+                                                                    setSetScores(next);
+                                                                }}
+                                                                placeholder="21-10"
+                                                                className="w-16 px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        ) : canEdit ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => startEdit(m)}
+                                                className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium shrink-0"
+                                            >
+                                                Enter result
+                                            </button>
+                                        ) : (
+                                            <span className="text-gray-600 text-sm">Upcoming</span>
+                                        )
+                                    ) : (
+                                        <span className="text-green-600 text-sm font-medium shrink-0">Completed</span>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            {!loading && bracketMatches.length === 0 && (
+                <p className="text-gray-600 text-sm">No bracket matches yet. Generate brackets to create matches.</p>
+            )}
+        </div>
+    );
 }
 
 function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament: Tournament; onRefresh: () => void; canEdit?: boolean }) {
@@ -3626,6 +4704,259 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
     );
 }
 
+function compareIndividualParticipantStatRows(
+    a: { played: number; won: number; lost: number; pts: number; participant: Participant },
+    b: { played: number; won: number; lost: number; pts: number; participant: Participant },
+    sortKey: PlayerStatsSortKey
+): number {
+    if (sortKey === "name") {
+        return (a.participant.player_name || "").localeCompare(b.participant.player_name || "", undefined, {
+            sensitivity: "base",
+        });
+    }
+    let primary = 0;
+    if (sortKey === "pts") primary = b.pts - a.pts;
+    else if (sortKey === "played") primary = b.played - a.played;
+    else if (sortKey === "won") primary = b.won - a.won;
+    else primary = b.lost - a.lost;
+    if (primary !== 0) return primary;
+    if (b.pts !== a.pts) return b.pts - a.pts;
+    return (a.participant.player_name || "").localeCompare(b.participant.player_name || "", undefined, { sensitivity: "base" });
+}
+
+function IndividualPlayerStatsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+    const [sortKey, setSortKey] = useState<PlayerStatsSortKey>("pts");
+    const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
+    const isMobileLayout = useIsMaxMd();
+    const supabase = createClient();
+
+    useEffect(() => {
+        supabase
+            .from("matches")
+            .select("*, match_players(*)")
+            .eq("tournament_id", tournament.id)
+            .eq("status", "completed")
+            .then(({ data }) => setMatches((data || []) as TournamentMatch[]));
+    }, [tournament.id, supabase]);
+
+    const rowsWithStats = useMemo(() => {
+        const stats: Record<string, { played: number; won: number; lost: number }> = {};
+        participants.forEach((p) => {
+            stats[p.id] = { played: 0, won: 0, lost: 0 };
+        });
+        for (const match of matches) {
+            const tm = match as TournamentMatch;
+            if (tm.team_a_id || tm.team_b_id) continue;
+            const p1 = tm.match_players?.find((x) => x.team === "player_1");
+            const p2 = tm.match_players?.find((x) => x.team === "player_2");
+            if (!p1 || !p2) continue;
+            const pid1 = participantIdForMatchPlayer(p1, participants);
+            const pid2 = participantIdForMatchPlayer(p2, participants);
+            const w = tm.winner_id;
+            if (pid1 && stats[pid1]) {
+                stats[pid1].played += 1;
+                if (w === p1.id) stats[pid1].won += 1;
+                else if (w && w === p2.id) stats[pid1].lost += 1;
+            }
+            if (pid2 && stats[pid2]) {
+                stats[pid2].played += 1;
+                if (w === p2.id) stats[pid2].won += 1;
+                else if (w && w === p1.id) stats[pid2].lost += 1;
+            }
+        }
+        return participants.map((p) => {
+            const s = stats[p.id] || { played: 0, won: 0, lost: 0 };
+            return { participant: p, played: s.played, won: s.won, lost: s.lost, pts: s.won };
+        });
+    }, [participants, matches]);
+
+    const sorted = useMemo(() => {
+        const copy = [...rowsWithStats];
+        copy.sort((a, b) => compareIndividualParticipantStatRows(a, b, sortKey));
+        return copy;
+    }, [rowsWithStats, sortKey]);
+
+    return (
+        <div className="space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">Player stats</h2>
+                <div className="flex flex-col gap-1 sm:items-end">
+                    <label htmlFor="individual-player-stats-sort" className="text-xs font-medium text-gray-700">
+                        Sort by
+                    </label>
+                    <select
+                        id="individual-player-stats-sort"
+                        value={sortKey}
+                        onChange={(e) => {
+                            setSortKey(e.target.value as PlayerStatsSortKey);
+                            setExpandedParticipantId(null);
+                        }}
+                        className="w-full sm:w-56 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                        {(Object.keys(PLAYER_STATS_SORT_LABELS) as PlayerStatsSortKey[]).map((key) => (
+                            <option key={key} value={key}>
+                                {PLAYER_STATS_SORT_LABELS[key]}
+                            </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-gray-500 hidden sm:block">
+                        PL = played, W = won, L = lost, PTS = points (1 per win). Rank (#) follows this order. Stats use
+                        completed singles matches; link match players to participants (name or account) to count.
+                    </p>
+                </div>
+            </div>
+            <p className="text-xs text-gray-600 sm:hidden -mt-2">
+                On small screens, tap a row to expand club, category, and stats.
+            </p>
+
+            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+                {sorted.length === 0 ? (
+                    <div className="p-4 text-sm text-gray-600">No participants in this tournament yet.</div>
+                ) : (
+                    <div className="divide-y divide-gray-200">
+                        {sorted.map((row, idx) => {
+                            const rank = idx + 1;
+                            const paddedRank = String(rank).padStart(3, "0");
+                            const participantName = row.participant.player_name || "—";
+                            const club = row.participant.club != null && String(row.participant.club).trim() !== ""
+                                ? String(row.participant.club).trim()
+                                : null;
+                            const category =
+                                row.participant.category != null && String(row.participant.category).trim() !== ""
+                                    ? String(row.participant.category).trim()
+                                    : null;
+                            const subLine = [club, category ? `(${category})` : null].filter(Boolean).join(" ");
+                            const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
+                            const initials =
+                                participantName
+                                    .split(" ")
+                                    .filter(Boolean)
+                                    .slice(0, 2)
+                                    .map((p) => p[0]?.toUpperCase())
+                                    .join("") || "P";
+                            const isExpanded = expandedParticipantId === row.participant.id;
+                            const handleRowActivate = () => {
+                                if (!isMobileLayout) return;
+                                setExpandedParticipantId((id) => (id === row.participant.id ? null : row.participant.id));
+                            };
+
+                            return (
+                                <div
+                                    key={row.participant.id}
+                                    role={isMobileLayout ? "button" : undefined}
+                                    tabIndex={isMobileLayout ? 0 : undefined}
+                                    aria-expanded={isMobileLayout ? isExpanded : undefined}
+                                    aria-label={isMobileLayout ? `${participantName}, rank ${rank}. Tap for full stats.` : undefined}
+                                    onClick={handleRowActivate}
+                                    onKeyDown={(e) => {
+                                        if (!isMobileLayout) return;
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            handleRowActivate();
+                                        }
+                                    }}
+                                    className={`flex items-center justify-between gap-3 sm:gap-4 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-inset ${
+                                        isMobileLayout ? "cursor-pointer active:bg-red-50/60 max-md:select-none" : ""
+                                    }`}
+                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                >
+                                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                                        <div className="relative flex-shrink-0">
+                                            <div className="h-11 w-11 rounded-full flex items-center justify-center border border-gray-200 bg-gray-100 text-gray-900 font-semibold">
+                                                {initials}
+                                            </div>
+                                            {medal && (
+                                                <span className="absolute -bottom-2 -left-2 text-lg" aria-label={`Rank ${rank}`}>
+                                                    {medal}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="min-w-0 flex-1 text-left">
+                                            <div className="flex items-start justify-between gap-2 md:block">
+                                                <div className="text-sm sm:text-base font-semibold text-gray-900 truncate md:truncate">
+                                                    {participantName}
+                                                </div>
+                                                <span className="md:hidden text-xs text-gray-500 shrink-0" aria-hidden>
+                                                    {isExpanded ? "▲" : "▼"}
+                                                </span>
+                                            </div>
+                                            <div className="hidden md:block text-sm text-gray-800 mt-0.5">
+                                                {subLine ? (
+                                                    <span className="font-medium text-gray-900">{subLine}</span>
+                                                ) : (
+                                                    <span className="text-gray-500">—</span>
+                                                )}
+                                                <span className="text-gray-800">
+                                                    {" "}
+                                                    • PL: {row.played} • W: {row.won} • L: {row.lost} • PTS: {row.pts}
+                                                </span>
+                                            </div>
+                                            <div
+                                                className={`md:hidden text-xs text-gray-800 mt-0.5 ${isExpanded ? "hidden" : "line-clamp-2"}`}
+                                            >
+                                                <span className="text-gray-900 font-medium">{subLine || "—"}</span>
+                                                <span className="text-gray-700">
+                                                    {" "}
+                                                    · PL {row.played} · W {row.won} · L {row.lost} · PTS {row.pts}
+                                                </span>
+                                            </div>
+                                            {isExpanded && (
+                                                <div className="md:hidden mt-2 pt-2 border-t border-gray-200 space-y-2 text-sm">
+                                                    {club ? (
+                                                        <div>
+                                                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                                                Club
+                                                            </span>
+                                                            <p className="text-gray-900 font-medium break-words">{club}</p>
+                                                        </div>
+                                                    ) : null}
+                                                    {category ? (
+                                                        <div>
+                                                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                                                Category
+                                                            </span>
+                                                            <p className="text-gray-900 break-words">{category}</p>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
+                                                            <div className="text-xs text-gray-600">Played</div>
+                                                            <div className="text-lg font-semibold text-gray-900">{row.played}</div>
+                                                        </div>
+                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
+                                                            <div className="text-xs text-gray-600">Wins</div>
+                                                            <div className="text-lg font-semibold text-gray-900">{row.won}</div>
+                                                        </div>
+                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
+                                                            <div className="text-xs text-gray-600">Losses</div>
+                                                            <div className="text-lg font-semibold text-gray-900">{row.lost}</div>
+                                                        </div>
+                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
+                                                            <div className="text-xs text-gray-600">Points</div>
+                                                            <div className="text-lg font-semibold text-gray-900">{row.pts}</div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex flex-col items-end flex-shrink-0 text-right">
+                                        <span className="text-[10px] uppercase tracking-wide text-gray-500 md:hidden">Rank</span>
+                                        <div className="text-2xl sm:text-3xl font-semibold tracking-wide text-gray-900">{paddedRank}</div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 // Settings Tab Component
 function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tournament: Tournament; onTournamentUpdate: () => void; canEdit?: boolean }) {
     const [settings, setSettings] = useState({
@@ -3705,7 +5036,9 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
                         <option value="individual">Individual (player vs player)</option>
                         <option value="team">Team (team vs team — shows Teams, Schedule, Results, Stats)</option>
                     </select>
-                    <p className="text-xs text-gray-500 mt-1">Team mode shows Teams, Schedule, Results, Team Stats and Player Stats tabs.</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        Team mode adds Teams, Team Stats, and Player Stats. Individual mode includes Groups, Brackets, and Player Stats (singles leaderboard).
+                    </p>
                 </div>
 
                 <div>
