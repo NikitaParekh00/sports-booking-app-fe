@@ -6,7 +6,7 @@ ALTER TABLE public.tournaments
 ADD COLUMN IF NOT EXISTS format VARCHAR(50) DEFAULT 'single_elimination' 
   CHECK (format IN ('single_elimination', 'double_elimination', 'round_robin', 'round_robin_knockout', 'swiss')),
 ADD COLUMN IF NOT EXISTS sets_per_match INTEGER DEFAULT 3 CHECK (sets_per_match IN (1, 3, 5)),
-ADD COLUMN IF NOT EXISTS points_per_set INTEGER DEFAULT 21 CHECK (points_per_set IN (15, 21)),
+ADD COLUMN IF NOT EXISTS points_per_set INTEGER DEFAULT 21 CHECK (points_per_set IN (11, 15, 21)),
 ADD COLUMN IF NOT EXISTS win_by_two BOOLEAN DEFAULT true,
 ADD COLUMN IF NOT EXISTS max_points INTEGER DEFAULT 30,
 ADD COLUMN IF NOT EXISTS seeding_method VARCHAR(50) DEFAULT 'random' 
@@ -121,45 +121,23 @@ ALTER TABLE public.tournament_match_details ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_group_standings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tournament_seeding ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies for tournament groups
-CREATE POLICY "Allow public read access to tournament groups" ON public.tournament_groups
-  FOR SELECT USING (true);
+-- RLS Policies for tournament groups (open: app uses localStorage auth; auth.uid() often null — see fix_tournament_groups_rls_localstorage_auth.sql)
+CREATE POLICY "Allow all access to tournament groups" ON public.tournament_groups
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
 
-CREATE POLICY "Users can manage tournament groups for their tournaments" ON public.tournament_groups
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.tournaments 
-      WHERE tournaments.id = tournament_groups.tournament_id 
-      AND tournaments.created_by = auth.uid()
-    )
-  );
+-- RLS Policies for group participants (same as groups)
+CREATE POLICY "Allow all access to tournament_group_participants" ON public.tournament_group_participants
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
 
--- RLS Policies for group participants
-CREATE POLICY "Allow public read access to group participants" ON public.tournament_group_participants
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can manage group participants for their tournaments" ON public.tournament_group_participants
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.tournament_groups tg
-      JOIN public.tournaments t ON t.id = tg.tournament_id
-      WHERE tg.id = tournament_group_participants.group_id 
-      AND t.created_by = auth.uid()
-    )
-  );
-
--- RLS Policies for tournament brackets
-CREATE POLICY "Allow public read access to tournament brackets" ON public.tournament_brackets
-  FOR SELECT USING (true);
-
-CREATE POLICY "Users can manage tournament brackets for their tournaments" ON public.tournament_brackets
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM public.tournaments 
-      WHERE tournaments.id = tournament_brackets.tournament_id 
-      AND tournaments.created_by = auth.uid()
-    )
-  );
+-- RLS Policies for tournament brackets (open; localStorage auth — see fix_tournament_brackets_rls_localstorage_auth.sql)
+CREATE POLICY "Allow all access to tournament_brackets" ON public.tournament_brackets
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
 
 -- RLS Policies for tournament match details
 CREATE POLICY "Allow public read access to tournament match details" ON public.tournament_match_details

@@ -1,5 +1,9 @@
 -- Assign 15-minute match_date slots per court (Supabase / PostgreSQL).
 --
+-- LIMITATION (important): This script does NOT know players. Two courts at 6 PM can both
+--   include the same person — use the app button "Assign times to matches" for player-aware
+--   scheduling (no double-booking; max 2 consecutive 15-min matches per player).
+--
 -- COURT-WISE (yes): ROW_NUMBER() is PARTITION BY court, so each court has its own timeline.
 --   • Court 1: first match = 6:00 PM, then +15 min, +15 min, … on THAT court only.
 --   • Court 2: also starts its first match at 6:00 PM the same day (parallel with Court 1).

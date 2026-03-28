@@ -37,7 +37,21 @@ export type DoublesScheduleResult = {
     /** Participant ids still below target */
     unmetPlayerIds: string[];
     targetPerPlayer: number;
+    /** Non-fatal gaps if the roster graph cannot satisfy every rule */
+    coverageNotes?: string[];
 };
+
+/** Both players Advanced (normalized) → this key; Adv+Adv sides only face other Adv+Adv. */
+export const ADV_ADV_CATEGORY_KEY = "advanced+advanced";
+
+function edgeKey(id1: string, id2: string): string {
+    return id1 < id2 ? `${id1}\t${id2}` : `${id2}\t${id1}`;
+}
+
+/** Coverage add-ons must not push any participant past target appearances (keeps 36×12÷4 = 108 max). */
+function allFourPlayersHaveRoom(plays: Record<string, number>, ids: string[], targetPerPlayer: number): boolean {
+    return ids.every((id) => (plays[id] ?? 0) < targetPerPlayer);
+}
 
 function pairKey(p1: RosterPlayer, p2: RosterPlayer): string {
     return [p1.categoryNorm, p2.categoryNorm].sort().join("+");
@@ -55,6 +69,429 @@ function enumeratePairs(players: RosterPlayer[]): { a: RosterPlayer; b: RosterPl
     return out;
 }
 
+function rosterHasAdvAdvPair(team: TeamRosterInput): boolean {
+    return enumeratePairs(team.players).some((p) => p.key === ADV_ADV_CATEGORY_KEY);
+}
+
+function buildTeammateCoverage(matches: GeneratedDoublesMatch[]): Map<string, Set<string>> {
+    const m = new Map<string, Set<string>>();
+    for (const g of matches) {
+        const [xa, xb] = g.sideA;
+        const [ya, yb] = g.sideB;
+        if (!m.has(g.teamAId)) m.set(g.teamAId, new Set());
+        if (!m.has(g.teamBId)) m.set(g.teamBId, new Set());
+        m.get(g.teamAId)!.add(edgeKey(xa.participantId, xb.participantId));
+        m.get(g.teamBId)!.add(edgeKey(ya.participantId, yb.participantId));
+    }
+    return m;
+}
+
+/** Teams that have played at least one Adv+Adv doubles match (either side). */
+function teamsSatisfiedAdvAdv(matches: GeneratedDoublesMatch[]): Set<string> {
+    const s = new Set<string>();
+    for (const g of matches) {
+        if (g.categoryKey !== ADV_ADV_CATEGORY_KEY) continue;
+        s.add(g.teamAId);
+        s.add(g.teamBId);
+    }
+    return s;
+}
+
+/** Unordered team-pair keys that already have an Adv+Adv vs Adv+Adv match between them. */
+function buildAdvAdvTeamPairKeys(matches: GeneratedDoublesMatch[]): Set<string> {
+    const s = new Set<string>();
+    for (const g of matches) {
+        if (g.categoryKey !== ADV_ADV_CATEGORY_KEY) continue;
+        s.add(edgeKey(g.teamAId, g.teamBId));
+    }
+    return s;
+}
+
+function countMissingTeammatePairs(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
+    const cov = buildTeammateCoverage(matches);
+    let n = 0;
+    for (const r of rosters) {
+        const c = cov.get(r.teamId) ?? new Set();
+        for (const p of enumeratePairs(r.players)) {
+            if (!c.has(edgeKey(p.a.participantId, p.b.participantId))) n++;
+        }
+    }
+    return n;
+}
+
+function countAdvAdvUnsatisfiedTeams(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
+    const sat = teamsSatisfiedAdvAdv(matches);
+    let n = 0;
+    for (const r of rosters) {
+        if (rosterHasAdvAdvPair(r) && !sat.has(r.teamId)) n++;
+    }
+    return n;
+}
+
+/** Each unordered team pair (both can field Adv+Adv) must have ≥1 Adv+Adv vs Adv+Adv match. */
+function countMissingAdvAdvTeamPairings(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
+    const sat = buildAdvAdvTeamPairKeys(matches);
+    let n = 0;
+    for (let i = 0; i < rosters.length; i++) {
+        for (let j = i + 1; j < rosters.length; j++) {
+            const A = rosters[i];
+            const B = rosters[j];
+            if (!rosterHasAdvAdvPair(A) || !rosterHasAdvAdvPair(B)) continue;
+            if (!sat.has(edgeKey(A.teamId, B.teamId))) n++;
+        }
+    }
+    return n;
+}
+
+/** Player on homeTeam played on an Adv+Adv side vs oppTeam's Adv+Adv side. */
+function hasPlayerAdvAdvVersusTeam(
+    matches: GeneratedDoublesMatch[],
+    homeTeamId: string,
+    playerId: string,
+    oppTeamId: string
+): boolean {
+    for (const g of matches) {
+        if (g.categoryKey !== ADV_ADV_CATEGORY_KEY) continue;
+        if (g.teamAId === homeTeamId && g.teamBId === oppTeamId) {
+            if (g.sideA.some((p) => p.participantId === playerId)) return true;
+        }
+        if (g.teamAId === oppTeamId && g.teamBId === homeTeamId) {
+            if (g.sideB.some((p) => p.participantId === playerId)) return true;
+        }
+    }
+    return false;
+}
+
+function playerIsInSomeAdvAdvPairOnTeam(team: TeamRosterInput, playerId: string): boolean {
+    return enumeratePairs(team.players).some(
+        (p) =>
+            p.key === ADV_ADV_CATEGORY_KEY &&
+            (p.a.participantId === playerId || p.b.participantId === playerId)
+    );
+}
+
+function countMissingAdvancedPlayerAdvCross(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
+    let n = 0;
+    for (const TA of rosters) {
+        for (const pl of TA.players) {
+            if (pl.categoryNorm !== "advanced") continue;
+            if (!playerIsInSomeAdvAdvPairOnTeam(TA, pl.participantId)) continue;
+            for (const TB of rosters) {
+                if (TB.teamId === TA.teamId) continue;
+                if (!rosterHasAdvAdvPair(TB)) continue;
+                if (!hasPlayerAdvAdvVersusTeam(matches, TA.teamId, pl.participantId, TB.teamId)) n++;
+            }
+        }
+    }
+    return n;
+}
+
+/**
+ * Human-readable gaps (after generation). Use for alerts / QA.
+ */
+export function reportDoublesConstraintGaps(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[]
+): string[] {
+    const notes: string[] = [];
+    const cov = buildTeammateCoverage(matches);
+    for (const r of rosters) {
+        const c = cov.get(r.teamId) ?? new Set();
+        const missing: string[] = [];
+        for (const p of enumeratePairs(r.players)) {
+            if (!c.has(edgeKey(p.a.participantId, p.b.participantId))) {
+                missing.push(`${p.a.name} + ${p.b.name}`);
+            }
+        }
+        if (missing.length > 0) {
+            notes.push(
+                `${r.teamName}: ${missing.length} teammate pair(s) never played together on the same side (e.g. ${missing.slice(0, 3).join("; ")}${missing.length > 3 ? "…" : ""}).`
+            );
+        }
+    }
+    const advPairSat = buildAdvAdvTeamPairKeys(matches);
+    for (let i = 0; i < rosters.length; i++) {
+        for (let j = i + 1; j < rosters.length; j++) {
+            const A = rosters[i];
+            const B = rosters[j];
+            if (!rosterHasAdvAdvPair(A) || !rosterHasAdvAdvPair(B)) continue;
+            if (!advPairSat.has(edgeKey(A.teamId, B.teamId))) {
+                notes.push(
+                    `Missing Advanced+Advanced vs Advanced+Advanced between "${A.teamName}" and "${B.teamName}" (both need two Advanced players; add/fix categories or another team).`
+                );
+            }
+        }
+    }
+    for (const TA of rosters) {
+        for (const pl of TA.players) {
+            if (pl.categoryNorm !== "advanced") continue;
+            if (!playerIsInSomeAdvAdvPairOnTeam(TA, pl.participantId)) continue;
+            for (const TB of rosters) {
+                if (TB.teamId === TA.teamId) continue;
+                if (!rosterHasAdvAdvPair(TB)) continue;
+                if (!hasPlayerAdvAdvVersusTeam(matches, TA.teamId, pl.participantId, TB.teamId)) {
+                    notes.push(
+                        `"${pl.name}" (${TA.teamName}): no Advanced+Advanced vs Advanced+Advanced match scheduled vs "${TB.teamName}".`
+                    );
+                }
+            }
+        }
+    }
+    return notes;
+}
+
+function tryAppendCoverageMatch(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[],
+    plays: Record<string, number>,
+    teamCoverage: Map<string, Set<string>>,
+    advAdvSatisfied: Set<string>,
+    targetPerPlayer: number
+): boolean {
+    const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
+        ids.forEach((id) => {
+            plays[id] = (plays[id] ?? 0) + 1;
+        });
+        matches.push({
+            teamAId: TA.teamId,
+            teamBId: TB.teamId,
+            teamAName: TA.teamName,
+            teamBName: TB.teamName,
+            sideA: [pa.a, pa.b],
+            sideB: [pb.a, pb.b],
+            categoryKey: pa.key,
+        });
+        if (!teamCoverage.has(TA.teamId)) teamCoverage.set(TA.teamId, new Set());
+        if (!teamCoverage.has(TB.teamId)) teamCoverage.set(TB.teamId, new Set());
+        teamCoverage.get(TA.teamId)!.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        teamCoverage.get(TB.teamId)!.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        if (pa.key === ADV_ADV_CATEGORY_KEY) {
+            advAdvSatisfied.add(TA.teamId);
+            advAdvSatisfied.add(TB.teamId);
+        }
+        return true;
+    };
+
+    // Missing teammate edge (same-side pair at least once)
+    for (const TA of rosters) {
+        const covA = teamCoverage.get(TA.teamId) ?? new Set();
+        for (const pa of enumeratePairs(TA.players)) {
+            const ek = edgeKey(pa.a.participantId, pa.b.participantId);
+            if (covA.has(ek)) continue;
+            for (const TB of rosters) {
+                if (TB.teamId === TA.teamId) continue;
+                const pairsB = enumeratePairs(TB.players).filter((pb) => pb.key === pa.key);
+                for (const pb of pairsB) {
+                    if (pushMatch(TA, TB, pa, pb)) return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+/** One Adv+Adv vs Adv+Adv match for a team pair that does not have one yet. */
+function tryAppendAdvAdvTeamPairing(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[],
+    plays: Record<string, number>,
+    teamCoverage: Map<string, Set<string>>,
+    advAdvSatisfied: Set<string>,
+    pairSat: Set<string>,
+    targetPerPlayer: number
+): boolean {
+    const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
+        ids.forEach((id) => {
+            plays[id] = (plays[id] ?? 0) + 1;
+        });
+        matches.push({
+            teamAId: TA.teamId,
+            teamBId: TB.teamId,
+            teamAName: TA.teamName,
+            teamBName: TB.teamName,
+            sideA: [pa.a, pa.b],
+            sideB: [pb.a, pb.b],
+            categoryKey: pa.key,
+        });
+        if (!teamCoverage.has(TA.teamId)) teamCoverage.set(TA.teamId, new Set());
+        if (!teamCoverage.has(TB.teamId)) teamCoverage.set(TB.teamId, new Set());
+        teamCoverage.get(TA.teamId)!.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        teamCoverage.get(TB.teamId)!.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        advAdvSatisfied.add(TA.teamId);
+        advAdvSatisfied.add(TB.teamId);
+        pairSat.add(edgeKey(TA.teamId, TB.teamId));
+        return true;
+    };
+
+    for (let i = 0; i < rosters.length; i++) {
+        for (let j = i + 1; j < rosters.length; j++) {
+            const TA = rosters[i];
+            const TB = rosters[j];
+            if (!rosterHasAdvAdvPair(TA) || !rosterHasAdvAdvPair(TB)) continue;
+            const pk = edgeKey(TA.teamId, TB.teamId);
+            if (pairSat.has(pk)) continue;
+            const advPairsA = enumeratePairs(TA.players).filter((p) => p.key === ADV_ADV_CATEGORY_KEY);
+            const advPairsB = enumeratePairs(TB.players).filter((p) => p.key === ADV_ADV_CATEGORY_KEY);
+            for (const pa of advPairsA) {
+                for (const pb of advPairsB) {
+                    if (pushMatch(TA, TB, pa, pb)) return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/** Each Advanced player on TA appears in ≥1 Adv+Adv vs Adv+Adv vs each other Adv-capable team TB. */
+function tryAppendAdvancedPlayerVersusAdvTeam(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[],
+    plays: Record<string, number>,
+    teamCoverage: Map<string, Set<string>>,
+    advAdvSatisfied: Set<string>,
+    pairSat: Set<string>,
+    targetPerPlayer: number
+): boolean {
+    const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
+        ids.forEach((id) => {
+            plays[id] = (plays[id] ?? 0) + 1;
+        });
+        matches.push({
+            teamAId: TA.teamId,
+            teamBId: TB.teamId,
+            teamAName: TA.teamName,
+            teamBName: TB.teamName,
+            sideA: [pa.a, pa.b],
+            sideB: [pb.a, pb.b],
+            categoryKey: pa.key,
+        });
+        if (!teamCoverage.has(TA.teamId)) teamCoverage.set(TA.teamId, new Set());
+        if (!teamCoverage.has(TB.teamId)) teamCoverage.set(TB.teamId, new Set());
+        teamCoverage.get(TA.teamId)!.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        teamCoverage.get(TB.teamId)!.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        advAdvSatisfied.add(TA.teamId);
+        advAdvSatisfied.add(TB.teamId);
+        pairSat.add(edgeKey(TA.teamId, TB.teamId));
+        return true;
+    };
+
+    for (const TA of rosters) {
+        for (const pl of TA.players) {
+            if (pl.categoryNorm !== "advanced") continue;
+            if (!playerIsInSomeAdvAdvPairOnTeam(TA, pl.participantId)) continue;
+            for (const TB of rosters) {
+                if (TB.teamId === TA.teamId) continue;
+                if (!rosterHasAdvAdvPair(TB)) continue;
+                if (hasPlayerAdvAdvVersusTeam(matches, TA.teamId, pl.participantId, TB.teamId)) continue;
+                const advPairsA = enumeratePairs(TA.players).filter(
+                    (p) =>
+                        p.key === ADV_ADV_CATEGORY_KEY &&
+                        (p.a.participantId === pl.participantId || p.b.participantId === pl.participantId)
+                );
+                const advPairsB = enumeratePairs(TB.players).filter((p) => p.key === ADV_ADV_CATEGORY_KEY);
+                for (const pa of advPairsA) {
+                    for (const pb of advPairsB) {
+                        if (pushMatch(TA, TB, pa, pb)) return true;
+                    }
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * Guarantee (within appearance caps): for each unordered pair of teams that can both field
+ * Advanced+Advanced, schedule exactly one match with each side’s Adv+Adv pair vs the other’s.
+ * Runs before the main greedy loop so this does not compete with mixed lineups for budget.
+ */
+function seedAdvAdvVersusEveryAdvTeamPair(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[],
+    plays: Record<string, number>,
+    teamCoverage: Map<string, Set<string>>,
+    targetPerPlayer: number
+): void {
+    const indexPairs: [number, number][] = [];
+    for (let i = 0; i < rosters.length; i++) {
+        for (let j = i + 1; j < rosters.length; j++) {
+            indexPairs.push([i, j]);
+        }
+    }
+    for (let k = indexPairs.length - 1; k > 0; k--) {
+        const r = Math.floor(Math.random() * (k + 1));
+        [indexPairs[k], indexPairs[r]] = [indexPairs[r], indexPairs[k]];
+    }
+
+    for (const [i, j] of indexPairs) {
+        const TA = rosters[i];
+        const TB = rosters[j];
+        if (!rosterHasAdvAdvPair(TA) || !rosterHasAdvAdvPair(TB)) continue;
+
+        const advPairsA = enumeratePairs(TA.players).filter((p) => p.key === ADV_ADV_CATEGORY_KEY);
+        const advPairsB = enumeratePairs(TB.players).filter((p) => p.key === ADV_ADV_CATEGORY_KEY);
+        if (advPairsA.length === 0 || advPairsB.length === 0) continue;
+
+        for (let ka = advPairsA.length - 1; ka > 0; ka--) {
+            const r = Math.floor(Math.random() * (ka + 1));
+            [advPairsA[ka], advPairsA[r]] = [advPairsA[r], advPairsA[ka]];
+        }
+        for (let kb = advPairsB.length - 1; kb > 0; kb--) {
+            const r = Math.floor(Math.random() * (kb + 1));
+            [advPairsB[kb], advPairsB[r]] = [advPairsB[r], advPairsB[kb]];
+        }
+
+        const pa = advPairsA[0];
+        const pb = advPairsB[0];
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) continue;
+
+        ids.forEach((id) => {
+            plays[id] = (plays[id] ?? 0) + 1;
+        });
+        matches.push({
+            teamAId: TA.teamId,
+            teamBId: TB.teamId,
+            teamAName: TA.teamName,
+            teamBName: TB.teamName,
+            sideA: [pa.a, pa.b],
+            sideB: [pb.a, pb.b],
+            categoryKey: pa.key,
+        });
+        const covA = teamCoverage.get(TA.teamId)!;
+        const covB = teamCoverage.get(TB.teamId)!;
+        covA.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        covB.add(edgeKey(pb.a.participantId, pb.b.participantId));
+    }
+}
+
+function fillCoverageGaps(
+    rosters: TeamRosterInput[],
+    matches: GeneratedDoublesMatch[],
+    plays: Record<string, number>,
+    targetPerPlayer: number
+): void {
+    const teamCoverage = buildTeammateCoverage(matches);
+    const advAdvSatisfied = teamsSatisfiedAdvAdv(matches);
+    while (tryAppendCoverageMatch(rosters, matches, plays, teamCoverage, advAdvSatisfied, targetPerPlayer)) {
+        /* teammate pair coverage */
+    }
+    const pairSat = buildAdvAdvTeamPairKeys(matches);
+    while (tryAppendAdvAdvTeamPairing(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, targetPerPlayer)) {
+        /* every Adv-capable team pair gets ≥1 Adv+Adv vs Adv+Adv */
+    }
+    while (tryAppendAdvancedPlayerVersusAdvTeam(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, targetPerPlayer)) {
+        /* every Advanced player gets that lineup vs each other Adv-capable team */
+    }
+}
+
 /** Normalize participant category for matching (case-insensitive trim). */
 export function normalizeCategoryLabel(raw: string | null | undefined): string {
     const t = (raw ?? "").trim().toLowerCase();
@@ -62,13 +499,37 @@ export function normalizeCategoryLabel(raw: string | null | undefined): string {
 }
 
 /**
+ * If every participant reached `targetPerPlayer` appearances, match count would be
+ * (number of participants × target) / 4 (each doubles match adds one appearance to 4 players).
+ * That number is only achievable if skill-matched pairings allow it; often fewer matches are possible.
+ */
+export function theoreticalDoublesMatchCountIfFullyMet(totalParticipants: number, targetPerPlayer: number): number {
+    if (totalParticipants <= 0 || targetPerPlayer <= 0) return 0;
+    return (totalParticipants * targetPerPlayer) / 4;
+}
+
+/**
  * @param rosters One entry per club team; each must list all squad players with categories set.
  * @param targetPerPlayer Each player should play this many doubles matches (vs other teams).
  */
-export function generateBalancedDoublesSchedule(
-    rosters: TeamRosterInput[],
-    targetPerPlayer: number
-): DoublesScheduleResult {
+function cmpScheduleQuality(a: DoublesScheduleResult, b: DoublesScheduleResult, rosters: TeamRosterInput[]): number {
+    if (a.matches.length !== b.matches.length) return b.matches.length - a.matches.length;
+    if (a.unmetPlayerIds.length !== b.unmetPlayerIds.length) return a.unmetPlayerIds.length - b.unmetPlayerIds.length;
+    const missA = countMissingTeammatePairs(rosters, a.matches);
+    const missB = countMissingTeammatePairs(rosters, b.matches);
+    if (missA !== missB) return missA - missB;
+    const advPairA = countMissingAdvAdvTeamPairings(rosters, a.matches);
+    const advPairB = countMissingAdvAdvTeamPairings(rosters, b.matches);
+    if (advPairA !== advPairB) return advPairA - advPairB;
+    const pcA = countMissingAdvancedPlayerAdvCross(rosters, a.matches);
+    const pcB = countMissingAdvancedPlayerAdvCross(rosters, b.matches);
+    if (pcA !== pcB) return pcA - pcB;
+    const advA = countAdvAdvUnsatisfiedTeams(rosters, a.matches);
+    const advB = countAdvAdvUnsatisfiedTeams(rosters, b.matches);
+    return advA - advB;
+}
+
+function generateBalancedDoublesScheduleOnce(rosters: TeamRosterInput[], targetPerPlayer: number): DoublesScheduleResult {
     const plays: Record<string, number> = {};
     rosters.forEach((r) => {
         r.players.forEach((p) => {
@@ -77,6 +538,8 @@ export function generateBalancedDoublesSchedule(
     });
 
     const matches: GeneratedDoublesMatch[] = [];
+    const teamCoverage = new Map<string, Set<string>>();
+    rosters.forEach((r) => teamCoverage.set(r.teamId, new Set()));
 
     const teamPairs: [TeamRosterInput, TeamRosterInput][] = [];
     for (let i = 0; i < rosters.length; i++) {
@@ -85,18 +548,30 @@ export function generateBalancedDoublesSchedule(
         }
     }
 
+    seedAdvAdvVersusEveryAdvTeamPair(rosters, matches, plays, teamCoverage, targetPerPlayer);
+
     const allSatisfied = () => Object.values(plays).every((c) => c >= targetPerPlayer);
 
     let stagnation = 0;
     const maxStagnation = Math.max(200, rosters.length * rosters.length * targetPerPlayer * 4);
 
+    type MainCand = {
+        score: number;
+        covGain: number;
+        /** 1 if this would add the first Adv+Adv vs Adv+Adv for this unordered team pair (else 0). */
+        advTeamPairMissing: number;
+        TA: TeamRosterInput;
+        TB: TeamRosterInput;
+        pa: { a: RosterPlayer; b: RosterPlayer; key: string };
+        pb: { a: RosterPlayer; b: RosterPlayer; key: string };
+    };
+
     while (!allSatisfied() && stagnation < maxStagnation) {
-        let added = false;
-
-        // Shuffle order each pass to spread matches across team-pairs
-        const order = [...teamPairs].sort(() => Math.random() - 0.5);
-
-        for (const [TA, TB] of order) {
+        const advAdvPairsDone = buildAdvAdvTeamPairKeys(matches);
+        // Global best over all team pairs (not “first pair in random order that works”) — avoids
+        // getting stuck at 107 when a better placement exists on another pairing.
+        const pool: MainCand[] = [];
+        for (const [TA, TB] of teamPairs) {
             const pairsA = enumeratePairs(TA.players);
             const pairsB = enumeratePairs(TB.players);
             const byKeyB = new Map<string, { a: RosterPlayer; b: RosterPlayer; key: string }[]>();
@@ -105,12 +580,8 @@ export function generateBalancedDoublesSchedule(
                 byKeyB.get(pb.key)!.push(pb);
             }
 
-            type Cand = {
-                score: number;
-                pa: { a: RosterPlayer; b: RosterPlayer; key: string };
-                pb: { a: RosterPlayer; b: RosterPlayer; key: string };
-            };
-            const candidates: Cand[] = [];
+            const covA = teamCoverage.get(TA.teamId)!;
+            const covB = teamCoverage.get(TB.teamId)!;
 
             for (const pa of pairsA) {
                 const listB = byKeyB.get(pa.key);
@@ -119,42 +590,96 @@ export function generateBalancedDoublesSchedule(
                     const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
                     if (ids.some((id) => plays[id] >= targetPerPlayer)) continue;
                     const score = Math.min(...ids.map((id) => plays[id]));
-                    candidates.push({ score, pa, pb });
+                    const ekA = edgeKey(pa.a.participantId, pa.b.participantId);
+                    const ekB = edgeKey(pb.a.participantId, pb.b.participantId);
+                    const covGain = (covA.has(ekA) ? 0 : 1) + (covB.has(ekB) ? 0 : 1);
+                    const advTeamPairMissing =
+                        pa.key === ADV_ADV_CATEGORY_KEY && !advAdvPairsDone.has(edgeKey(TA.teamId, TB.teamId))
+                            ? 1
+                            : 0;
+                    pool.push({ score, covGain, advTeamPairMissing, TA, TB, pa, pb });
                 }
             }
-
-            if (candidates.length === 0) continue;
-
-            candidates.sort((x, y) => x.score - y.score);
-            const best = candidates[0];
-            const pa = best.pa;
-            const pb = best.pb;
-            const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
-            ids.forEach((id) => {
-                plays[id] += 1;
-            });
-            matches.push({
-                teamAId: TA.teamId,
-                teamBId: TB.teamId,
-                teamAName: TA.teamName,
-                teamBName: TB.teamName,
-                sideA: [pa.a, pa.b],
-                sideB: [pb.a, pb.b],
-                categoryKey: pa.key,
-            });
-            added = true;
-            break;
         }
 
-        if (!added) stagnation += 1;
-        else stagnation = 0;
+        if (pool.length === 0) {
+            stagnation += 1;
+            continue;
+        }
+
+        // Prefer closing each (teamA, teamB) Adv+Adv vs Adv+Adv edge once before “extra” Adv+Adv repeats,
+        // so two-Advanced teams (one Adv+Adv side) get that lineup vs every opponent — not a single game.
+        pool.sort((x, y) => {
+            if (x.score !== y.score) return x.score - y.score;
+            if (y.covGain !== x.covGain) return y.covGain - x.covGain;
+            if (y.advTeamPairMissing !== x.advTeamPairMissing) return y.advTeamPairMissing - x.advTeamPairMissing;
+            return Math.random() - 0.5;
+        });
+        const best = pool[0];
+        const { TA, TB, pa, pb } = best;
+        const covA = teamCoverage.get(TA.teamId)!;
+        const covB = teamCoverage.get(TB.teamId)!;
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        ids.forEach((id) => {
+            plays[id] += 1;
+        });
+        matches.push({
+            teamAId: TA.teamId,
+            teamBId: TB.teamId,
+            teamAName: TA.teamName,
+            teamBName: TB.teamName,
+            sideA: [pa.a, pa.b],
+            sideB: [pb.a, pb.b],
+            categoryKey: pa.key,
+        });
+        covA.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        covB.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        stagnation = 0;
     }
+
+    fillCoverageGaps(rosters, matches, plays, targetPerPlayer);
 
     const unmetPlayerIds = Object.entries(plays)
         .filter(([, c]) => c < targetPerPlayer)
         .map(([id]) => id);
 
-    return { matches, counts: plays, unmetPlayerIds, targetPerPlayer };
+    const gapLines = reportDoublesConstraintGaps(rosters, matches);
+
+    return {
+        matches,
+        counts: plays,
+        unmetPlayerIds,
+        targetPerPlayer,
+        coverageNotes: gapLines.length > 0 ? gapLines : undefined,
+    };
+}
+
+export type GenerateBalancedDoublesOptions = {
+    /**
+     * Run the greedy builder this many times with different random shuffles; keep the best result
+     * (most matches, then fewest players below target). Improves chances of reaching ~theoretical max.
+     */
+    randomTrials?: number;
+};
+
+/**
+ * @param rosters One entry per club team; each must list all squad players with categories set.
+ * @param targetPerPlayer Each player should play this many doubles matches (vs other teams).
+ */
+export function generateBalancedDoublesSchedule(
+    rosters: TeamRosterInput[],
+    targetPerPlayer: number,
+    options?: GenerateBalancedDoublesOptions
+): DoublesScheduleResult {
+    const trials = Math.max(1, Math.min(120, options?.randomTrials ?? 60));
+    let best: DoublesScheduleResult | null = null;
+    for (let t = 0; t < trials; t++) {
+        const r = generateBalancedDoublesScheduleOnce(rosters, targetPerPlayer);
+        if (!best || cmpScheduleQuality(r, best, rosters) < 0) {
+            best = r;
+        }
+    }
+    return best!;
 }
 
 const NOTES_JSON_MARK = "__JSON__";

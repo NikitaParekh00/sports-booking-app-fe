@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabaseClient";
 import PhoneInput from "@/components/PhoneInput";
 import { opponentManager } from "@/lib/opponentManagement";
 import { parseParticipantCsv, BADMINTON_PARTICIPANT_CSV_TEMPLATE } from "@/lib/csvParticipantParser";
+import { normalizePointsPerSetForSport } from "@/lib/tournamentPointsPerSet";
 
 const sports = [
     { id: "cricket", name: "Cricket", icon: "🏏" },
@@ -244,7 +245,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                 tournament_mode: formData.tournament_mode,
                 format: formData.format,
                 sets_per_match: Number(formData.sets_per_match) || 3,
-                points_per_set: Number(formData.points_per_set) || 21,
+                points_per_set: normalizePointsPerSetForSport(sport, formData.points_per_set),
                 win_by_two: formData.win_by_two,
                 max_points: Number(formData.max_points) || 30,
                 seeding_method: formData.seeding_method,
