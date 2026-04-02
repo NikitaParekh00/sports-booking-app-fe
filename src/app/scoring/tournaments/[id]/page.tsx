@@ -346,8 +346,8 @@ export default function TournamentDetailPage() {
             {/* Tabs */}
             <div className="border-b border-gray-200 bg-white sticky top-0 md:top-[140px] z-10 shadow-sm min-w-0">
                 <div className="max-w-6xl mx-auto px-3 sm:px-4 min-w-0">
-                    <div className="flex items-center gap-2 sm:gap-4 min-w-0 -mb-px pb-px">
-                        <div className="flex gap-2 sm:gap-4 md:gap-6 overflow-x-auto scrollbar-hide min-w-0 flex-1">
+                    <div className="flex items-center gap-2 sm:gap-4 min-w-0 py-2">
+                        <div className="flex gap-2 overflow-x-auto scrollbar-hide min-w-0 flex-1">
                             {(isTeamTournament
                                 ? [
                                     { id: 'overview', label: 'Overview' },
@@ -373,17 +373,17 @@ export default function TournamentDetailPage() {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as TabType)}
-                                className={`py-3 md:py-4 px-2 border-b-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
+                                className={`px-3 md:px-4 py-2 rounded-lg border text-sm font-semibold transition-colors whitespace-nowrap flex-shrink-0 ${
                                     activeTab === tab.id
-                                        ? 'border-red-600 text-red-600'
-                                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                                        ? 'bg-red-600 border-red-600 text-white'
+                                        : 'bg-white border-gray-200 text-gray-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700'
                                 }`}
                             >
                                 {tab.label}
                             </button>
                         ))}
                     </div>
-                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-2 border-b-2 border-transparent py-3 md:py-4">
+                        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-2 py-1">
                             <div className={`px-2 md:px-3 py-1 rounded-full text-xs md:text-sm font-medium ${getStatusColor(tournament.status)}`}>
                                 {tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
                             </div>
