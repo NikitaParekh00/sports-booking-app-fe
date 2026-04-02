@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { opponentManager } from "@/lib/opponentManagement";
@@ -853,24 +853,24 @@ function ParticipantsTab({
                     )}
                 </div>
             ) : (
-                <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full">
-                            <thead className="bg-gray-50">
+                            <thead className="bg-white border-b border-gray-200">
                                 <tr>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700">#</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700">Name</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700 hidden sm:table-cell">Phone</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700 hidden md:table-cell">Category</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700">Status</th>
-                                    {canEdit && <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase text-gray-700">Actions</th>}
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">#</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Name</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 hidden sm:table-cell">Phone</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 hidden md:table-cell">Category</th>
+                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Status</th>
+                                    {canEdit && <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Actions</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200">
                                 {participants.map((participant, index) => (
-                                    <tr key={participant.id} className="hover:bg-gray-50">
+                                    <tr key={participant.id} style={{ backgroundColor: index % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">{index + 1}</td>
-                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">
+                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900 font-medium">
                                             {canEdit && editingId === participant.id ? (
                                                 <input
                                                     type="text"
@@ -889,7 +889,7 @@ function ParticipantsTab({
                                                 />
                                             ) : canEdit ? (
                                                 <span
-                                                    className="cursor-pointer text-gray-900 hover:text-red-600"
+                                                    className="cursor-pointer text-gray-900 hover:text-red-600 font-semibold"
                                                     onClick={() => {
                                                         setEditingId(participant.id);
                                                         setEditName(participant.player_name);
@@ -898,7 +898,7 @@ function ParticipantsTab({
                                                     {participant.player_name}
                                                 </span>
                                             ) : (
-                                                <span className="text-gray-900">{participant.player_name}</span>
+                                                <span className="text-gray-900 font-semibold">{participant.player_name}</span>
                                             )}
                                         </td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-700 hidden sm:table-cell">{participant.phone || '-'}</td>
@@ -1858,13 +1858,13 @@ function IndividualScheduleTab({
         downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
 
-    const handleScheduleDownloadPdf = useCallback(() => {
+    const handleScheduleDownloadPdf = useCallback(async () => {
         if (filteredMatches.length === 0) {
             alert("No matches to export.");
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
-        downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
 
     const handleAssignTimesToExistingMatches = async () => {
@@ -2362,10 +2362,10 @@ function TeamsTab({
             </>
             )}
             <div className="grid gap-4 md:grid-cols-2">
-                {teams.map((team) => (
-                    <div key={team.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
+                {teams.map((team, idx) => (
+                    <div key={team.id} className="rounded-xl border border-gray-200 p-4" style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}>
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
+                            <h3 className="font-semibold text-gray-900 text-base">
                                 {displayTeamCardTitle(team.name)}
                                 {team.short_name && (
                                     <span className="text-gray-500 font-normal ml-2">({team.short_name})</span>
@@ -2379,7 +2379,7 @@ function TeamsTab({
                                     const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
                                     const pcat = part?.category != null && String(part.category).trim() !== "" ? String(part.category).trim() : null;
                                     return (
-                                <li key={m.id} className="flex items-center justify-between text-sm text-gray-700">
+                                <li key={m.id} className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5">
                                     <span className="text-gray-900">
                                         P{m.position}: {part?.player_name ?? "—"}
                                         {pcat ? <span className="text-gray-600 font-normal"> ({pcat})</span> : null}
@@ -2490,6 +2490,10 @@ function useTeamMemberNames(teamIds: string[]) {
 function formatTeamWithPlayers(teamName: string, playerNames: string[]) {
     if (!playerNames.length) return teamName;
     return `${teamName} (${playerNames.join(", ")})`;
+}
+
+function stripTrailingBracketLabel(teamName: string): string {
+    return teamName.replace(/\s*\([^()]*\)\s*$/, "").trim();
 }
 
 function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titleB: string; payload: DoublesLinePayload }) {
@@ -2690,6 +2694,12 @@ function IndividualCourtScheduleGrid({
 }) {
     const numCourts = getCourtCount(tournament);
     const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
+    const isMobileLayout = useIsMaxMd();
+    const [mobileCourtKey, setMobileCourtKey] = useState("1");
+    useEffect(() => {
+        if (!courtKeys.includes(mobileCourtKey)) setMobileCourtKey(courtKeys[0] || "1");
+    }, [mobileCourtKey, courtKeys]);
+    const visibleCourtKeys = isMobileLayout ? [mobileCourtKey] : courtKeys;
     return (
         <>
             {!hideCourtsNote && (
@@ -2698,11 +2708,29 @@ function IndividualCourtScheduleGrid({
                     <strong>Number of courts</strong> in Settings if needed.
                 </p>
             )}
+            {isMobileLayout && courtKeys.length > 1 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                    {courtKeys.map((ck) => (
+                        <button
+                            key={ck}
+                            type="button"
+                            onClick={() => setMobileCourtKey(ck)}
+                            className={`px-3 py-1.5 rounded-lg text-sm border ${
+                                mobileCourtKey === ck
+                                    ? "bg-gray-900 text-white border-gray-900"
+                                    : "bg-white text-gray-700 border-gray-300"
+                            }`}
+                        >
+                            Court {ck}
+                        </button>
+                    ))}
+                </div>
+            )}
             <div
                 className={`grid grid-cols-1 gap-3 sm:gap-4 min-w-0 w-full overflow-x-auto ${numCourts <= 12 ? ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6", "md:grid-cols-7", "md:grid-cols-8", "md:grid-cols-9", "md:grid-cols-10", "md:grid-cols-11", "md:grid-cols-12"][numCourts] || "md:grid-cols-12" : ""}`}
                 style={numCourts > 12 ? { gridTemplateColumns: `repeat(${numCourts}, minmax(140px, 1fr))` } : undefined}
             >
-                {courtKeys.map((courtKey) => {
+                {visibleCourtKeys.map((courtKey) => {
                     const courtMatches = matches
                         .filter((m) => {
                             const c = m.court_number;
@@ -2810,6 +2838,12 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     const supabase = createClient();
     const numCourts = getCourtCount(tournament);
     const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
+    const isMobileLayout = useIsMaxMd();
+    const [mobileCourtKey, setMobileCourtKey] = useState("1");
+    useEffect(() => {
+        if (!courtKeys.includes(mobileCourtKey)) setMobileCourtKey(courtKeys[0] || "1");
+    }, [mobileCourtKey, courtKeys]);
+    const visibleCourtKeys = isMobileLayout ? [mobileCourtKey] : courtKeys;
     const isRoundRobin = tournament.format === "round_robin" || tournament.format === "round_robin_knockout";
     const teamIds = teams.map((t) => t.id);
     const memberNamesByTeam = useTeamMemberNames(teamIds);
@@ -2860,13 +2894,13 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
 
-    const handleScheduleDownloadPdf = useCallback(() => {
+    const handleScheduleDownloadPdf = useCallback(async () => {
         if (filteredMatches.length === 0) {
             alert("No matches to export.");
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches);
-        downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
 
     useEffect(() => {
@@ -3732,11 +3766,29 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             <p className="text-xs text-gray-500">
                 Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change <strong>Number of courts</strong> in Settings if needed.
             </p>
+            {isMobileLayout && courtKeys.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                    {courtKeys.map((ck) => (
+                        <button
+                            key={ck}
+                            type="button"
+                            onClick={() => setMobileCourtKey(ck)}
+                            className={`px-3 py-1.5 rounded-lg text-sm border ${
+                                mobileCourtKey === ck
+                                    ? "bg-gray-900 text-white border-gray-900"
+                                    : "bg-white text-gray-700 border-gray-300"
+                            }`}
+                        >
+                            Court {ck}
+                        </button>
+                    ))}
+                </div>
+            )}
             <div
                 className={`grid grid-cols-1 gap-3 sm:gap-4 min-w-0 w-full overflow-x-auto ${numCourts <= 12 ? ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6", "md:grid-cols-7", "md:grid-cols-8", "md:grid-cols-9", "md:grid-cols-10", "md:grid-cols-11", "md:grid-cols-12"][numCourts] || "md:grid-cols-12" : ""}`}
                 style={numCourts > 12 ? { gridTemplateColumns: `repeat(${numCourts}, minmax(140px, 1fr))` } : undefined}
             >
-                {courtKeys.map((courtKey) => {
+                {visibleCourtKeys.map((courtKey) => {
                     const courtMatches = filteredMatches
                         .filter((m) => {
                             const c = (m as TournamentMatch).court_number;
@@ -4285,12 +4337,22 @@ function GeneratePlayoffsBlock({
 function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament; canEdit?: boolean }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant })[]>([]);
+    const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set());
     const supabase = createClient();
-    const teamIds = teams.map((t) => t.id);
-    const memberNamesByTeam = useTeamMemberNames(teamIds);
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
+        supabase
+            .from("tournament_team_members")
+            .select("*, participant:tournament_participants(*)")
+            .then(({ data }) => {
+                const byTournament = (data || []).filter((m: TournamentTeamMember & { participant?: Participant }) => {
+                    const p = m.participant;
+                    return p?.tournament_id === tournament.id;
+                });
+                setMembers(byTournament);
+            });
         supabase
             .from("matches")
             .select("*, team_a:tournament_teams!team_a_id(id,name), team_b:tournament_teams!team_b_id(id,name), winner_team:tournament_teams!winner_team_id(id,name)")
@@ -4366,54 +4428,115 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
         }
     }
 
+    const memberRowsByTeam = useMemo(() => {
+        const byTeam: Record<string, { id: string; name: string; points: number }[]> = {};
+        const ptsByMemberId: Record<string, number> = {};
+        members.forEach((m) => {
+            ptsByMemberId[m.id] = 0;
+        });
+        matches.forEach((m) => {
+            const winner = (m as TournamentMatch).winner_team_id;
+            if (!winner) return;
+            members.forEach((mem) => {
+                if (mem.team_id === winner) {
+                    ptsByMemberId[mem.id] = (ptsByMemberId[mem.id] || 0) + 1;
+                }
+            });
+        });
+        members.forEach((m) => {
+            if (!byTeam[m.team_id]) byTeam[m.team_id] = [];
+            byTeam[m.team_id].push({
+                id: m.id,
+                name: m.participant?.player_name || "—",
+                points: ptsByMemberId[m.id] || 0,
+            });
+        });
+        Object.keys(byTeam).forEach((tid) => {
+            byTeam[tid].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+        });
+        return byTeam;
+    }, [members, matches]);
+
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Team standings</h2>
             <p className="text-sm text-gray-600">Ranked by PTS, then point difference (PD). Only teams with at least one win (PTS ≥ 1) can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF → Semis → Finals.</p>
-            <div className="overflow-x-auto">
-                <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
-                    <thead className="bg-gray-50">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
+                <table className="min-w-full overflow-hidden">
+                    <thead className="bg-white border-b border-gray-200">
                         <tr>
-                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-700">Cat</th>
-                            <th className="text-left py-2 px-3 text-sm font-medium text-gray-700">Team</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">TM</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">PL</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">W</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">L</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">PTS</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">PD</th>
-                            <th className="text-center py-2 px-3 text-sm font-medium text-gray-700">#</th>
+                            <th className="text-left py-2.5 px-4 text-xs font-medium uppercase tracking-wide text-gray-600">Team</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">PL</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">W</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">L</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">PTS</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">PD</th>
+                            <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">#</th>
                         </tr>
                     </thead>
                     <tbody>
                         {sorted.map((row, idx) => {
                             const isQualified = qualifiedForQF.some((q) => q && q.team && q.team.id === row.team.id);
+                            const isExpanded = expandedTeamIds.has(row.team.id);
                             const rank = idx + 1;
                             const rankDisplay = rank === 1 ? <span className="text-xl" title="1st" aria-label="1st">🥇</span>
                                 : rank === 2 ? <span className="text-xl" title="2nd" aria-label="2nd">🥈</span>
                                 : rank === 3 ? <span className="text-xl" title="3rd" aria-label="3rd">🥉</span>
                                 : <span className="text-gray-700">{rank}</span>;
+                            const teamMembers = memberRowsByTeam[row.team.id] || [];
                             return (
-                            <tr key={row.team.id} className={`border-t border-gray-200 ${isQualified ? "bg-emerald-50" : ""}`}>
-                                <td className="py-2 px-3 text-sm text-gray-700">{row.team.category || "—"}</td>
-                                <td className="py-2 px-3 text-sm font-medium text-gray-900">
-                                    {formatTeamWithPlayers(row.team.name, memberNamesByTeam[row.team.id] || [])}
-                                    {isQualified && <span className="ml-2 text-emerald-600 text-xs font-medium">→ QF</span>}
-                                </td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.team.short_name || "—"}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.played}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.won}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.lost}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.pts}</td>
-                                <td className="py-2 px-3 text-sm text-center text-gray-700">{row.pointsDifference != null ? (row.pointsDifference >= 0 ? `+${row.pointsDifference}` : String(row.pointsDifference)) : "—"}</td>
-                                <td className="py-2 px-3 text-sm text-center">{rankDisplay}</td>
-                            </tr>
+                            <Fragment key={row.team.id}>
+                                <tr
+                                    className="border-t border-gray-200 cursor-pointer"
+                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                    onClick={() =>
+                                        setExpandedTeamIds((prev) => {
+                                            const next = new Set(prev);
+                                            if (next.has(row.team.id)) next.delete(row.team.id);
+                                            else next.add(row.team.id);
+                                            return next;
+                                        })
+                                    }
+                                >
+                                    <td className="py-2.5 px-4 text-sm sm:text-base font-semibold text-gray-900">
+                                        <span className="inline-flex items-center gap-2">
+                                            <span className="text-xs text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                                            {stripTrailingBracketLabel(row.team.name)}
+                                        </span>
+                                        {isQualified && <span className="ml-2 text-red-600 text-xs font-medium">→ QF</span>}
+                                    </td>
+                                    <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.played}</td>
+                                    <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.won}</td>
+                                    <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.lost}</td>
+                                    <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.pts}</td>
+                                    <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.pointsDifference != null ? (row.pointsDifference >= 0 ? `+${row.pointsDifference}` : String(row.pointsDifference)) : "—"}</td>
+                                    <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
+                                </tr>
+                                {isExpanded && (
+                                    <tr className="border-t border-gray-100 bg-white">
+                                        <td colSpan={7} className="py-2.5 px-4">
+                                            {teamMembers.length === 0 ? (
+                                                <p className="text-xs text-gray-500">No players in this team.</p>
+                                            ) : (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                    {teamMembers.map((mem) => (
+                                                        <div key={mem.id} className="flex items-center justify-between rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+                                                            <span className="text-sm text-gray-900">{mem.name}</span>
+                                                            <span className="text-xs font-medium text-gray-700">PTS {mem.points}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </td>
+                                    </tr>
+                                )}
+                            </Fragment>
                             );
                         })}
                     </tbody>
                 </table>
             </div>
-            <p className="text-xs text-gray-500">Cat = Category. TM = short name, PL = Played, W = Won, L = Lost, PTS = Points (1 per win), PD = Point difference (for–against). Tiebreaker: PTS then PD.</p>
+            <p className="text-xs text-gray-500">PL = Played, W = Won, L = Lost, PTS = Points (1 per win), PD = Point difference (for–against). Tiebreaker: PTS then PD.</p>
 
             {canEdit && qualifiedForQF.length >= 4 && (
                 <GeneratePlayoffsBlock
