@@ -116,6 +116,8 @@ export type MatchForPlayerAwareAssign = MatchForSlotAssign & {
 export type AssignWithPlayerOptions = AssignMatchTimesByCourtOptions & {
     /** Max matches in a row on adjacent 15-min slots (default 2). */
     maxConsecutivePlayingSlots?: number;
+    /** Max matches per player on the same local calendar day (default 9). */
+    maxMatchesPerPlayerPerDay?: number;
 };
 
 function compareByMatchNumberGlobal(
@@ -154,6 +156,21 @@ function playerAllowsSlot(
     if (times.some((t) => t === slotStartMs)) return false;
     const merged = [...times, slotStartMs].sort((a, b) => a - b);
     return longestConsecutiveRun(merged, slotMs) <= maxConsecutive;
+}
+
+function localDayKey(ms: number): string {
+    const d = new Date(ms);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const da = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${da}`;
+}
+
+function playerAllowsDailyCap(existingTimes: number[] | undefined, slotStartMs: number, maxPerDay: number): boolean {
+    const times = existingTimes ?? [];
+    const day = localDayKey(slotStartMs);
+    const count = times.reduce((acc, t) => (localDayKey(t) === day ? acc + 1 : acc), 0);
+    return count < maxPerDay;
 }
 
 function isValidSessionSlotStart(d: Date, dailyStart: DailyClock, endMin: number, slotMinutes: number): boolean {
@@ -206,6 +223,7 @@ export function assignMatchTimesWithPlayerConstraints(
     const slotMinutes = Math.max(1, Math.min(180, options.slotMinutes ?? 15));
     const defaultCourtKey = options.defaultCourtKey ?? "1";
     const maxConsecutive = Math.max(1, Math.min(10, options.maxConsecutivePlayingSlots ?? 2));
+    const maxPerDay = Math.max(1, Math.min(50, options.maxMatchesPerPlayerPerDay ?? 9));
     const slotMs = slotMinutes * 60 * 1000;
 
     const startMin = minutesOfDay(dailyStart.hour, dailyStart.minute);
@@ -272,6 +290,7 @@ export function assignMatchTimesWithPlayerConstraints(
                 for (const p of players) {
                     const existing = playerToTimes.get(p);
                     if (!playerAllowsSlot(existing, T, slotMs, maxConsecutive)) return false;
+                    if (!playerAllowsDailyCap(existing, T, maxPerDay)) return false;
                 }
                 return true;
             });

@@ -48,6 +48,21 @@ function edgeKey(id1: string, id2: string): string {
     return id1 < id2 ? `${id1}\t${id2}` : `${id2}\t${id1}`;
 }
 
+function sidePairEdge(a: RosterPlayer, b: RosterPlayer): string {
+    return edgeKey(a.participantId, b.participantId);
+}
+
+/**
+ * Unordered key of doubles-side-vs-doubles-side matchup.
+ * Same side pair can repeat, but not against the exact same opponent side pair again.
+ */
+function lineupDuelKey(
+    pa: { a: RosterPlayer; b: RosterPlayer },
+    pb: { a: RosterPlayer; b: RosterPlayer }
+): string {
+    return edgeKey(sidePairEdge(pa.a, pa.b), sidePairEdge(pb.a, pb.b));
+}
+
 /** Coverage add-ons must not push any participant past target appearances (keeps 36×12÷4 = 108 max). */
 function allFourPlayersHaveRoom(plays: Record<string, number>, ids: string[], targetPerPlayer: number): boolean {
     return ids.every((id) => (plays[id] ?? 0) < targetPerPlayer);
@@ -246,9 +261,12 @@ function tryAppendCoverageMatch(
     plays: Record<string, number>,
     teamCoverage: Map<string, Set<string>>,
     advAdvSatisfied: Set<string>,
+    usedLineupDuels: Set<string>,
     targetPerPlayer: number
 ): boolean {
     const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const duel = lineupDuelKey(pa, pb);
+        if (usedLineupDuels.has(duel)) return false;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
         ids.forEach((id) => {
@@ -271,6 +289,7 @@ function tryAppendCoverageMatch(
             advAdvSatisfied.add(TA.teamId);
             advAdvSatisfied.add(TB.teamId);
         }
+        usedLineupDuels.add(duel);
         return true;
     };
 
@@ -301,9 +320,12 @@ function tryAppendAdvAdvTeamPairing(
     teamCoverage: Map<string, Set<string>>,
     advAdvSatisfied: Set<string>,
     pairSat: Set<string>,
+    usedLineupDuels: Set<string>,
     targetPerPlayer: number
 ): boolean {
     const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const duel = lineupDuelKey(pa, pb);
+        if (usedLineupDuels.has(duel)) return false;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
         ids.forEach((id) => {
@@ -325,6 +347,7 @@ function tryAppendAdvAdvTeamPairing(
         advAdvSatisfied.add(TA.teamId);
         advAdvSatisfied.add(TB.teamId);
         pairSat.add(edgeKey(TA.teamId, TB.teamId));
+        usedLineupDuels.add(duel);
         return true;
     };
 
@@ -355,9 +378,12 @@ function tryAppendAdvancedPlayerVersusAdvTeam(
     teamCoverage: Map<string, Set<string>>,
     advAdvSatisfied: Set<string>,
     pairSat: Set<string>,
+    usedLineupDuels: Set<string>,
     targetPerPlayer: number
 ): boolean {
     const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
+        const duel = lineupDuelKey(pa, pb);
+        if (usedLineupDuels.has(duel)) return false;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
         ids.forEach((id) => {
@@ -379,6 +405,7 @@ function tryAppendAdvancedPlayerVersusAdvTeam(
         advAdvSatisfied.add(TA.teamId);
         advAdvSatisfied.add(TB.teamId);
         pairSat.add(edgeKey(TA.teamId, TB.teamId));
+        usedLineupDuels.add(duel);
         return true;
     };
 
@@ -417,6 +444,7 @@ function seedAdvAdvVersusEveryAdvTeamPair(
     matches: GeneratedDoublesMatch[],
     plays: Record<string, number>,
     teamCoverage: Map<string, Set<string>>,
+    usedLineupDuels: Set<string>,
     targetPerPlayer: number
 ): void {
     const indexPairs: [number, number][] = [];
@@ -452,6 +480,8 @@ function seedAdvAdvVersusEveryAdvTeamPair(
         const pb = advPairsB[0];
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) continue;
+        const duel = lineupDuelKey(pa, pb);
+        if (usedLineupDuels.has(duel)) continue;
 
         ids.forEach((id) => {
             plays[id] = (plays[id] ?? 0) + 1;
@@ -469,6 +499,7 @@ function seedAdvAdvVersusEveryAdvTeamPair(
         const covB = teamCoverage.get(TB.teamId)!;
         covA.add(edgeKey(pa.a.participantId, pa.b.participantId));
         covB.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        usedLineupDuels.add(duel);
     }
 }
 
@@ -476,18 +507,19 @@ function fillCoverageGaps(
     rosters: TeamRosterInput[],
     matches: GeneratedDoublesMatch[],
     plays: Record<string, number>,
+    usedLineupDuels: Set<string>,
     targetPerPlayer: number
 ): void {
     const teamCoverage = buildTeammateCoverage(matches);
     const advAdvSatisfied = teamsSatisfiedAdvAdv(matches);
-    while (tryAppendCoverageMatch(rosters, matches, plays, teamCoverage, advAdvSatisfied, targetPerPlayer)) {
+    while (tryAppendCoverageMatch(rosters, matches, plays, teamCoverage, advAdvSatisfied, usedLineupDuels, targetPerPlayer)) {
         /* teammate pair coverage */
     }
     const pairSat = buildAdvAdvTeamPairKeys(matches);
-    while (tryAppendAdvAdvTeamPairing(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, targetPerPlayer)) {
+    while (tryAppendAdvAdvTeamPairing(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, usedLineupDuels, targetPerPlayer)) {
         /* every Adv-capable team pair gets ≥1 Adv+Adv vs Adv+Adv */
     }
-    while (tryAppendAdvancedPlayerVersusAdvTeam(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, targetPerPlayer)) {
+    while (tryAppendAdvancedPlayerVersusAdvTeam(rosters, matches, plays, teamCoverage, advAdvSatisfied, pairSat, usedLineupDuels, targetPerPlayer)) {
         /* every Advanced player gets that lineup vs each other Adv-capable team */
     }
 }
@@ -539,6 +571,7 @@ function generateBalancedDoublesScheduleOnce(rosters: TeamRosterInput[], targetP
 
     const matches: GeneratedDoublesMatch[] = [];
     const teamCoverage = new Map<string, Set<string>>();
+    const usedLineupDuels = new Set<string>();
     rosters.forEach((r) => teamCoverage.set(r.teamId, new Set()));
 
     const teamPairs: [TeamRosterInput, TeamRosterInput][] = [];
@@ -548,7 +581,7 @@ function generateBalancedDoublesScheduleOnce(rosters: TeamRosterInput[], targetP
         }
     }
 
-    seedAdvAdvVersusEveryAdvTeamPair(rosters, matches, plays, teamCoverage, targetPerPlayer);
+    seedAdvAdvVersusEveryAdvTeamPair(rosters, matches, plays, teamCoverage, usedLineupDuels, targetPerPlayer);
 
     const allSatisfied = () => Object.values(plays).every((c) => c >= targetPerPlayer);
 
@@ -597,6 +630,7 @@ function generateBalancedDoublesScheduleOnce(rosters: TeamRosterInput[], targetP
                         pa.key === ADV_ADV_CATEGORY_KEY && !advAdvPairsDone.has(edgeKey(TA.teamId, TB.teamId))
                             ? 1
                             : 0;
+                    if (usedLineupDuels.has(lineupDuelKey(pa, pb))) continue;
                     pool.push({ score, covGain, advTeamPairMissing, TA, TB, pa, pb });
                 }
             }
@@ -634,10 +668,11 @@ function generateBalancedDoublesScheduleOnce(rosters: TeamRosterInput[], targetP
         });
         covA.add(edgeKey(pa.a.participantId, pa.b.participantId));
         covB.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        usedLineupDuels.add(lineupDuelKey(pa, pb));
         stagnation = 0;
     }
 
-    fillCoverageGaps(rosters, matches, plays, targetPerPlayer);
+    fillCoverageGaps(rosters, matches, plays, usedLineupDuels, targetPerPlayer);
 
     const unmetPlayerIds = Object.entries(plays)
         .filter(([, c]) => c < targetPerPlayer)

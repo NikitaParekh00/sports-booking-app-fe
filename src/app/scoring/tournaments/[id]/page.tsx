@@ -301,15 +301,15 @@ export default function TournamentDetailPage() {
             <div className="border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
                 <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 min-w-0">
                     <div className="flex items-center gap-2 sm:gap-4 mb-4 min-w-0">
-                        <button
-                            onClick={() => router.push('/scoring/tournaments')}
+                    <button
+                        onClick={() => router.push('/scoring/tournaments')}
                             className="flex items-center gap-1.5 sm:gap-2 text-gray-600 hover:text-red-600 text-sm md:text-base touch-manipulation flex-shrink-0 min-w-0"
-                        >
+                    >
                             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                            </svg>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
                             <span className="truncate">Back to Tournaments</span>
-                        </button>
+                    </button>
                     </div>
 
                     <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4 min-w-0">
@@ -325,15 +325,15 @@ export default function TournamentDetailPage() {
                                 <div className="flex items-center gap-1">
                                     <span>📍</span>
                                     <span className="truncate">{tournament.location || 'No location'}</span>
-                                </div>
+                            </div>
                                 <div className="flex items-center gap-1">
                                     <span>📅</span>
                                     <span>{new Date(tournament.start_date).toLocaleDateString()}</span>
-                                </div>
+                        </div>
                                 <div className="flex items-center gap-1">
                                     <span>👥</span>
                                     <span>{participants.length} / {tournament.max_participants} participants</span>
-                                </div>
+                            </div>
                             </div>
                         </div>
                         <div className="flex items-center flex-shrink-0">
@@ -360,29 +360,29 @@ export default function TournamentDetailPage() {
                                     { id: 'settings', label: 'Settings' },
                                   ]
                                 : [
-                                    { id: 'overview', label: 'Overview' },
-                                    { id: 'participants', label: `Participants (${participants.length})` },
-                                    { id: 'groups', label: 'Groups' },
-                                    { id: 'brackets', label: 'Brackets' },
+                            { id: 'overview', label: 'Overview' },
+                            { id: 'participants', label: `Participants (${participants.length})` },
+                            { id: 'groups', label: 'Groups' },
+                            { id: 'brackets', label: 'Brackets' },
                                     { id: 'schedule', label: 'Schedule' },
                                     { id: 'results', label: 'Results' },
                                     { id: 'player_stats', label: 'Player Stats' },
-                                    { id: 'settings', label: 'Settings' },
+                            { id: 'settings', label: 'Settings' },
                                   ]
                             ).map((tab) => (
-                                <button
-                                    key={tab.id}
-                                    onClick={() => setActiveTab(tab.id as TabType)}
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id as TabType)}
                                 className={`py-3 md:py-4 px-2 border-b-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0 ${
                                     activeTab === tab.id
-                                            ? 'border-red-600 text-red-600'
-                                            : 'border-transparent text-gray-600 hover:text-gray-900'
-                                    }`}
-                                >
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
+                                        ? 'border-red-600 text-red-600'
+                                        : 'border-transparent text-gray-600 hover:text-gray-900'
+                                }`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </div>
                         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 pl-2 border-b-2 border-transparent py-3 md:py-4">
                             <div className={`px-2 md:px-3 py-1 rounded-full text-xs md:text-sm font-medium ${getStatusColor(tournament.status)}`}>
                                 {tournament.status.charAt(0).toUpperCase() + tournament.status.slice(1)}
@@ -755,13 +755,13 @@ function ParticipantsTab({
                         >
                             Template
                         </a>
-                        <button
-                            onClick={() => setShowAddParticipant(true)}
-                            disabled={participants.length >= tournament.max_participants}
+                    <button
+                        onClick={() => setShowAddParticipant(true)}
+                        disabled={participants.length >= tournament.max_participants}
                             className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-                        >
-                            Add Participant
-                        </button>
+                    >
+                        Add Participant
+                    </button>
                     </div>
                 )}
                 {!canEdit && <p className="text-sm text-gray-600">View only</p>}
@@ -843,12 +843,12 @@ function ParticipantsTab({
                             Download template
                         </a>
                         <span className="text-gray-500">or</span>
-                        <button
-                            onClick={() => setShowAddParticipant(true)}
+                    <button
+                        onClick={() => setShowAddParticipant(true)}
                             className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 text-sm font-medium"
-                        >
-                            Add First Participant
-                        </button>
+                    >
+                        Add First Participant
+                    </button>
                     </div>
                     )}
                 </div>
@@ -905,16 +905,16 @@ function ParticipantsTab({
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-700 hidden md:table-cell">{participant.category || '-'}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">
                                             {canEdit ? (
-                                                <select
-                                                    value={participant.status}
-                                                    onChange={(e) => handleUpdateStatus(participant.id, e.target.value)}
+                                            <select
+                                                value={participant.status}
+                                                onChange={(e) => handleUpdateStatus(participant.id, e.target.value)}
                                                     className="text-xs md:text-sm border border-gray-300 bg-white text-gray-900 rounded px-1 md:px-2 py-1 w-full focus:outline-none focus:ring-2 focus:ring-red-500"
-                                                >
-                                                    <option value="registered">Registered</option>
-                                                    <option value="confirmed">Confirmed</option>
-                                                    <option value="eliminated">Eliminated</option>
-                                                    <option value="winner">Winner</option>
-                                                </select>
+                                            >
+                                                <option value="registered">Registered</option>
+                                                <option value="confirmed">Confirmed</option>
+                                                <option value="eliminated">Eliminated</option>
+                                                <option value="winner">Winner</option>
+                                            </select>
                                             ) : (
                                                 <span className="text-gray-900 capitalize">{participant.status}</span>
                                             )}
@@ -1098,7 +1098,7 @@ function GroupsTab({
         <div className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div>
-                    <h2 className="text-xl font-semibold text-gray-900">Groups</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Groups</h2>
                     <p className="text-sm text-gray-600 mt-1 max-w-2xl">
                         Use <strong>Club</strong> on each participant (Participants tab or CSV) as the group name. One group per distinct club; blank club →{" "}
                         <strong>No club</strong>. Rebuild replaces all current groups.
@@ -1910,6 +1910,7 @@ function IndividualScheduleTab({
                     slotMinutes: slotM,
                     defaultCourtKey,
                     maxConsecutivePlayingSlots: 2,
+                    maxMatchesPerPlayerPerDay: 9,
                 });
             } else {
                 updates = assignMatchTimesByCourt(
@@ -1929,7 +1930,7 @@ function IndividualScheduleTab({
             return;
         }
         const smartNote = shouldUsePlayerAwareAssignment(enriched)
-            ? `\n\nPlayer-aware: same rules as team schedule (no double-booking; max 2 consecutive ${slotM}-minute matches per player).`
+            ? `\n\nPlayer-aware: same rules as team schedule (no double-booking; max 2 consecutive ${slotM}-minute matches per player; max 9 matches per player per day).`
             : "\n\nPer-court timing only (link players to tournament participants for smarter slots).";
         if (
             !confirm(
@@ -2176,7 +2177,7 @@ function TeamsTab({
                 name: newTeamName.trim(),
                 short_name: newTeamShortName.trim() || null,
             });
-            if (error) throw error;
+                if (error) throw error;
             setNewTeamName("");
             setNewTeamShortName("");
             loadTeams();
@@ -3228,7 +3229,15 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             const storedUser = localStorage.getItem("sf:user");
             const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
             const existingDd = matches.filter((m) => (m.match_number || "").startsWith("DD-")).length;
-            let seq = existingDd;
+            if (existingDd > 0) {
+                const { error: delErr } = await supabase
+                    .from("matches")
+                    .delete()
+                    .eq("tournament_id", tournament.id)
+                    .ilike("match_number", "DD-%");
+                if (delErr) throw delErr;
+            }
+            let seq = 0;
             for (let i = 0; i < result.matches.length; i++) {
                 const m = result.matches[i];
                 seq += 1;
@@ -3264,8 +3273,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     : `\n\nRules applied: teammate pair coverage; every Adv-capable team pair gets Adv+Adv vs Adv+Adv; each Advanced player (with an Adv partner on the roster) gets that matchup vs every other Adv-capable team. Extra rules never add a match if any of the four players would go past ${target} appearances (max ≈ ${theoryStr} matches when everyone reaches ${target}).`;
             alert(
                 shortN === 0
-                    ? `Created ${result.matches.length} doubles matches (${target} appearances each).\n\n${mathHint}${coverageHint}\n\nLineups are in each match note.`
-                    : `Created ${result.matches.length} doubles matches. ${shortN} player(s) still below ${target} appearances.\n\n${mathHint}${coverageHint}\n\nTry more overlapping category mixes across teams, or run again (randomized).`
+                    ? `Created ${result.matches.length} doubles matches (${target} appearances each). Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}\n\nLineups are in each match note.`
+                    : `Created ${result.matches.length} doubles matches. ${shortN} player(s) still below ${target} appearances. Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}\n\nTry more overlapping category mixes across teams, or run again (randomized).`
             );
         } catch (e) {
             console.error(e);
@@ -3349,6 +3358,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     slotMinutes: slotM,
                     defaultCourtKey,
                     maxConsecutivePlayingSlots: 2,
+                    maxMatchesPerPlayerPerDay: 9,
                 });
             } else {
                 updates = assignMatchTimesByCourt(
@@ -3369,7 +3379,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         }
         const sessionLabel = anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
             const smartNote = shouldUsePlayerAwareAssignment(enriched)
-            ? `\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive ${slotM}-minute matches per player without a gap.`
+            ? `\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive ${slotM}-minute matches per player without a gap; max 9 matches per player per day.`
             : "\n\n(No participant lineups in notes / rosters — per-court timing only.)";
         if (
             !confirm(
@@ -3456,16 +3466,16 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     >
                         {showAdd ? "Cancel" : "Add Match"}
                     </button>
-                </div>
-                ) : <p className="text-sm text-gray-600">View only</p>}
             </div>
+                ) : <p className="text-sm text-gray-600">View only</p>}
+                </div>
             {canEdit && matches.length > 0 && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4 space-y-2">
                     <p className="text-sm font-medium text-gray-900">Assign match times</p>
                     <p className="text-xs text-gray-600">
                         <strong>{clampAssignSlotMinutes(assignSlotMinutes)} minutes</strong> per match (change below). When lineups exist (doubles in match notes + rosters), times are{" "}
                         <strong>player-aware</strong>: each clock slot uses <strong>all courts that can start there</strong> (disjoint players). No double-booking; max{" "}
-                        <strong>two matches in a row</strong> per player without a gap. Tie-break uses match number. Each
+                        <strong>two matches in a row</strong> per player without a gap; <strong>max 9 matches/day</strong> per player. Tie-break uses match number. Each
                         evening runs until <strong>midnight</strong>, then the <strong>next evening</strong> at the same start. Matches with no court use Court 1.
                     </p>
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -3523,7 +3533,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     <p className="text-sm font-medium text-gray-900">Balanced doubles (skill-matched lineups)</p>
                     <p className="text-xs text-gray-700">
                         Builds many team-vs-team matches. Each match picks <strong>two players per side</strong> so the{" "}
-                        <strong>skill mix matches</strong> (e.g. Advanced+Beginner vs Advanced+Beginner). Same players can repeat across matches.
+                        <strong>skill mix matches</strong> (e.g. Advanced+Beginner vs Advanced+Beginner). A side pair can repeat, but not against the exact same opponent side pair again.
                         Set each participant&apos;s <strong>category</strong> on the Participants tab first. Run DB migration{" "}
                         <code className="text-[11px] bg-white px-1 rounded border border-amber-200">tournament_team_member_position_expand.sql</code> if
                         teams can have more than 2 members.
@@ -3575,7 +3585,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             {canEdit && showAdd && (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3 shadow-sm">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
+                                <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team A</label>
                             <select
                                 value={newMatch.team_a_id}
@@ -3587,7 +3597,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                     <option key={t.id} value={t.id}>{t.name}</option>
                                 ))}
                             </select>
-                        </div>
+                                    </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team B</label>
                             <select
@@ -3600,8 +3610,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                     <option key={t.id} value={t.id}>{t.name}</option>
                                 ))}
                             </select>
-                        </div>
-                    </div>
+                                    </div>
+                                </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
@@ -3697,7 +3707,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         <span className="text-xs text-gray-600 shrink-0">Export schedule</span>
                         <span className="text-[11px] text-gray-500">
                             Uses the same list as above (respects team / player filters). Cleared filters = full tournament.
-                        </span>
+                                    </span>
                         <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
@@ -3717,8 +3727,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             </button>
                         </div>
                     </div>
-                )}
-            </div>
+                                    )}
+                                </div>
             <p className="text-xs text-gray-500">
                 Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change <strong>Number of courts</strong> in Settings if needed.
             </p>
@@ -3999,7 +4009,7 @@ function BracketResultsTab({
                                                     >
                                                         Cancel
                                                     </button>
-                                                </div>
+                </div>
                                                 <div className="flex flex-wrap items-center gap-3">
                                                     {Array.from({ length: numSets }, (_, i) => (
                                                         <div key={i} className="flex items-center gap-1">
@@ -5019,7 +5029,7 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
     return (
         <div className="space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xl font-semibold text-gray-900">Tournament Settings</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Tournament Settings</h2>
                 {!canEdit && <p className="text-sm text-gray-600">View only</p>}
             </div>
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6 space-y-4 shadow-sm">
