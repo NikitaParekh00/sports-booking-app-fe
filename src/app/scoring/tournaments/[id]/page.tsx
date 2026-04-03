@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type { ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import { opponentManager } from "@/lib/opponentManagement";
@@ -2651,7 +2652,6 @@ function IndividualScheduleMatchCard({
                               })
                             : "No time set"}
                     </div>
-                    <div className="text-xs text-gray-500 font-mono">{m.match_number || "—"}</div>
                     {umpireName ? <div className="text-xs text-gray-600">Umpire: {umpireName}</div> : null}
                     <Link
                         href={`/scoring/tournaments/${tournamentId}?tab=results&resultMatch=${m.id}`}
@@ -2712,6 +2712,312 @@ function scheduleMatchDayLabel(m: TournamentMatch): string {
     });
 }
 
+/** If two starts on the same court are farther apart than this, show a “Break” row on that court. */
+const SCHEDULE_TIME_BREAK_GAP_MS = 25 * 60 * 1000;
+
+function matchOnCourtKey(m: TournamentMatch, courtKey: string): boolean {
+    const c = m.court_number;
+    if (!c) return courtKey === "1";
+    const num = c.replace(/\D/g, "") || c;
+    return num === courtKey || c === `Court ${courtKey}`;
+}
+
+function sortScheduleDayKeys(keys: string[]): string[] {
+    return [...keys].sort((a, b) => {
+        if (a === "unscheduled") return 1;
+        if (b === "unscheduled") return -1;
+        return a.localeCompare(b);
+    });
+}
+
+type AlignedScheduleBlock =
+    | { kind: "day"; key: string; label: string }
+    | {
+          kind: "row";
+          key: string;
+          cells: (TournamentMatch | null)[];
+          breakBefore: boolean[];
+          /** Idle court this timestep: long gap before its next match — label in the empty cell. */
+          emptySlotBreak: boolean[];
+      };
+
+function buildAlignedScheduleBlocks(
+    matches: TournamentMatch[],
+    courtKeys: string[],
+    breakGapMs: number,
+): { blocks: AlignedScheduleBlock[]; unscheduledByCourt: Record<string, TournamentMatch[]> } {
+    const blocks: AlignedScheduleBlock[] = [];
+    const byDay = new Map<string, TournamentMatch[]>();
+    for (const m of matches) {
+        const k = scheduleMatchDayKey(m);
+        if (!byDay.has(k)) byDay.set(k, []);
+        byDay.get(k)!.push(m);
+    }
+    const dayKeys = sortScheduleDayKeys([...byDay.keys()]);
+    const unscheduledByCourt: Record<string, TournamentMatch[]> = Object.fromEntries(
+        courtKeys.map((ck) => [ck, [] as TournamentMatch[]]),
+    );
+
+    let dayCounter = 0;
+    for (const dayKey of dayKeys) {
+        const dayMatches = byDay.get(dayKey) || [];
+
+        if (dayKey === "unscheduled") {
+            for (const m of dayMatches) {
+                const ck = courtKeys.find((k) => matchOnCourtKey(m, k)) ?? courtKeys[0];
+                if (ck) unscheduledByCourt[ck].push(m);
+            }
+            for (const ck of courtKeys) {
+                unscheduledByCourt[ck].sort((a, b) => scheduleMatchNumKey(a) - scheduleMatchNumKey(b));
+            }
+            continue;
+        }
+
+        const label =
+            dayMatches.length > 0 && dayMatches[0].match_date
+                ? scheduleMatchDayLabel(dayMatches[0])
+                : dayKey;
+        blocks.push({ kind: "day", key: `day-${dayKey}-${dayCounter}`, label });
+        dayCounter += 1;
+
+        const queues: Record<string, TournamentMatch[]> = {};
+        for (const ck of courtKeys) {
+            queues[ck] = dayMatches
+                .filter((m) => matchOnCourtKey(m, ck))
+                .sort((a, b) => {
+                    const da = scheduleMatchDateMs(a);
+                    const db = scheduleMatchDateMs(b);
+                    if (da !== db) return da - db;
+                    return scheduleMatchNumKey(a) - scheduleMatchNumKey(b);
+                });
+        }
+
+        const lastStartMs: Record<string, number | null> = Object.fromEntries(
+            courtKeys.map((k) => [k, null as number | null]),
+        );
+        const gapBreakLabelShown: Record<string, boolean> = Object.fromEntries(
+            courtKeys.map((k) => [k, false]),
+        );
+
+        while (courtKeys.some((ck) => queues[ck].length > 0)) {
+            let nextT = Number.POSITIVE_INFINITY;
+            for (const ck of courtKeys) {
+                const q = queues[ck];
+                if (q.length === 0) continue;
+                const t = scheduleMatchDateMs(q[0]);
+                if (t < nextT) nextT = t;
+            }
+            if (nextT === Number.POSITIVE_INFINITY) break;
+
+            const flags = courtKeys.map((ck) => {
+                const q = queues[ck];
+                if (q.length === 0) return false;
+                if (scheduleMatchDateMs(q[0]) !== nextT) return false;
+                const prev = lastStartMs[ck];
+                if (prev == null) return false;
+                return nextT - prev > breakGapMs;
+            });
+
+            const emptySlotBreak = courtKeys.map((ck) => {
+                const q = queues[ck];
+                const prev = lastStartMs[ck];
+
+                if (q.length > 0 && scheduleMatchDateMs(q[0]) === nextT) return false;
+
+                // No matches left this day on this court, but it already played — idle slots while other courts continue
+                if (q.length === 0 && prev != null) return true;
+
+                if (q.length === 0) return false;
+
+                const tNext = scheduleMatchDateMs(q[0]);
+                if (tNext <= nextT) return false;
+                if (prev == null) return false;
+                if (tNext - prev <= breakGapMs) return false;
+                if (gapBreakLabelShown[ck]) return false;
+                return true;
+            });
+
+            for (let i = 0; i < courtKeys.length; i++) {
+                if (emptySlotBreak[i]) gapBreakLabelShown[courtKeys[i]] = true;
+            }
+
+            const breakBeforeFinal = courtKeys.map((ck, i) => flags[i] && !gapBreakLabelShown[ck]);
+
+            const cells: (TournamentMatch | null)[] = courtKeys.map((ck) => {
+                const q = queues[ck];
+                if (q.length === 0) return null;
+                if (scheduleMatchDateMs(q[0]) !== nextT) return null;
+                const m = q.shift()!;
+                lastStartMs[ck] = scheduleMatchDateMs(m);
+                return m;
+            });
+
+            for (let i = 0; i < courtKeys.length; i++) {
+                if (cells[i] != null) gapBreakLabelShown[courtKeys[i]] = false;
+            }
+
+            blocks.push({
+                kind: "row",
+                key: `row-${dayKey}-${nextT}`,
+                cells,
+                breakBefore: breakBeforeFinal,
+                emptySlotBreak,
+            });
+        }
+    }
+
+    return { blocks, unscheduledByCourt };
+}
+
+/** One horizontal band across all courts (spans full grid width). */
+function ScheduleDayDividerFullWidth({ label }: { label: string }) {
+    return (
+        <div
+            className="w-full border-y border-rose-200 bg-[#FFF5F5]"
+            role="separator"
+            aria-label={label}
+        >
+            <div className="flex w-full min-w-0 items-center gap-3 px-4 py-3 sm:gap-4">
+                <div className="h-px min-w-0 flex-1 bg-rose-300/90" aria-hidden />
+                <span className="shrink-0 text-center text-xs font-bold uppercase tracking-widest text-gray-900">
+                    {label}
+                </span>
+                <div className="h-px min-w-0 flex-1 bg-rose-300/90" aria-hidden />
+            </div>
+        </div>
+    );
+}
+
+function ScheduleBreakCell() {
+    return (
+        <div className="w-full min-h-[5.5rem] px-3 py-2 flex items-stretch">
+            <div className="w-full rounded-lg border-2 border-dashed border-amber-400 bg-amber-50 px-3 py-3 flex items-center justify-center">
+                <span className="text-xs font-bold uppercase tracking-widest text-amber-900">Break</span>
+            </div>
+        </div>
+    );
+}
+
+function AlignedMultiCourtScheduleGrid({
+    matches,
+    courtKeys,
+    renderMatch,
+    breakGapMs = SCHEDULE_TIME_BREAK_GAP_MS,
+    poolSize,
+    emptyHint,
+}: {
+    matches: TournamentMatch[];
+    courtKeys: string[];
+    renderMatch: (m: TournamentMatch) => ReactNode;
+    breakGapMs?: number;
+    poolSize: number;
+    emptyHint?: string;
+}) {
+    const n = courtKeys.length;
+    const colTemplate = useMemo(
+        () => ({ gridTemplateColumns: `repeat(${Math.max(1, n)}, minmax(0, 1fr))` } as const),
+        [n],
+    );
+
+    const { blocks, unscheduledByCourt } = useMemo(
+        () => buildAlignedScheduleBlocks(matches, courtKeys, breakGapMs),
+        [matches, courtKeys, breakGapMs],
+    );
+
+    const hasUnscheduled = courtKeys.some((ck) => (unscheduledByCourt[ck]?.length ?? 0) > 0);
+    const showEmptyBody = blocks.length === 0 && !hasUnscheduled;
+
+    return (
+        <div className="min-w-0 space-y-4">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm min-w-0">
+                <div
+                    className="grid divide-x divide-gray-200 border-b border-gray-200 bg-gray-50"
+                    style={colTemplate}
+                >
+                    {courtKeys.map((ck) => (
+                        <div key={ck} className="px-3 py-2 text-sm font-medium text-gray-900">
+                            Court {ck}
+                        </div>
+                    ))}
+                </div>
+                <div className="divide-y divide-gray-200">
+                    {blocks.map((block) => {
+                        if (block.kind === "day") {
+                            return (
+                                <div key={block.key} className="w-full">
+                                    <ScheduleDayDividerFullWidth label={block.label} />
+                                </div>
+                            );
+                        }
+                        return (
+                            <div
+                                key={block.key}
+                                className="grid divide-x divide-gray-200"
+                                style={colTemplate}
+                            >
+                                {block.cells.map((m, i) => (
+                                    <div
+                                        key={`${block.key}-${courtKeys[i]}`}
+                                        className={`min-w-0 ${block.emptySlotBreak[i] ? "bg-[#FFF5F5]" : "bg-white"}`}
+                                    >
+                                        {block.emptySlotBreak[i] ? (
+                                            <div className="flex min-h-[5.5rem] w-full items-center justify-center px-3 py-3">
+                                                <span className="text-xs font-bold uppercase tracking-widest text-red-600">
+                                                    Break
+                                                </span>
+                                            </div>
+                                        ) : null}
+                                        {block.breakBefore[i] ? (
+                                            <div className="border-b border-gray-200 bg-gray-50/40">
+                                                <ScheduleBreakCell />
+                                            </div>
+                                        ) : null}
+                                        {m ? renderMatch(m) : null}
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })}
+                    {showEmptyBody ? (
+                        <div className="p-3 text-sm text-gray-600">
+                            {emptyHint ??
+                                (poolSize > 0 && matches.length === 0
+                                    ? "No matches match filters."
+                                    : "No matches")}
+                        </div>
+                    ) : null}
+                </div>
+            </div>
+
+            {hasUnscheduled ? (
+                <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-900">No time set</p>
+                    <div className="grid gap-3 sm:gap-4" style={colTemplate}>
+                        {courtKeys.map((ck) => (
+                            <div
+                                key={ck}
+                                className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
+                            >
+                                <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900">
+                                    Court {ck}
+                                </div>
+                                <div className="divide-y divide-gray-200">
+                                    {(unscheduledByCourt[ck] || []).map((m) => (
+                                        <Fragment key={m.id}>{renderMatch(m)}</Fragment>
+                                    ))}
+                                    {(unscheduledByCourt[ck] || []).length === 0 ? (
+                                        <p className="p-3 text-sm text-gray-500">—</p>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 /** Court columns + match cards (shared by individual Schedule tab and Brackets round 1). */
 function IndividualCourtScheduleGrid({
     matches,
@@ -2743,6 +3049,13 @@ function IndividualCourtScheduleGrid({
                     <strong>Number of courts</strong> in Settings if needed.
                 </p>
             )}
+            {!hideCourtsNote && (
+                <p className="text-xs text-gray-500 mb-2">
+                    Day headers and match rows line up across courts. Gaps over{" "}
+                    {Math.round(SCHEDULE_TIME_BREAK_GAP_MS / 60000)} minutes on a court show a <strong>Break</strong> box in
+                    that column.
+                </p>
+            )}
             {isMobileLayout && courtKeys.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-2">
                     {courtKeys.map((ck) => (
@@ -2761,62 +3074,19 @@ function IndividualCourtScheduleGrid({
                     ))}
                 </div>
             )}
-            <div
-                className={`grid grid-cols-1 gap-3 sm:gap-4 min-w-0 w-full overflow-x-auto ${numCourts <= 12 ? ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6", "md:grid-cols-7", "md:grid-cols-8", "md:grid-cols-9", "md:grid-cols-10", "md:grid-cols-11", "md:grid-cols-12"][numCourts] || "md:grid-cols-12" : ""}`}
-                style={numCourts > 12 ? { gridTemplateColumns: `repeat(${numCourts}, minmax(140px, 1fr))` } : undefined}
-            >
-                {visibleCourtKeys.map((courtKey) => {
-                    const courtMatches = matches
-                        .filter((m) => {
-                            const c = m.court_number;
-                            if (!c) return courtKey === "1";
-                            const num = c.replace(/\D/g, "") || c;
-                            return num === courtKey || c === `Court ${courtKey}`;
-                        })
-                        .sort((a, b) => {
-                            const da = scheduleMatchDateMs(a);
-                            const db = scheduleMatchDateMs(b);
-                            if (da !== db) return da - db;
-                            return scheduleMatchNumKey(a) - scheduleMatchNumKey(b);
-                        });
-                    return (
-                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
-                            <div className="bg-gray-50 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
-                            <div className="divide-y divide-gray-200">
-                                {courtMatches.map((match, idx) => {
-                                    const prev = idx > 0 ? courtMatches[idx - 1] : null;
-                                    const isNewDay =
-                                        idx === 0 ||
-                                        !prev ||
-                                        scheduleMatchDayKey(prev) !== scheduleMatchDayKey(match);
-                                    return (
-                                        <Fragment key={match.id}>
-                                            {isNewDay ? (
-                                                <div className="px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
-                                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                                        {scheduleMatchDayLabel(match)}
-                                                    </span>
-                                                </div>
-                                            ) : null}
-                                            <IndividualScheduleMatchCard
-                                                match={match}
-                                                participants={participants}
-                                                tournamentId={tournament.id}
-                                            />
-                                        </Fragment>
-                                    );
-                                })}
-                            </div>
-                            {courtMatches.length === 0 && (
-                                <p className="p-3 text-sm text-gray-600">
-                                    {poolSize > 0 && matches.length === 0
-                                        ? "No matches match filters."
-                                        : "No matches"}
-                                </p>
-                            )}
-                        </div>
-                    );
-                })}
+            <div className="w-full min-w-0 overflow-x-auto">
+                <AlignedMultiCourtScheduleGrid
+                    matches={matches}
+                    courtKeys={visibleCourtKeys}
+                    poolSize={poolSize}
+                    renderMatch={(m) => (
+                        <IndividualScheduleMatchCard
+                            match={m}
+                            participants={participants}
+                            tournamentId={tournament.id}
+                        />
+                    )}
+                />
             </div>
         </>
     );
@@ -2864,7 +3134,6 @@ function ScheduleMatchCard({
                               })
                             : "No time set"}
                     </div>
-                    <div className="text-xs text-gray-500 font-mono">{match.match_number || "—"}</div>
                     {initialUmpire ? <div className="text-xs text-gray-600">Umpire: {initialUmpire}</div> : null}
                     {canEdit && onSaveUmpire ? (
                         <div className="pt-1 flex flex-wrap items-center gap-2">
@@ -3889,6 +4158,11 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             <p className="text-xs text-gray-500">
                 Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change <strong>Number of courts</strong> in Settings if needed.
             </p>
+            <p className="text-xs text-gray-500">
+                Day headers and match rows line up across all courts. If the next start on a court is more than{" "}
+                {Math.round(SCHEDULE_TIME_BREAK_GAP_MS / 60000)} minutes after the previous one on that court, a{" "}
+                <strong>Break</strong> box appears in that column.
+            </p>
             {isMobileLayout && courtKeys.length > 1 && (
                 <div className="flex flex-wrap gap-2">
                     {courtKeys.map((ck) => (
@@ -3907,61 +4181,24 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     ))}
                 </div>
             )}
-            <div
-                className={`grid grid-cols-1 gap-3 sm:gap-4 min-w-0 w-full overflow-x-auto ${numCourts <= 12 ? ["", "md:grid-cols-1", "md:grid-cols-2", "md:grid-cols-3", "md:grid-cols-4", "md:grid-cols-5", "md:grid-cols-6", "md:grid-cols-7", "md:grid-cols-8", "md:grid-cols-9", "md:grid-cols-10", "md:grid-cols-11", "md:grid-cols-12"][numCourts] || "md:grid-cols-12" : ""}`}
-                style={numCourts > 12 ? { gridTemplateColumns: `repeat(${numCourts}, minmax(140px, 1fr))` } : undefined}
-            >
-                {visibleCourtKeys.map((courtKey) => {
-                    const courtMatches = filteredMatches
-                        .filter((m) => {
-                            const c = (m as TournamentMatch).court_number;
-                            if (!c) return courtKey === "1";
-                            const num = c.replace(/\D/g, "") || c;
-                            return num === courtKey || c === `Court ${courtKey}`;
-                        })
-                        .sort((a, b) => {
-                            const da = scheduleMatchDateMs(a as TournamentMatch);
-                            const db = scheduleMatchDateMs(b as TournamentMatch);
-                            if (da !== db) return da - db;
-                            return scheduleMatchNumKey(a as TournamentMatch) - scheduleMatchNumKey(b as TournamentMatch);
-                        });
-                    return (
-                        <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
-                            <div className="bg-gray-50 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
-                            <div className="divide-y divide-gray-200">
-                                {courtMatches.map((match, idx) => {
-                                    const typed = match as TournamentMatch;
-                                    const prev = idx > 0 ? (courtMatches[idx - 1] as TournamentMatch) : null;
-                                    const isNewDay =
-                                        idx === 0 ||
-                                        !prev ||
-                                        scheduleMatchDayKey(prev) !== scheduleMatchDayKey(typed);
-                                    return (
-                                        <Fragment key={typed.id}>
-                                            {isNewDay ? (
-                                                <div className="px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
-                                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
-                                                        {scheduleMatchDayLabel(typed)}
-                                                    </span>
-                                                </div>
-                                            ) : null}
-                                            <ScheduleMatchCard
-                                                match={typed}
-                                                canEdit={canEdit}
-                                                onSaveUmpire={handleSaveMatchUmpire}
-                                            />
-                                        </Fragment>
-                                    );
-                                })}
-                            </div>
-                            {courtMatches.length === 0 && (
-                                <p className="p-3 text-sm text-gray-600">
-                                    {matches.length > 0 && filteredMatches.length === 0 ? "No matches match filters." : "No matches"}
-                                </p>
-                            )}
-                        </div>
-                    );
-                })}
+            <div className="w-full min-w-0 overflow-x-auto">
+                <AlignedMultiCourtScheduleGrid
+                    matches={filteredMatches as TournamentMatch[]}
+                    courtKeys={visibleCourtKeys}
+                    poolSize={matches.length}
+                    emptyHint={
+                        matches.length > 0 && filteredMatches.length === 0
+                            ? "No matches match filters."
+                            : undefined
+                    }
+                    renderMatch={(m) => (
+                        <ScheduleMatchCard
+                            match={m}
+                            canEdit={canEdit}
+                            onSaveUmpire={handleSaveMatchUmpire}
+                        />
+                    )}
+                />
             </div>
             {matches.length === 0 && !showAdd && <p className="text-gray-600 text-sm">No matches yet. Add a match to build the schedule.</p>}
             {matches.length > 0 && filteredMatches.length === 0 && (scheduleFilterTeamId || scheduleFilterPlayer.trim()) && (
