@@ -4711,6 +4711,21 @@ function GeneratePlayoffsBlock({
     );
 }
 
+/** Standings: points awarded per match win on team vs player leaderboards. */
+const TEAM_STANDINGS_POINTS_PER_WIN = 20;
+const PLAYER_STANDINGS_POINTS_PER_WIN = 10;
+
+/** Participant IDs on the winning side from doubles lineup notes; empty if not attributable. */
+function winningParticipantIdsFromTeamDoublesMatch(m: TournamentMatch): string[] {
+    const winner = m.winner_team_id;
+    if (!winner) return [];
+    const doubles = parseDoublesMatchNotes(m.notes);
+    if (!doubles) return [];
+    if (winner === doubles.teamAId) return doubles.sideA.map((s) => s.id);
+    if (winner === doubles.teamBId) return doubles.sideB.map((s) => s.id);
+    return [];
+}
+
 function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament; canEdit?: boolean }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
@@ -4770,7 +4785,7 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
     const withPts = teams.map((t) => ({
         team: t,
         ...stats[t.id],
-        pts: stats[t.id].won * 1,
+        pts: stats[t.id].won * TEAM_STANDINGS_POINTS_PER_WIN,
         pointsDifference: stats[t.id].pointsFor - stats[t.id].pointsAgainst,
     }));
     const sorted = withPts.sort((a, b) => {
@@ -4791,9 +4806,9 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
             return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
         });
     });
-    const eligible = sorted.filter((r) => r.played >= 1 && r.pts >= 1);
+    const eligible = sorted.filter((r) => r.played >= 1 && r.won >= 1);
     const topPerCategory = categoriesOrdered
-        .map((cat) => byCategory[cat].find((r) => r.played >= 1 && r.pts >= 1))
+        .map((cat) => byCategory[cat].find((r) => r.played >= 1 && r.won >= 1))
         .filter((r): r is NonNullable<typeof r> => Boolean(r));
     const needEightQF = 8;
     const qualifiedForQF = [...topPerCategory];
@@ -4814,11 +4829,14 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
         matches.forEach((m) => {
             const winner = (m as TournamentMatch).winner_team_id;
             if (!winner) return;
-            members.forEach((mem) => {
-                if (mem.team_id === winner) {
-                    ptsByMemberId[mem.id] = (ptsByMemberId[mem.id] || 0) + 1;
+            const winPids = winningParticipantIdsFromTeamDoublesMatch(m as TournamentMatch);
+            if (winPids.length === 0) return;
+            for (const pid of winPids) {
+                const mem = members.find((x) => x.participant_id === pid && x.team_id === winner);
+                if (mem) {
+                    ptsByMemberId[mem.id] = (ptsByMemberId[mem.id] || 0) + PLAYER_STANDINGS_POINTS_PER_WIN;
                 }
-            });
+            }
         });
         members.forEach((m) => {
             if (!byTeam[m.team_id]) byTeam[m.team_id] = [];
@@ -4837,7 +4855,10 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
     return (
         <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Team standings</h2>
-            <p className="text-sm text-gray-600">Ranked by PTS, then point difference (PD). Only teams with at least one win (PTS ≥ 1) can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF → Semis → Finals.</p>
+            <p className="text-sm text-gray-600">
+                Ranked by PTS, then point difference (PD). {TEAM_STANDINGS_POINTS_PER_WIN} points per team win. Only teams with at
+                least one win can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF → Semis → Finals.
+            </p>
             <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
                 <table className="min-w-full overflow-hidden">
                     <thead className="bg-white border-b border-gray-200">
@@ -4913,7 +4934,11 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
                     </tbody>
                 </table>
             </div>
-            <p className="text-xs text-gray-500">PL = Played, W = Won, L = Lost, PTS = Points (1 per win), PD = Point difference (for–against). Tiebreaker: PTS then PD.</p>
+            <p className="text-xs text-gray-500">
+                PL = Played, W = Won, L = Lost, PTS = Points ({TEAM_STANDINGS_POINTS_PER_WIN} per win), PD = Point difference
+                (for–against). Tiebreaker: PTS then PD. Expanded roster PTS = {PLAYER_STANDINGS_POINTS_PER_WIN} per win for players in
+                the recorded doubles lineup only.
+            </p>
 
             {canEdit && qualifiedForQF.length >= 4 && (
                 <GeneratePlayoffsBlock
@@ -4949,8 +4974,22 @@ function useIsMaxMd() {
 }
 
 function comparePlayerStatRows(
-    a: { played: number; won: number; lost: number; pts: number; member: TournamentTeamMember & { participant?: Participant } },
-    b: { played: number; won: number; lost: number; pts: number; member: TournamentTeamMember & { participant?: Participant } },
+    a: {
+        played: number;
+        won: number;
+        lost: number;
+        pts: number;
+        pointsDifference: number;
+        member: TournamentTeamMember & { participant?: Participant };
+    },
+    b: {
+        played: number;
+        won: number;
+        lost: number;
+        pts: number;
+        pointsDifference: number;
+        member: TournamentTeamMember & { participant?: Participant };
+    },
     sortKey: PlayerStatsSortKey
 ): number {
     if (sortKey === "name") {
@@ -4965,6 +5004,7 @@ function comparePlayerStatRows(
     else primary = b.lost - a.lost;
     if (primary !== 0) return primary;
     if (b.pts !== a.pts) return b.pts - a.pts;
+    if (b.pointsDifference !== a.pointsDifference) return b.pointsDifference - a.pointsDifference;
     const an = a.member.participant?.player_name ?? "";
     const bn = b.member.participant?.player_name ?? "";
     return an.localeCompare(bn, undefined, { sensitivity: "base" });
@@ -4974,8 +5014,6 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
     const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant; team?: TournamentTeam })[]>([]);
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [sortKey, setSortKey] = useState<PlayerStatsSortKey>("pts");
-    const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
-    const isMobileLayout = useIsMaxMd();
     const supabase = createClient();
 
     useEffect(() => {
@@ -4997,15 +5035,69 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
     }, [tournament.id, supabase]);
 
     const rowsWithStats = useMemo(() => {
-        const participantStats: Record<string, { played: number; won: number; lost: number }> = {};
+        const participantStats: Record<
+            string,
+            { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }
+        > = {};
         members.forEach((m) => {
             const pid = (m as TournamentTeamMember & { participant?: Participant }).participant_id;
-            if (pid) participantStats[pid] = { played: 0, won: 0, lost: 0 };
+            if (pid) participantStats[pid] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
         });
         matches.forEach((match) => {
-            const winnerId = (match as TournamentMatch).winner_team_id;
-            const teamA = (match as TournamentMatch).team_a_id;
-            const teamB = (match as TournamentMatch).team_b_id;
+            const tm = match as TournamentMatch;
+            const winnerId = tm.winner_team_id;
+            const teamA = tm.team_a_id;
+            const teamB = tm.team_b_id;
+            const score = tm.final_score;
+            let pfA = 0;
+            let pfB = 0;
+            if (score && typeof score === "string") {
+                const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+                sets.forEach((setStr) => {
+                    const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        pfA += parts[0];
+                        pfB += parts[1];
+                    }
+                });
+            }
+            const doubles = parseDoublesMatchNotes(tm.notes);
+            const doublesAligned =
+                doubles &&
+                teamA &&
+                teamB &&
+                ((doubles.teamAId === teamA && doubles.teamBId === teamB) ||
+                    (doubles.teamAId === teamB && doubles.teamBId === teamA));
+            if (doublesAligned && doubles) {
+                const pidsOnA = new Set(doubles.sideA.map((s) => s.id));
+                const pidsOnB = new Set(doubles.sideB.map((s) => s.id));
+                members.forEach((mem) => {
+                    const tid = (mem as TournamentTeamMember & { team?: TournamentTeam }).team_id;
+                    const pid = (mem as TournamentTeamMember & { participant?: Participant }).participant_id;
+                    if (!pid || !participantStats[pid]) return;
+                    const onLineupA = tid === doubles.teamAId && pidsOnA.has(pid);
+                    const onLineupB = tid === doubles.teamBId && pidsOnB.has(pid);
+                    if (!onLineupA && !onLineupB) return;
+                    participantStats[pid].played += 1;
+                    if (
+                        (onLineupA && winnerId === doubles.teamAId) ||
+                        (onLineupB && winnerId === doubles.teamBId)
+                    ) {
+                        participantStats[pid].won += 1;
+                    } else {
+                        participantStats[pid].lost += 1;
+                    }
+                    if (onLineupA) {
+                        participantStats[pid].pointsFor += pfA;
+                        participantStats[pid].pointsAgainst += pfB;
+                    }
+                    if (onLineupB) {
+                        participantStats[pid].pointsFor += pfB;
+                        participantStats[pid].pointsAgainst += pfA;
+                    }
+                });
+                return;
+            }
             members.forEach((mem) => {
                 const tid = (mem as TournamentTeamMember & { team?: TournamentTeam }).team_id;
                 const pid = (mem as TournamentTeamMember & { participant?: Participant }).participant_id;
@@ -5014,6 +5106,13 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                     participantStats[pid].played += 1;
                     if (tid === winnerId) participantStats[pid].won += 1;
                     else participantStats[pid].lost += 1;
+                    if (tid === teamA) {
+                        participantStats[pid].pointsFor += pfA;
+                        participantStats[pid].pointsAgainst += pfB;
+                    } else if (tid === teamB) {
+                        participantStats[pid].pointsFor += pfB;
+                        participantStats[pid].pointsAgainst += pfA;
+                    }
                 }
             });
         });
@@ -5021,8 +5120,16 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
             .map((m) => {
                 const mem = m as TournamentTeamMember & { participant?: Participant; team?: TournamentTeam };
                 const pid = mem.participant_id;
-                const s = participantStats[pid] || { played: 0, won: 0, lost: 0 };
-                return { member: mem, played: s.played, won: s.won, lost: s.lost, pts: s.won };
+                const s = participantStats[pid] || { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+                const pointsDifference = s.pointsFor - s.pointsAgainst;
+                return {
+                    member: mem,
+                    played: s.played,
+                    won: s.won,
+                    lost: s.lost,
+                    pts: s.won * PLAYER_STANDINGS_POINTS_PER_WIN,
+                    pointsDifference,
+                };
             })
             .filter((r) => r.member.participant);
     }, [members, matches]);
@@ -5046,7 +5153,6 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                         value={sortKey}
                         onChange={(e) => {
                             setSortKey(e.target.value as PlayerStatsSortKey);
-                            setExpandedMemberId(null);
                         }}
                         className="w-full sm:w-56 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
                     >
@@ -5057,154 +5163,121 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                         ))}
                     </select>
                     <p className="text-xs text-gray-500 hidden sm:block">
-                        PL = played, W = won, L = lost, PTS = points (1 per win). Rank (#) follows this order.
+                        PL = played, W = won, L = lost, PTS = points ({PLAYER_STANDINGS_POINTS_PER_WIN} per win), PD = point
+                        difference (sets). Rank (#) follows this order; tiebreaker PTS then PD. Doubles lineups in match notes limit
+                        who is credited for those matches.
                     </p>
                 </div>
             </div>
-            <p className="text-xs text-gray-600 sm:hidden -mt-2">
-                On small screens, tap a row to expand full team name and stats.
-            </p>
 
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
                 {sorted.length === 0 ? (
                     <div className="p-4 text-sm text-gray-600">No completed matches yet.</div>
                 ) : (
-                    <div className="divide-y divide-gray-200">
-                        {sorted.map((row, idx) => {
-                            const rank = idx + 1;
-                            const paddedRank = String(rank).padStart(3, "0");
-                            const participantName =
-                                (row.member as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—";
-                            const teamNameRaw =
-                                (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
-                            const teamName = stripTrailingBracketLabel(teamNameRaw);
-                            const skillLine = teamName;
-
-                            const medal =
-                                rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
-
-                            const initials = participantName
-                                .split(" ")
-                                .filter(Boolean)
-                                .slice(0, 2)
-                                .map((p) => p[0]?.toUpperCase())
-                                .join("") || "P";
-
-                            const isExpanded = expandedMemberId === row.member.id;
-
-                            const handleRowActivate = () => {
-                                if (!isMobileLayout) return;
-                                setExpandedMemberId((id) => (id === row.member.id ? null : row.member.id));
-                            };
-
-                            return (
-                                <div
-                                    key={row.member.id}
-                                    role={isMobileLayout ? "button" : undefined}
-                                    tabIndex={isMobileLayout ? 0 : undefined}
-                                    aria-expanded={isMobileLayout ? isExpanded : undefined}
-                                    aria-label={isMobileLayout ? `${participantName}, rank ${rank}. Tap for full stats.` : undefined}
-                                    onClick={handleRowActivate}
-                                    onKeyDown={(e) => {
-                                        if (!isMobileLayout) return;
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            e.preventDefault();
-                                            handleRowActivate();
-                                        }
-                                    }}
-                                    className={`flex items-center justify-between gap-3 sm:gap-4 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-inset ${
-                                        isMobileLayout ? "cursor-pointer active:bg-red-50/60 max-md:select-none" : ""
-                                    }`}
-                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
-                                >
-                                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                                        <div className="relative flex-shrink-0">
-                                            <div className="h-11 w-11 rounded-full flex items-center justify-center border border-gray-200 bg-gray-100 text-gray-900 font-semibold">
-                                                {initials}
-                                            </div>
-                                            {medal && (
-                                                <span className="absolute -bottom-2 -left-2 text-lg" aria-label={`Rank ${rank}`}>
-                                                    {medal}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="min-w-0 flex-1 text-left">
-                                            <div className="flex items-start justify-between gap-2 md:block">
-                                                <div className="text-sm sm:text-base font-semibold text-gray-900 truncate md:truncate">
-                                                    {participantName}
-                                                </div>
-                                                <span className="md:hidden text-xs text-gray-500 shrink-0" aria-hidden>
-                                                    {isExpanded ? "▲" : "▼"}
-                                                </span>
-                                            </div>
-                                            {/* Desktop / tablet: full stats line */}
-                                            <div className="hidden md:block text-sm text-gray-800 mt-0.5">
-                                                <span className="font-medium text-gray-900">{teamName}</span>
-                                                <span className="text-gray-800">
-                                                    {" "}
-                                                    • PL: {row.played} • W: {row.won} • L: {row.lost} • PTS: {row.pts}
-                                                </span>
-                                            </div>
-                                            {/* Mobile: compact one-liner when collapsed */}
-                                            <div
-                                                className={`md:hidden text-xs text-gray-800 mt-0.5 ${isExpanded ? "hidden" : "line-clamp-2"}`}
-                                            >
-                                                <span className="text-gray-900 font-medium">{skillLine}</span>
-                                                <span className="text-gray-700">
-                                                    {" "}
-                                                    · PL {row.played} · W {row.won} · L {row.lost} · PTS {row.pts}
-                                                </span>
-                                            </div>
-                                            {/* Mobile: expanded detail */}
-                                            {isExpanded && (
-                                                <div className="md:hidden mt-2 pt-2 border-t border-gray-200 space-y-2 text-sm">
-                                                    <div>
-                                                        <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                                            Team
-                                                        </span>
-                                                        <p className="text-gray-900 font-medium break-words">{teamName}</p>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Played</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.played}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Wins</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.won}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Losses</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.lost}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Points</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.pts}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-col items-end flex-shrink-0 text-right">
-                                        <span className="text-[10px] uppercase tracking-wide text-gray-500 md:hidden">Rank</span>
-                                        <div className="text-2xl sm:text-3xl font-semibold tracking-wide text-gray-900">{paddedRank}</div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    <table className="min-w-full overflow-hidden">
+                        <thead className="bg-white border-b border-gray-200">
+                            <tr>
+                                <th className="text-left py-2.5 px-4 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    Player
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PL
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    W
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    L
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PTS
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PD
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    #
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sorted.map((row, idx) => {
+                                const rank = idx + 1;
+                                const participantName =
+                                    (row.member as TournamentTeamMember & { participant?: Participant }).participant
+                                        ?.player_name ?? "—";
+                                const teamNameRaw =
+                                    (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
+                                const teamName = stripTrailingBracketLabel(teamNameRaw);
+                                const pd = row.pointsDifference;
+                                const rankDisplay =
+                                    rank === 1 ? (
+                                        <span className="text-xl" title="1st" aria-label="1st">
+                                            🥇
+                                        </span>
+                                    ) : rank === 2 ? (
+                                        <span className="text-xl" title="2nd" aria-label="2nd">
+                                            🥈
+                                        </span>
+                                    ) : rank === 3 ? (
+                                        <span className="text-xl" title="3rd" aria-label="3rd">
+                                            🥉
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-700">{rank}</span>
+                                    );
+                                return (
+                                    <tr
+                                        key={row.member.id}
+                                        className="border-t border-gray-200"
+                                        style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                    >
+                                        <td className="py-2.5 px-4 text-sm sm:text-base">
+                                            <div className="font-semibold text-gray-900">{participantName}</div>
+                                            <div className="text-xs text-gray-600 mt-0.5">{teamName}</div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.played}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.won}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.lost}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.pts}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">
+                                            {pd >= 0 ? `+${pd}` : String(pd)}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 )}
             </div>
+            <p className="text-xs text-gray-500">
+                PL = Played, W = Won, L = Lost, PTS = Points ({PLAYER_STANDINGS_POINTS_PER_WIN} per win), PD = Point difference
+                (for–against in completed sets). Tiebreaker: PTS then PD. For balanced-doubles matches (lineup in match notes), only
+                players listed in that lineup get PL/W/L/PTS/PD from that match; other team matches still count all roster members on
+                the two sides.
+            </p>
         </div>
     );
 }
 
 function compareIndividualParticipantStatRows(
-    a: { played: number; won: number; lost: number; pts: number; participant: Participant },
-    b: { played: number; won: number; lost: number; pts: number; participant: Participant },
+    a: {
+        played: number;
+        won: number;
+        lost: number;
+        pts: number;
+        pointsDifference: number;
+        participant: Participant;
+    },
+    b: {
+        played: number;
+        won: number;
+        lost: number;
+        pts: number;
+        pointsDifference: number;
+        participant: Participant;
+    },
     sortKey: PlayerStatsSortKey
 ): number {
     if (sortKey === "name") {
@@ -5219,14 +5292,13 @@ function compareIndividualParticipantStatRows(
     else primary = b.lost - a.lost;
     if (primary !== 0) return primary;
     if (b.pts !== a.pts) return b.pts - a.pts;
+    if (b.pointsDifference !== a.pointsDifference) return b.pointsDifference - a.pointsDifference;
     return (a.participant.player_name || "").localeCompare(b.participant.player_name || "", undefined, { sensitivity: "base" });
 }
 
 function IndividualPlayerStatsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [sortKey, setSortKey] = useState<PlayerStatsSortKey>("pts");
-    const [expandedParticipantId, setExpandedParticipantId] = useState<string | null>(null);
-    const isMobileLayout = useIsMaxMd();
     const supabase = createClient();
 
     useEffect(() => {
@@ -5239,9 +5311,10 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
     }, [tournament.id, supabase]);
 
     const rowsWithStats = useMemo(() => {
-        const stats: Record<string, { played: number; won: number; lost: number }> = {};
+        const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> =
+            {};
         participants.forEach((p) => {
-            stats[p.id] = { played: 0, won: 0, lost: 0 };
+            stats[p.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
         });
         for (const match of matches) {
             const tm = match as TournamentMatch;
@@ -5252,20 +5325,45 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
             const pid1 = participantIdForMatchPlayer(p1, participants);
             const pid2 = participantIdForMatchPlayer(p2, participants);
             const w = tm.winner_id;
+            let pf1 = 0;
+            let pf2 = 0;
+            const score = tm.final_score;
+            if (score && typeof score === "string") {
+                const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+                sets.forEach((setStr) => {
+                    const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        pf1 += parts[0];
+                        pf2 += parts[1];
+                    }
+                });
+            }
             if (pid1 && stats[pid1]) {
                 stats[pid1].played += 1;
                 if (w === p1.id) stats[pid1].won += 1;
                 else if (w && w === p2.id) stats[pid1].lost += 1;
+                stats[pid1].pointsFor += pf1;
+                stats[pid1].pointsAgainst += pf2;
             }
             if (pid2 && stats[pid2]) {
                 stats[pid2].played += 1;
                 if (w === p2.id) stats[pid2].won += 1;
                 else if (w && w === p1.id) stats[pid2].lost += 1;
+                stats[pid2].pointsFor += pf2;
+                stats[pid2].pointsAgainst += pf1;
             }
         }
         return participants.map((p) => {
-            const s = stats[p.id] || { played: 0, won: 0, lost: 0 };
-            return { participant: p, played: s.played, won: s.won, lost: s.lost, pts: s.won };
+            const s = stats[p.id] || { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+            const pointsDifference = s.pointsFor - s.pointsAgainst;
+            return {
+                participant: p,
+                played: s.played,
+                won: s.won,
+                lost: s.lost,
+                pts: s.won * PLAYER_STANDINGS_POINTS_PER_WIN,
+                pointsDifference,
+            };
         });
     }, [participants, matches]);
 
@@ -5288,7 +5386,6 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                         value={sortKey}
                         onChange={(e) => {
                             setSortKey(e.target.value as PlayerStatsSortKey);
-                            setExpandedParticipantId(null);
                         }}
                         className="w-full sm:w-56 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
                     >
@@ -5299,146 +5396,98 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                         ))}
                     </select>
                     <p className="text-xs text-gray-500 hidden sm:block">
-                        PL = played, W = won, L = lost, PTS = points (1 per win). Rank (#) follows this order. Stats use
-                        completed singles matches; link match players to participants (name or account) to count.
+                        PL = played, W = won, L = lost, PTS = points ({PLAYER_STANDINGS_POINTS_PER_WIN} per win), PD = point
+                        difference (sets). Rank (#) follows this order. Completed singles matches only; link match players to
+                        participants to count.
                     </p>
                 </div>
             </div>
-            <p className="text-xs text-gray-600 sm:hidden -mt-2">
-                On small screens, tap a row to expand club and stats.
-            </p>
 
-            <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+            <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
                 {sorted.length === 0 ? (
                     <div className="p-4 text-sm text-gray-600">No participants in this tournament yet.</div>
                 ) : (
-                    <div className="divide-y divide-gray-200">
-                        {sorted.map((row, idx) => {
-                            const rank = idx + 1;
-                            const paddedRank = String(rank).padStart(3, "0");
-                            const participantName = row.participant.player_name || "—";
-                            const club = row.participant.club != null && String(row.participant.club).trim() !== ""
-                                ? stripTrailingBracketLabel(String(row.participant.club).trim())
-                                : null;
-                            const subLine = club || "";
-                            const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
-                            const initials =
-                                participantName
-                                    .split(" ")
-                                    .filter(Boolean)
-                                    .slice(0, 2)
-                                    .map((p) => p[0]?.toUpperCase())
-                                    .join("") || "P";
-                            const isExpanded = expandedParticipantId === row.participant.id;
-                            const handleRowActivate = () => {
-                                if (!isMobileLayout) return;
-                                setExpandedParticipantId((id) => (id === row.participant.id ? null : row.participant.id));
-                            };
-
-                            return (
-                                <div
-                                    key={row.participant.id}
-                                    role={isMobileLayout ? "button" : undefined}
-                                    tabIndex={isMobileLayout ? 0 : undefined}
-                                    aria-expanded={isMobileLayout ? isExpanded : undefined}
-                                    aria-label={isMobileLayout ? `${participantName}, rank ${rank}. Tap for full stats.` : undefined}
-                                    onClick={handleRowActivate}
-                                    onKeyDown={(e) => {
-                                        if (!isMobileLayout) return;
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            e.preventDefault();
-                                            handleRowActivate();
-                                        }
-                                    }}
-                                    className={`flex items-center justify-between gap-3 sm:gap-4 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-inset ${
-                                        isMobileLayout ? "cursor-pointer active:bg-red-50/60 max-md:select-none" : ""
-                                    }`}
-                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
-                                >
-                                    <div className="flex items-start gap-3 min-w-0 flex-1">
-                                        <div className="relative flex-shrink-0">
-                                            <div className="h-11 w-11 rounded-full flex items-center justify-center border border-gray-200 bg-gray-100 text-gray-900 font-semibold">
-                                                {initials}
-                                            </div>
-                                            {medal && (
-                                                <span className="absolute -bottom-2 -left-2 text-lg" aria-label={`Rank ${rank}`}>
-                                                    {medal}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="min-w-0 flex-1 text-left">
-                                            <div className="flex items-start justify-between gap-2 md:block">
-                                                <div className="text-sm sm:text-base font-semibold text-gray-900 truncate md:truncate">
-                                                    {participantName}
-                                                </div>
-                                                <span className="md:hidden text-xs text-gray-500 shrink-0" aria-hidden>
-                                                    {isExpanded ? "▲" : "▼"}
-                                                </span>
-                                            </div>
-                                            <div className="hidden md:block text-sm text-gray-800 mt-0.5">
-                                                {subLine ? (
-                                                    <span className="font-medium text-gray-900">{subLine}</span>
-                                                ) : (
-                                                    <span className="text-gray-500">—</span>
-                                                )}
-                                                <span className="text-gray-800">
-                                                    {" "}
-                                                    • PL: {row.played} • W: {row.won} • L: {row.lost} • PTS: {row.pts}
-                                                </span>
-                                            </div>
-                                            <div
-                                                className={`md:hidden text-xs text-gray-800 mt-0.5 ${isExpanded ? "hidden" : "line-clamp-2"}`}
-                                            >
-                                                <span className="text-gray-900 font-medium">{subLine || "—"}</span>
-                                                <span className="text-gray-700">
-                                                    {" "}
-                                                    · PL {row.played} · W {row.won} · L {row.lost} · PTS {row.pts}
-                                                </span>
-                                            </div>
-                                            {isExpanded && (
-                                                <div className="md:hidden mt-2 pt-2 border-t border-gray-200 space-y-2 text-sm">
-                                                    {club ? (
-                                                        <div>
-                                                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                                                Club
-                                                            </span>
-                                                            <p className="text-gray-900 font-medium break-words">{club}</p>
-                                                        </div>
-                                                    ) : null}
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Played</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.played}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Wins</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.won}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Losses</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.lost}</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
-                                                            <div className="text-xs text-gray-600">Points</div>
-                                                            <div className="text-lg font-semibold text-gray-900">{row.pts}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-col items-end flex-shrink-0 text-right">
-                                        <span className="text-[10px] uppercase tracking-wide text-gray-500 md:hidden">Rank</span>
-                                        <div className="text-2xl sm:text-3xl font-semibold tracking-wide text-gray-900">{paddedRank}</div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                    <table className="min-w-full overflow-hidden">
+                        <thead className="bg-white border-b border-gray-200">
+                            <tr>
+                                <th className="text-left py-2.5 px-4 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    Player
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PL
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    W
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    L
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PTS
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    PD
+                                </th>
+                                <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                    #
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {sorted.map((row, idx) => {
+                                const rank = idx + 1;
+                                const participantName = row.participant.player_name || "—";
+                                const club =
+                                    row.participant.club != null && String(row.participant.club).trim() !== ""
+                                        ? stripTrailingBracketLabel(String(row.participant.club).trim())
+                                        : null;
+                                const pd = row.pointsDifference;
+                                const rankDisplay =
+                                    rank === 1 ? (
+                                        <span className="text-xl" title="1st" aria-label="1st">
+                                            🥇
+                                        </span>
+                                    ) : rank === 2 ? (
+                                        <span className="text-xl" title="2nd" aria-label="2nd">
+                                            🥈
+                                        </span>
+                                    ) : rank === 3 ? (
+                                        <span className="text-xl" title="3rd" aria-label="3rd">
+                                            🥉
+                                        </span>
+                                    ) : (
+                                        <span className="text-gray-700">{rank}</span>
+                                    );
+                                return (
+                                    <tr
+                                        key={row.participant.id}
+                                        className="border-t border-gray-200"
+                                        style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                    >
+                                        <td className="py-2.5 px-4 text-sm sm:text-base">
+                                            <div className="font-semibold text-gray-900">{participantName}</div>
+                                            <div className="text-xs text-gray-600 mt-0.5">{club || "—"}</div>
+                                        </td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.played}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.won}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.lost}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.pts}</td>
+                                        <td className="py-2.5 px-3 text-sm text-center text-gray-700">
+                                            {pd >= 0 ? `+${pd}` : String(pd)}
+                                        </td>
+                                        <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 )}
             </div>
+            <p className="text-xs text-gray-500">
+                PL = Played, W = Won, L = Lost, PTS = Points ({PLAYER_STANDINGS_POINTS_PER_WIN} per win), PD = Point difference
+                (for–against in completed sets). Tiebreaker: PTS then PD. Stats use completed singles matches; link match players to
+                participants (name or account) to count.
+            </p>
         </div>
     );
 }
