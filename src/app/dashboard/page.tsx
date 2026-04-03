@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
@@ -205,23 +204,13 @@ export default function Dashboard() {
 
       {/* Sports Selection - always visible. Location sheet pops over if not set */}
       {!selectedSport && (
-        <>
-          <SportsSelection
-            selectedLocation={selectedLocation || "Current Location"}
-            onLocationChange={handleLocationChange}
-            onRequestLocationChange={() => setIsLocationSheetOpen(true)}
-            userName={user?.full_name}
-            userId={user?.id || null}
-          />
-          <div className="px-4 pb-2 text-center">
-            <Link
-              href="/bid-tracker"
-              className="text-gray-400 text-xs hover:text-gray-600"
-            >
-              Bid first timer (standalone tool)
-            </Link>
-          </div>
-        </>
+        <SportsSelection
+          selectedLocation={selectedLocation || "Current Location"}
+          onLocationChange={handleLocationChange}
+          onRequestLocationChange={() => setIsLocationSheetOpen(true)}
+          userName={user?.full_name}
+          userId={user?.id || null}
+        />
       )}
 
       {/* Turf Listing */}

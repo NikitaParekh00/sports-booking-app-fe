@@ -48,10 +48,51 @@ function getCourtCount(t: Tournament): number {
 const ASSIGN_SLOT_MINUTES_MIN = 1;
 const ASSIGN_SLOT_MINUTES_MAX = 180;
 const DEFAULT_ASSIGN_SLOT_MINUTES = 15;
+const NOTES_JSON_MARK = "__JSON__";
+const UMPIRE_PREFIX = "UMP:";
 
 function clampAssignSlotMinutes(n: number): number {
     if (!Number.isFinite(n)) return DEFAULT_ASSIGN_SLOT_MINUTES;
     return Math.min(ASSIGN_SLOT_MINUTES_MAX, Math.max(ASSIGN_SLOT_MINUTES_MIN, Math.floor(n)));
+}
+
+function getUmpireFromNotes(notes: string | null | undefined): string {
+    if (!notes) return "";
+    const idx = notes.indexOf(NOTES_JSON_MARK);
+    const textPart = (idx >= 0 ? notes.slice(0, idx) : notes).trim();
+    if (!textPart) return "";
+    const line = textPart
+        .split("\n")
+        .map((s) => s.trim())
+        .find((s) => /^ump(ire)?\s*:/i.test(s));
+    if (!line) return "";
+    return line.replace(/^ump(ire)?\s*:\s*/i, "").trim();
+}
+
+function setUmpireInNotes(
+    existingNotes: string | null | undefined,
+    umpireName: string | null | undefined,
+): string | null {
+    const raw = (existingNotes || "").trim();
+    const idx = raw.indexOf(NOTES_JSON_MARK);
+    const jsonPart = idx >= 0 ? raw.slice(idx).trim() : "";
+    const textPart = idx >= 0 ? raw.slice(0, idx).trim() : raw;
+
+    const cleanedTextLines = textPart
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((s) => s && !/^ump(ire)?\s*:/i.test(s));
+
+    const cleanUmpire = (umpireName || "").trim();
+    const nextTextLines = cleanUmpire
+        ? [`${UMPIRE_PREFIX} ${cleanUmpire}`, ...cleanedTextLines]
+        : cleanedTextLines;
+
+    const assembled = [nextTextLines.join("\n").trim(), jsonPart]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+    return assembled || null;
 }
 
 interface Tournament {
@@ -861,7 +902,6 @@ function ParticipantsTab({
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">#</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Name</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 hidden sm:table-cell">Phone</th>
-                                    <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 hidden md:table-cell">Category</th>
                                     <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Status</th>
                                     {canEdit && <th className="px-2 md:px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600">Actions</th>}
                                 </tr>
@@ -902,7 +942,6 @@ function ParticipantsTab({
                                             )}
                                         </td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-700 hidden sm:table-cell">{participant.phone || '-'}</td>
-                                        <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-700 hidden md:table-cell">{participant.category || '-'}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">
                                             {canEdit ? (
                                             <select
@@ -2377,12 +2416,10 @@ function TeamsTab({
                                 .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
                                 .map((m) => {
                                     const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
-                                    const pcat = part?.category != null && String(part.category).trim() !== "" ? String(part.category).trim() : null;
                                     return (
                                 <li key={m.id} className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5">
                                     <span className="text-gray-900">
                                         P{m.position}: {part?.player_name ?? "—"}
-                                        {pcat ? <span className="text-gray-600 font-normal"> ({pcat})</span> : null}
                                     </span>
                                     {canEdit && (
                                     <button
@@ -2504,10 +2541,7 @@ function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titl
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideA.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>{" "}
-                            <span className="text-gray-600 text-xs font-normal">
-                                ({(p.category && String(p.category).trim()) || "—"})
-                            </span>
+                            <span className="font-semibold">{p.name}</span>
                         </li>
                     ))}
                 </ul>
@@ -2520,10 +2554,7 @@ function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titl
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideB.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>{" "}
-                            <span className="text-gray-600 text-xs font-normal">
-                                ({(p.category && String(p.category).trim()) || "—"})
-                            </span>
+                            <span className="font-semibold">{p.name}</span>
                         </li>
                     ))}
                 </ul>
@@ -2532,24 +2563,13 @@ function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titl
     );
 }
 
-function categoryForParticipantName(participants: Participant[], name: string | undefined | null): string | null {
-    if (!name) return null;
-    const row = participants.find((x) => x.player_name === name);
-    const c = row?.category;
-    return c != null && String(c).trim() ? String(c).trim() : null;
-}
-
-/** Singles-only: blue/amber shells match team schedule; player line matches doubles (semibold name, grey category). */
+/** Singles-only: blue/amber shells match team schedule; player line matches doubles. */
 function BracketSinglesLineupBlocks({
     nameA,
     nameB,
-    categoryA,
-    categoryB,
 }: {
     nameA: string;
     nameB: string;
-    categoryA: string | null;
-    categoryB: string | null;
 }) {
     return (
         <div className="space-y-2 pt-1">
@@ -2557,9 +2577,6 @@ function BracketSinglesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     <li className="leading-snug">
                         <span className="font-semibold text-gray-900">{nameA || "TBD"}</span>
-                        {categoryA ? (
-                            <span className="text-gray-600 text-xs font-normal"> ({categoryA})</span>
-                        ) : null}
                     </li>
                 </ul>
             </div>
@@ -2570,9 +2587,6 @@ function BracketSinglesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     <li className="leading-snug">
                         <span className="font-semibold text-gray-900">{nameB || "TBD"}</span>
-                        {categoryB ? (
-                            <span className="text-gray-600 text-xs font-normal"> ({categoryB})</span>
-                        ) : null}
                     </li>
                 </ul>
             </div>
@@ -2620,12 +2634,11 @@ function IndividualScheduleMatchCard({
     const p2 = m.match_players?.find((x) => x.team === "player_2");
     const n1 = p1?.player_name ?? "TBD";
     const n2 = p2?.player_name ?? "TBD";
-    const cat1 = categoryForParticipantName(participants, n1);
-    const cat2 = categoryForParticipantName(participants, n2);
+    const umpireName = getUmpireFromNotes(m.notes);
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
-                <BracketSinglesLineupBlocks nameA={n1} nameB={n2} categoryA={cat1} categoryB={cat2} />
+                <BracketSinglesLineupBlocks nameA={n1} nameB={n2} />
                 <div className="pt-2 border-t border-gray-100 space-y-1">
                     <div className="text-sm font-semibold text-gray-800">
                         {m.match_date
@@ -2639,6 +2652,7 @@ function IndividualScheduleMatchCard({
                             : "No time set"}
                     </div>
                     <div className="text-xs text-gray-500 font-mono">{m.match_number || "—"}</div>
+                    {umpireName ? <div className="text-xs text-gray-600">Umpire: {umpireName}</div> : null}
                     <Link
                         href={`/scoring/tournaments/${tournamentId}?tab=results&resultMatch=${m.id}`}
                         className="inline-block text-red-600 hover:text-red-800 text-xs font-medium mt-0.5"
@@ -2675,6 +2689,27 @@ function scheduleCourtNumKey(m: TournamentMatch): number {
     const d = String(m.court_number ?? "").replace(/\D/g, "");
     const n = parseInt(d, 10);
     return Number.isFinite(n) ? n : 999;
+}
+
+function scheduleMatchDayKey(m: TournamentMatch): string {
+    if (!m.match_date) return "unscheduled";
+    const d = new Date(m.match_date);
+    if (Number.isNaN(d.getTime())) return "unscheduled";
+    const y = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+}
+
+function scheduleMatchDayLabel(m: TournamentMatch): string {
+    if (!m.match_date) return "No date set";
+    const d = new Date(m.match_date);
+    if (Number.isNaN(d.getTime())) return "No date set";
+    return d.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+    });
 }
 
 /** Court columns + match cards (shared by individual Schedule tab and Brackets round 1). */
@@ -2748,14 +2783,29 @@ function IndividualCourtScheduleGrid({
                         <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
                             <div className="bg-gray-50 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
                             <div className="divide-y divide-gray-200">
-                                {courtMatches.map((match) => (
-                                    <IndividualScheduleMatchCard
-                                        key={match.id}
-                                        match={match}
-                                        participants={participants}
-                                        tournamentId={tournament.id}
-                                    />
-                                ))}
+                                {courtMatches.map((match, idx) => {
+                                    const prev = idx > 0 ? courtMatches[idx - 1] : null;
+                                    const isNewDay =
+                                        idx === 0 ||
+                                        !prev ||
+                                        scheduleMatchDayKey(prev) !== scheduleMatchDayKey(match);
+                                    return (
+                                        <Fragment key={match.id}>
+                                            {isNewDay ? (
+                                                <div className="px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
+                                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                                        {scheduleMatchDayLabel(match)}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                            <IndividualScheduleMatchCard
+                                                match={match}
+                                                participants={participants}
+                                                tournamentId={tournament.id}
+                                            />
+                                        </Fragment>
+                                    );
+                                })}
                             </div>
                             {courtMatches.length === 0 && (
                                 <p className="p-3 text-sm text-gray-600">
@@ -2772,13 +2822,27 @@ function IndividualCourtScheduleGrid({
     );
 }
 
-function ScheduleMatchCard({ match }: { match: TournamentMatch }) {
+function ScheduleMatchCard({
+    match,
+    canEdit = false,
+    onSaveUmpire,
+}: {
+    match: TournamentMatch;
+    canEdit?: boolean;
+    onSaveUmpire?: (matchId: string, umpireName: string) => Promise<void>;
+}) {
     const m = match;
     const nameA = m.team_a?.name ?? "TBD";
     const nameB = m.team_b?.name ?? "TBD";
     const titleA = displayTeamCardTitle(nameA);
     const titleB = displayTeamCardTitle(nameB);
     const doublesPayload = parseDoublesMatchNotes(m.notes);
+    const initialUmpire = getUmpireFromNotes(m.notes);
+    const [umpireDraft, setUmpireDraft] = useState(initialUmpire);
+    const [isSavingUmpire, setIsSavingUmpire] = useState(false);
+    useEffect(() => {
+        setUmpireDraft(initialUmpire);
+    }, [initialUmpire, m.id]);
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
@@ -2801,6 +2865,33 @@ function ScheduleMatchCard({ match }: { match: TournamentMatch }) {
                             : "No time set"}
                     </div>
                     <div className="text-xs text-gray-500 font-mono">{match.match_number || "—"}</div>
+                    {initialUmpire ? <div className="text-xs text-gray-600">Umpire: {initialUmpire}</div> : null}
+                    {canEdit && onSaveUmpire ? (
+                        <div className="pt-1 flex flex-wrap items-center gap-2">
+                            <input
+                                type="text"
+                                value={umpireDraft}
+                                onChange={(e) => setUmpireDraft(e.target.value)}
+                                placeholder="Umpire name"
+                                className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded text-xs"
+                            />
+                            <button
+                                type="button"
+                                disabled={isSavingUmpire}
+                                onClick={async () => {
+                                    setIsSavingUmpire(true);
+                                    try {
+                                        await onSaveUmpire(m.id, umpireDraft);
+                                    } finally {
+                                        setIsSavingUmpire(false);
+                                    }
+                                }}
+                                className="px-2 py-1 rounded text-xs font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                            >
+                                {isSavingUmpire ? "Saving..." : "Save umpire"}
+                            </button>
+                        </div>
+                    ) : null}
                 </div>
             </div>
             <span
@@ -2831,7 +2922,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     });
     const [assignOverwriteTimes, setAssignOverwriteTimes] = useState(false);
     const [assignSlotMinutes, setAssignSlotMinutes] = useState(DEFAULT_ASSIGN_SLOT_MINUTES);
-    const [newMatch, setNewMatch] = useState({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
+    const [newMatch, setNewMatch] = useState({
+        team_a_id: "",
+        team_b_id: "",
+        court_number: "",
+        match_date: "",
+        match_number: "",
+        umpire_name: "",
+    });
     const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(12);
     const [scheduleFilterTeamId, setScheduleFilterTeamId] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
@@ -3172,10 +3270,11 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 court_number: newMatch.court_number || null,
                 match_date: newMatch.match_date ? new Date(newMatch.match_date).toISOString() : null,
                 match_number: newMatch.match_number || null,
+                notes: setUmpireInNotes(null, newMatch.umpire_name),
                 created_by,
             });
             if (error) throw error;
-            setNewMatch({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "" });
+            setNewMatch({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "", umpire_name: "" });
             setShowAdd(false);
             onRefresh();
             supabase
@@ -3188,6 +3287,20 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             console.error(e);
             alert("Failed to create match");
         }
+    };
+
+    const handleSaveMatchUmpire = async (matchId: string, umpireName: string) => {
+        const match = matches.find((m) => m.id === matchId) as TournamentMatch | undefined;
+        if (!match) return;
+        const nextNotes = setUmpireInNotes(match.notes, umpireName);
+        const { error } = await supabase.from("matches").update({ notes: nextNotes }).eq("id", matchId);
+        if (error) {
+            alert("Failed to save umpire");
+            return;
+        }
+        setMatches((prev) =>
+            prev.map((m) => (m.id === matchId ? { ...(m as TournamentMatch), notes: nextNotes } : m)),
+        );
     };
 
     const handleGenerateBalancedDoubles = async () => {
@@ -3646,7 +3759,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             </select>
                                     </div>
                                 </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
                             <input
@@ -3673,6 +3786,16 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 value={newMatch.match_number}
                                 onChange={(e) => setNewMatch((m) => ({ ...m, match_number: e.target.value }))}
                                 placeholder="W01"
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Umpire</label>
+                            <input
+                                type="text"
+                                value={newMatch.umpire_name}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, umpire_name: e.target.value }))}
+                                placeholder="e.g. Harshita"
                                 className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md text-sm"
                             />
                         </div>
@@ -3806,9 +3929,30 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         <div key={courtKey} className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm min-w-0">
                             <div className="bg-gray-50 px-3 py-2 font-medium text-gray-900 text-sm">Court {courtKey}</div>
                             <div className="divide-y divide-gray-200">
-                                {courtMatches.map((match) => (
-                                    <ScheduleMatchCard key={match.id} match={match as TournamentMatch} />
-                                ))}
+                                {courtMatches.map((match, idx) => {
+                                    const typed = match as TournamentMatch;
+                                    const prev = idx > 0 ? (courtMatches[idx - 1] as TournamentMatch) : null;
+                                    const isNewDay =
+                                        idx === 0 ||
+                                        !prev ||
+                                        scheduleMatchDayKey(prev) !== scheduleMatchDayKey(typed);
+                                    return (
+                                        <Fragment key={typed.id}>
+                                            {isNewDay ? (
+                                                <div className="px-3 py-1.5 bg-gray-100/80 border-b border-gray-200">
+                                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-600">
+                                                        {scheduleMatchDayLabel(typed)}
+                                                    </span>
+                                                </div>
+                                            ) : null}
+                                            <ScheduleMatchCard
+                                                match={typed}
+                                                canEdit={canEdit}
+                                                onSaveUmpire={handleSaveMatchUmpire}
+                                            />
+                                        </Fragment>
+                                    );
+                                })}
                             </div>
                             {courtMatches.length === 0 && (
                                 <p className="p-3 text-sm text-gray-600">
@@ -3985,8 +4129,6 @@ function BracketResultsTab({
                         const p2 = sidePlayer(m, "player_2");
                         const n1 = p1?.player_name ?? "TBD";
                         const n2 = p2?.player_name ?? "TBD";
-                        const cat1 = categoryForParticipantName(participants, n1);
-                        const cat2 = categoryForParticipantName(participants, n2);
                         const winnerP = m.match_players?.find((x) => x.id === m.winner_id);
                         const winnerLine = winnerP?.player_name ?? "—";
                         const winnerOptions = [p1, p2].filter(Boolean) as MatchPlayer[];
@@ -3998,8 +4140,6 @@ function BracketResultsTab({
                                         <BracketSinglesLineupBlocks
                                             nameA={n1}
                                             nameB={n2}
-                                            categoryA={cat1}
-                                            categoryB={cat2}
                                         />
                                         {m.match_date || (m.court_number != null && String(m.court_number).trim() !== "") ? (
                                             <div className="text-sm font-semibold text-gray-800 mt-2">
@@ -4698,11 +4838,10 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                             const paddedRank = String(rank).padStart(3, "0");
                             const participantName =
                                 (row.member as TournamentTeamMember & { participant?: Participant }).participant?.player_name ?? "—";
-                            const teamName =
+                            const teamNameRaw =
                                 (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
-                            const category =
-                                (row.member as TournamentTeamMember & { participant?: Participant }).participant?.category ?? null;
-                            const skillLine = [teamName, category ? `(${category})` : null].filter(Boolean).join(" ");
+                            const teamName = stripTrailingBracketLabel(teamNameRaw);
+                            const skillLine = teamName;
 
                             const medal =
                                 rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
@@ -4765,9 +4904,6 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                                             {/* Desktop / tablet: full stats line */}
                                             <div className="hidden md:block text-sm text-gray-800 mt-0.5">
                                                 <span className="font-medium text-gray-900">{teamName}</span>
-                                                {category ? (
-                                                    <span className="text-gray-700"> ({category})</span>
-                                                ) : null}
                                                 <span className="text-gray-800">
                                                     {" "}
                                                     • PL: {row.played} • W: {row.won} • L: {row.lost} • PTS: {row.pts}
@@ -4792,14 +4928,6 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                                                         </span>
                                                         <p className="text-gray-900 font-medium break-words">{teamName}</p>
                                                     </div>
-                                                    {category ? (
-                                                        <div>
-                                                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                                                Category
-                                                            </span>
-                                                            <p className="text-gray-900 break-words">{category}</p>
-                                                        </div>
-                                                    ) : null}
                                                     <div className="grid grid-cols-2 gap-2">
                                                         <div className="rounded-lg bg-gray-50 px-3 py-2 border border-gray-100">
                                                             <div className="text-xs text-gray-600">Played</div>
@@ -4940,7 +5068,7 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                 </div>
             </div>
             <p className="text-xs text-gray-600 sm:hidden -mt-2">
-                On small screens, tap a row to expand club, category, and stats.
+                On small screens, tap a row to expand club and stats.
             </p>
 
             <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -4953,13 +5081,9 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                             const paddedRank = String(rank).padStart(3, "0");
                             const participantName = row.participant.player_name || "—";
                             const club = row.participant.club != null && String(row.participant.club).trim() !== ""
-                                ? String(row.participant.club).trim()
+                                ? stripTrailingBracketLabel(String(row.participant.club).trim())
                                 : null;
-                            const category =
-                                row.participant.category != null && String(row.participant.category).trim() !== ""
-                                    ? String(row.participant.category).trim()
-                                    : null;
-                            const subLine = [club, category ? `(${category})` : null].filter(Boolean).join(" ");
+                            const subLine = club || "";
                             const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : null;
                             const initials =
                                 participantName
@@ -5043,14 +5167,6 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                                                                 Club
                                                             </span>
                                                             <p className="text-gray-900 font-medium break-words">{club}</p>
-                                                        </div>
-                                                    ) : null}
-                                                    {category ? (
-                                                        <div>
-                                                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                                                Category
-                                                            </span>
-                                                            <p className="text-gray-900 break-words">{category}</p>
                                                         </div>
                                                     ) : null}
                                                     <div className="grid grid-cols-2 gap-2">

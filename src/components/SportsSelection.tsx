@@ -297,6 +297,27 @@ export default function SportsSelection({ selectedLocation = "Rajendra Nagar", o
         </div>
       </div>
 
+      <div className="px-4 mt-8">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xl font-semibold text-gray-900">Tools</h3>
+        </div>
+        <Link
+          href="/bid-tracker"
+          className="mt-3 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm active:scale-[0.99] transition-transform"
+        >
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-2xl">
+            ⏱️
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold text-gray-900 text-sm">Bid first timer</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              Live clock and who tapped first (separate from auction)
+            </div>
+          </div>
+          <span className="text-gray-400 text-sm shrink-0">→</span>
+        </Link>
+      </div>
+
       <div className="px-4 mt-8 pb-20">
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-semibold text-gray-900">Start Scoring</h3>
