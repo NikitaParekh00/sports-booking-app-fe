@@ -56,6 +56,7 @@ export default function TournamentsPage() {
             const { data, error } = await supabase
                 .from('tournaments')
                 .select('*')
+                .neq('status', 'completed')
                 .order('created_at', { ascending: false });
 
             if (error) {
@@ -112,7 +113,7 @@ export default function TournamentsPage() {
 
                 {tournaments.length === 0 ? (
                     <div className="text-center py-12">
-                        <div className="text-gray-400 mb-4">No tournaments found</div>
+                        <div className="text-gray-400 mb-4">No active tournaments (upcoming or live). Completed events are hidden here.</div>
                         <button
                             onClick={() => setShowCreateForm(true)}
                             className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700"

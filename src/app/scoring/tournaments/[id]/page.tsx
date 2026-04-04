@@ -2148,6 +2148,88 @@ function teamShortFromClubSlug(slug: string): string {
     return (`T${core || "?"}`).slice(0, 20);
 }
 
+/** Teams tab: accent colors by roster display name (case-insensitive). */
+type TeamTabCardTheme = { shell: string; headerBar: string; title: string; contentBg: string };
+
+function getTeamTabCardTheme(teamName: string): TeamTabCardTheme | null {
+    const key = displayTeamCardTitle(teamName).trim().toLowerCase();
+    const themes: Record<string, TeamTabCardTheme> = {
+        "power drive": {
+            shell: "border-blue-400 shadow-sm",
+            headerBar: "bg-blue-600",
+            title: "text-white",
+            contentBg: "bg-sky-50/70",
+        },
+        "net force": {
+            shell: "border-gray-900 shadow-sm",
+            headerBar: "bg-gray-950",
+            title: "text-white",
+            contentBg: "bg-gray-100",
+        },
+        "smash unit": {
+            shell: "border-red-500 shadow-sm",
+            headerBar: "bg-red-600",
+            title: "text-white",
+            contentBg: "bg-red-50/70",
+        },
+        "shot makers": {
+            shell: "border-gray-300 bg-white shadow-sm",
+            headerBar: "bg-white border-b border-gray-200",
+            title: "text-gray-900",
+            contentBg: "bg-gray-50",
+        },
+        "rally crew": {
+            shell: "border-gray-500 shadow-sm",
+            headerBar: "bg-gray-500",
+            title: "text-white",
+            contentBg: "bg-gray-100",
+        },
+        "ace strike": {
+            shell: "border-orange-400 shadow-sm",
+            headerBar: "bg-orange-500",
+            title: "text-white",
+            contentBg: "bg-orange-50/80",
+        },
+        "avika kachhy": {
+            shell: "border-red-500 shadow-sm",
+            headerBar: "bg-red-600",
+            title: "text-white",
+            contentBg: "bg-red-50/70",
+        },
+        "net rush": {
+            shell: "border-gray-300 bg-white shadow-sm",
+            headerBar: "bg-white border-b border-gray-200",
+            title: "text-gray-900",
+            contentBg: "bg-gray-50",
+        },
+        "smash crew": {
+            shell: "border-blue-400 shadow-sm",
+            headerBar: "bg-blue-600",
+            title: "text-white",
+            contentBg: "bg-sky-50/70",
+        },
+        "shuttle sparks": {
+            shell: "border-orange-400 shadow-sm",
+            headerBar: "bg-orange-500",
+            title: "text-white",
+            contentBg: "bg-orange-50/80",
+        },
+        "smash ninja": {
+            shell: "border-red-500 shadow-sm",
+            headerBar: "bg-red-600",
+            title: "text-white",
+            contentBg: "bg-red-50/70",
+        },
+        "tiny titans": {
+            shell: "border-blue-400 shadow-sm",
+            headerBar: "bg-blue-600",
+            title: "text-white",
+            contentBg: "bg-sky-50/70",
+        },
+    };
+    return themes[key] ?? null;
+}
+
 function TeamsTab({
     tournament,
     participants,
@@ -2162,7 +2244,6 @@ function TeamsTab({
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [membersByTeam, setMembersByTeam] = useState<Record<string, TournamentTeamMember[]>>({});
     const [newTeamName, setNewTeamName] = useState("");
-    const [newTeamShortName, setNewTeamShortName] = useState("");
     const [addingToTeamId, setAddingToTeamId] = useState<string | null>(null);
     const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
     const [position, setPosition] = useState(1);
@@ -2215,11 +2296,10 @@ function TeamsTab({
             const { error } = await supabase.from("tournament_teams").insert({
                 tournament_id: tournament.id,
                 name: newTeamName.trim(),
-                short_name: newTeamShortName.trim() || null,
+                short_name: null,
             });
                 if (error) throw error;
             setNewTeamName("");
-            setNewTeamShortName("");
             loadTeams();
             onRefresh();
         } catch (e) {
@@ -2381,16 +2461,6 @@ function TeamsTab({
                         className="w-40 sm:w-48 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                     />
                 </div>
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Short name</label>
-                    <input
-                        type="text"
-                        value={newTeamShortName}
-                        onChange={(e) => setNewTeamShortName(e.target.value)}
-                        placeholder="e.g. EGL"
-                        className="w-20 sm:w-24 px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                    />
-                </div>
                 <button
                     type="button"
                     onClick={handleCreateTeam}
@@ -2402,89 +2472,121 @@ function TeamsTab({
             </>
             )}
             <div className="grid gap-4 md:grid-cols-2">
-                {teams.map((team, idx) => (
-                    <div key={team.id} className="rounded-xl border border-gray-200 p-4" style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}>
-                        <div className="flex items-center justify-between mb-3">
-                            <h3 className="font-semibold text-gray-900 text-base">
-                                {displayTeamCardTitle(team.name)}
-                                {team.short_name && (
-                                    <span className="text-gray-500 font-normal ml-2">({team.short_name})</span>
-                                )}
-                            </h3>
-                        </div>
-                        <ul className="space-y-2 mb-3">
-                            {[...(membersByTeam[team.id] || [])]
-                                .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-                                .map((m) => {
-                                    const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
-                                    return (
-                                <li key={m.id} className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5">
-                                    <span className="text-gray-900">
-                                        P{m.position}: {part?.player_name ?? "—"}
-                                    </span>
-                                    {canEdit && (
+                {teams.map((team, idx) => {
+                    const tabTheme = getTeamTabCardTheme(team.name);
+                    const memberBlock = (
+                        <>
+                            <ul className="space-y-2 mb-3">
+                                {[...(membersByTeam[team.id] || [])]
+                                    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+                                    .map((m) => {
+                                        const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
+                                        return (
+                                            <li
+                                                key={m.id}
+                                                className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5"
+                                            >
+                                                <span className="text-gray-900">
+                                                    P{m.position}: {part?.player_name ?? "—"}
+                                                </span>
+                                                {canEdit && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveMember(m.id)}
+                                                        className="text-red-600 hover:underline text-xs sm:text-sm"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                            </ul>
+                            {canEdit &&
+                                (addingToTeamId === team.id ? (
+                                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
+                                        <select
+                                            value={selectedParticipantId || ""}
+                                            onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                                            className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                        >
+                                            <option value="">Select participant</option>
+                                            {availableParticipants.map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.player_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <select
+                                            value={position}
+                                            onChange={(e) => setPosition(parseInt(e.target.value, 10) || 1)}
+                                            className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                        >
+                                            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+                                                <option key={n} value={n}>
+                                                    P{n}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={handleAddMember}
+                                            className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm"
+                                        >
+                                            Add
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAddingToTeamId(null);
+                                                setSelectedParticipantId(null);
+                                            }}
+                                            className="text-gray-700 hover:text-gray-900 text-sm font-medium"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
                                     <button
                                         type="button"
-                                        onClick={() => handleRemoveMember(m.id)}
-                                        className="text-red-600 hover:underline text-xs sm:text-sm"
+                                        onClick={() => setAddingToTeamId(team.id)}
+                                        disabled={availableParticipants.length === 0}
+                                        className="text-sm text-red-600 hover:underline disabled:opacity-50"
                                     >
-                                        Remove
+                                        + Add member
                                     </button>
-                                    )}
-                                </li>
-                            );
-                                })}
-                        </ul>
-                        {canEdit && (addingToTeamId === team.id ? (
-                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
-                                <select
-                                    value={selectedParticipantId || ""}
-                                    onChange={(e) => setSelectedParticipantId(e.target.value || null)}
-                                    className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                                >
-                                    <option value="">Select participant</option>
-                                    {availableParticipants.map((p) => (
-                                        <option key={p.id} value={p.id}>{p.player_name}</option>
-                                    ))}
-                                </select>
-                                <select
-                                    value={position}
-                                    onChange={(e) => setPosition(parseInt(e.target.value, 10) || 1)}
-                                    className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                                >
-                                    {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
-                                        <option key={n} value={n}>
-                                            P{n}
-                                        </option>
-                                    ))}
-                                </select>
-                                <button
-                                    type="button"
-                                    onClick={handleAddMember}
-                                    className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm"
-                                >
-                                    Add
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setAddingToTeamId(null); setSelectedParticipantId(null); }}
-                                    className="text-gray-700 hover:text-gray-900 text-sm font-medium"
-                                >
-                                    Cancel
-                                </button>
+                                ))}
+                        </>
+                    );
+
+                    if (tabTheme) {
+                        return (
+                            <div key={team.id} className={`rounded-xl border-2 overflow-hidden ${tabTheme.shell}`}>
+                                <div className={`px-4 py-3 ${tabTheme.headerBar}`}>
+                                    <h3 className={`font-semibold text-base ${tabTheme.title}`}>
+                                        {displayTeamCardTitle(team.name)}
+                                    </h3>
+                                </div>
+                                <div className={`p-4 ${tabTheme.contentBg}`}>{memberBlock}</div>
                             </div>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => setAddingToTeamId(team.id)}
-                                disabled={availableParticipants.length === 0}
-                                className="text-sm text-red-600 hover:underline disabled:opacity-50"
-                            >
-                                + Add member
-                            </button>
-                        ))}
-                    </div>
-                ))}
+                        );
+                    }
+
+                    return (
+                        <div
+                            key={team.id}
+                            className="rounded-xl border border-gray-200 p-4"
+                            style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                        >
+                            <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-semibold text-gray-900 text-base">
+                                    {displayTeamCardTitle(team.name)}
+                                </h3>
+                            </div>
+                            {memberBlock}
+                        </div>
+                    );
+                })}
             </div>
             {teams.length === 0 && (
                 <p className="text-gray-600 text-sm">Create teams and assign participants from the list. Participants must be added in the Participants tab first.</p>
@@ -2534,11 +2636,46 @@ function stripTrailingBracketLabel(teamName: string): string {
     return teamName.replace(/\s*\([^()]*\)\s*$/, "").trim();
 }
 
-function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titleB: string; payload: DoublesLinePayload }) {
+function DoublesLineupBlocks({
+    titleA,
+    titleB,
+    payload,
+    winnerTeamId = null,
+}: {
+    titleA: string;
+    titleB: string;
+    payload: DoublesLinePayload;
+    /** When set, highlights the winning side (trophy, ring, badge). */
+    winnerTeamId?: string | null;
+}) {
+    const winA = Boolean(winnerTeamId && winnerTeamId === payload.teamAId);
+    const winB = Boolean(winnerTeamId && winnerTeamId === payload.teamBId);
+
+    const winnerExtras = (isWinner: boolean) =>
+        isWinner ? (
+            <>
+                <span className="text-sm leading-none" title="Winner" aria-label="Winner">
+                    🏆
+                </span>
+                <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    Winner
+                </span>
+            </>
+        ) : null;
+
     return (
         <div className="space-y-2 pt-1">
-            <div className="rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-2">
-                <div className="text-[10px] font-bold text-blue-900/80 uppercase tracking-wider mb-1.5">{titleA}</div>
+            <div
+                className={
+                    winA
+                        ? "rounded-lg border-2 border-emerald-500 bg-blue-50/90 px-2.5 py-2 shadow-md ring-2 ring-emerald-300/40"
+                        : "rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-2"
+                }
+            >
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <div className="text-[10px] font-bold text-blue-900/80 uppercase tracking-wider">{titleA}</div>
+                    {winnerExtras(winA)}
+                </div>
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideA.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
@@ -2550,8 +2687,17 @@ function DoublesLineupBlocks({ titleA, titleB, payload }: { titleA: string; titl
             <div className="flex justify-center py-0.5">
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">vs</span>
             </div>
-            <div className="rounded-lg border border-amber-100 bg-amber-50/80 px-2.5 py-2">
-                <div className="text-[10px] font-bold text-amber-900/80 uppercase tracking-wider mb-1.5">{titleB}</div>
+            <div
+                className={
+                    winB
+                        ? "rounded-lg border-2 border-emerald-500 bg-amber-50/90 px-2.5 py-2 shadow-md ring-2 ring-emerald-300/40"
+                        : "rounded-lg border border-amber-100 bg-amber-50/80 px-2.5 py-2"
+                }
+            >
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                    <div className="text-[10px] font-bold text-amber-900/80 uppercase tracking-wider">{titleB}</div>
+                    {winnerExtras(winB)}
+                </div>
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideB.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
@@ -4560,17 +4706,68 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                     const nb = displayTeamCardTitle(m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD");
                     const doublesPayload = parseDoublesMatchNotes(m.notes);
                     const winnerRaw = (m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—";
+                    const isDone = match.status === "completed";
+                    const wId = m.winner_team_id;
+                    const aWon = Boolean(isDone && wId && wId === m.team_a_id);
+                    const bWon = Boolean(isDone && wId && wId === m.team_b_id);
                     return (
                         <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                        <span className="text-base font-bold text-gray-900 leading-snug">{na}</span>
-                                        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">vs</span>
-                                        <span className="text-base font-bold text-gray-900 leading-snug">{nb}</span>
+                                        {doublesPayload ? (
+                                            <>
+                                                <span className="text-base font-bold text-gray-900 leading-snug">{na}</span>
+                                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
+                                                    vs
+                                                </span>
+                                                <span className="text-base font-bold text-gray-900 leading-snug">{nb}</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span
+                                                    className={`text-base font-bold leading-snug inline-flex items-center gap-1.5 flex-wrap ${aWon ? "text-emerald-900" : "text-gray-900"}`}
+                                                >
+                                                    {aWon ? (
+                                                        <span className="text-lg leading-none" title="Winner" aria-label="Winner">
+                                                            🏆
+                                                        </span>
+                                                    ) : null}
+                                                    {na}
+                                                    {aWon ? (
+                                                        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                                                            Winner
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
+                                                    vs
+                                                </span>
+                                                <span
+                                                    className={`text-base font-bold leading-snug inline-flex items-center gap-1.5 flex-wrap ${bWon ? "text-emerald-900" : "text-gray-900"}`}
+                                                >
+                                                    {bWon ? (
+                                                        <span className="text-lg leading-none" title="Winner" aria-label="Winner">
+                                                            🏆
+                                                        </span>
+                                                    ) : null}
+                                                    {nb}
+                                                    {bWon ? (
+                                                        <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                                                            Winner
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                     {doublesPayload ? (
-                                        <DoublesLineupBlocks titleA={na} titleB={nb} payload={doublesPayload} />
+                                        <DoublesLineupBlocks
+                                            titleA={na}
+                                            titleB={nb}
+                                            payload={doublesPayload}
+                                            winnerTeamId={isDone ? wId ?? null : null}
+                                        />
                                     ) : null}
                                     {match.status === "completed" && (
                                         <span className="ml-2 text-gray-600 text-sm block sm:inline">
