@@ -2251,17 +2251,17 @@ function getTeamTabCardTheme(teamName: string): TeamTabCardTheme | null {
             title: "text-white",
             contentBg: "bg-orange-50/80",
         },
-        "avika kachhy": {
+        "ace squad": {
             shell: "border-red-500 shadow-sm",
             headerBar: "bg-red-600",
             title: "text-white",
             contentBg: "bg-red-50/70",
         },
         "net rush": {
-            shell: "border-gray-300 bg-white shadow-sm",
-            headerBar: "bg-white border-b border-gray-200",
-            title: "text-gray-900",
-            contentBg: "bg-gray-50",
+            shell: "border-gray-900 shadow-sm",
+            headerBar: "bg-gray-950",
+            title: "text-white",
+            contentBg: "bg-gray-100",
         },
         "smash crew": {
             shell: "border-blue-400 shadow-sm",
