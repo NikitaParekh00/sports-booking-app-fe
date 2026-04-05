@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabaseClient";
 import PhoneInput from "@/components/PhoneInput";
 import { opponentManager } from "@/lib/opponentManagement";
@@ -48,11 +49,14 @@ interface Tournament {
 }
 
 export default function TournamentsPage() {
+    const router = useRouter();
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [selectedSport, setSelectedSport] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [authLoading, setAuthLoading] = useState(true);
+    /** Set true only after a valid `sf:user` session (same gate as auction). */
+    const [sessionOk, setSessionOk] = useState(false);
     const [canEdit, setCanEdit] = useState(false);
     const supabase = createClient();
 
@@ -62,19 +66,47 @@ export default function TournamentsPage() {
                 const storedUser = localStorage.getItem("sf:user");
                 if (!storedUser) {
                     setCanEdit(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
                     return;
                 }
-                const userData = JSON.parse(storedUser);
-                const { data: profile } = await supabase.from("profiles").select("phone").eq("user_id", userData.user_id).single();
-                setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
-            } catch {
+                let userData: { user_id?: string };
+                try {
+                    userData = JSON.parse(storedUser) as { user_id?: string };
+                } catch {
+                    setCanEdit(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
+                    return;
+                }
+                if (!userData?.user_id) {
+                    setCanEdit(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
+                    return;
+                }
+                const { data: profile, error } = await supabase
+                    .from("profiles")
+                    .select("phone")
+                    .eq("user_id", userData.user_id)
+                    .single();
+                if (error) {
+                    console.error("Profile fetch for edit gate:", error);
+                    setCanEdit(false);
+                } else {
+                    setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
+                }
+                setSessionOk(true);
+            } catch (e) {
+                console.error(e);
                 setCanEdit(false);
+                setSessionOk(true);
             } finally {
                 setAuthLoading(false);
             }
         };
         void checkEditAccess();
-    }, [supabase]);
+    }, [router, supabase]);
 
     useEffect(() => {
         if (!authLoading && !canEdit) {
@@ -107,8 +139,10 @@ export default function TournamentsPage() {
     }, [supabase]);
 
     useEffect(() => {
-        fetchTournaments();
-    }, [fetchTournaments]);
+        if (sessionOk) {
+            void fetchTournaments();
+        }
+    }, [sessionOk, fetchTournaments]);
 
     const handleSportSelect = (sportId: string) => {
         setSelectedSport(sportId);
@@ -119,8 +153,24 @@ export default function TournamentsPage() {
         window.alert(GUEST_CREATE_BLOCKED_MESSAGE);
     };
 
-    if (canEdit && !authLoading && showCreateForm && selectedSport) {
+    if (canEdit && !authLoading && sessionOk && showCreateForm && selectedSport) {
         return <CreateTournamentForm sport={selectedSport} onBack={() => setShowCreateForm(false)} />;
+    }
+
+    if (authLoading) {
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="text-gray-500">Checking access…</div>
+            </div>
+        );
+    }
+
+    if (!sessionOk) {
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="text-gray-500">Redirecting to login…</div>
+            </div>
+        );
     }
 
     if (isLoading) {

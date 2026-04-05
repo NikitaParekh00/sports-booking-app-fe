@@ -244,6 +244,8 @@ export default function TournamentDetailPage() {
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [authLoading, setAuthLoading] = useState(true);
+    /** Set true only after a valid `sf:user` session (same gate as auction). */
+    const [sessionOk, setSessionOk] = useState(false);
     const [canEdit, setCanEdit] = useState(false);
     type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
     const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -257,20 +259,47 @@ export default function TournamentDetailPage() {
                 const storedUser = localStorage.getItem("sf:user");
                 if (!storedUser) {
                     setCanEdit(false);
-                    setAuthLoading(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
                     return;
                 }
-                const userData = JSON.parse(storedUser);
-                const { data: profile } = await supabase.from("profiles").select("phone").eq("user_id", userData.user_id).single();
-                setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
-            } catch {
+                let userData: { user_id?: string };
+                try {
+                    userData = JSON.parse(storedUser) as { user_id?: string };
+                } catch {
+                    setCanEdit(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
+                    return;
+                }
+                if (!userData?.user_id) {
+                    setCanEdit(false);
+                    alert("Please log in to view tournaments.");
+                    router.push("/login");
+                    return;
+                }
+                const { data: profile, error } = await supabase
+                    .from("profiles")
+                    .select("phone")
+                    .eq("user_id", userData.user_id)
+                    .single();
+                if (error) {
+                    console.error("Profile fetch for edit gate:", error);
+                    setCanEdit(false);
+                } else {
+                    setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
+                }
+                setSessionOk(true);
+            } catch (e) {
+                console.error(e);
                 setCanEdit(false);
+                setSessionOk(true);
             } finally {
                 setAuthLoading(false);
             }
         };
-        checkEditAccess();
-    }, [supabase]);
+        void checkEditAccess();
+    }, [router, supabase]);
 
     const fetchTournamentData = useCallback(async () => {
         try {
@@ -303,10 +332,10 @@ export default function TournamentDetailPage() {
     }, [tournamentId, supabase]);
 
     useEffect(() => {
-        if (tournamentId) {
-            fetchTournamentData();
+        if (tournamentId && sessionOk) {
+            void fetchTournamentData();
         }
-    }, [tournamentId, fetchTournamentData]);
+    }, [tournamentId, sessionOk, fetchTournamentData]);
 
     const showSettingsTab = !authLoading && canEdit;
 
@@ -352,12 +381,34 @@ export default function TournamentDetailPage() {
         }
     };
 
-    if (authLoading || isLoading) {
+    if (authLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-white px-4">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
-                    <p className="text-gray-600">{authLoading ? "Checking access…" : "Loading tournament…"}</p>
+                    <p className="text-gray-600">Checking access…</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!sessionOk) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-white px-4">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
+                    <p className="text-gray-600">Redirecting to login…</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-white px-4">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
+                    <p className="text-gray-600">Loading tournament…</p>
                 </div>
             </div>
         );
