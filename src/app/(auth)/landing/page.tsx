@@ -17,7 +17,13 @@ export default function LandingPage() {
     };
 
     const handleContinueWithoutLogin = () => {
-        router.push('/dashboard');
+        // Drop any prior app login so guest browsing is not treated as edit/admin (sf:user drives canEdit on tournament pages).
+        try {
+            localStorage.removeItem("sf:user");
+        } catch {
+            /* ignore */
+        }
+        router.push("/scoring/tournaments");
     };
 
     return (

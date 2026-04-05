@@ -21,6 +21,9 @@ const sports = [
     { id: "basketball", name: "Basketball", icon: "🏀" },
 ];
 
+const ALLOWED_EDIT_PHONE = "+91-7506256356";
+const GUEST_CREATE_BLOCKED_MESSAGE = "Contact admin to create a tournament.";
+
 function clampCourtCountCreate(n: unknown): number {
     const x = typeof n === "number" ? n : typeof n === "string" ? parseInt(n, 10) : NaN;
     if (!Number.isFinite(x)) return 3;
@@ -49,7 +52,36 @@ export default function TournamentsPage() {
     const [selectedSport, setSelectedSport] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [canEdit, setCanEdit] = useState(false);
     const supabase = createClient();
+
+    useEffect(() => {
+        const checkEditAccess = async () => {
+            try {
+                const storedUser = localStorage.getItem("sf:user");
+                if (!storedUser) {
+                    setCanEdit(false);
+                    return;
+                }
+                const userData = JSON.parse(storedUser);
+                const { data: profile } = await supabase.from("profiles").select("phone").eq("user_id", userData.user_id).single();
+                setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
+            } catch {
+                setCanEdit(false);
+            } finally {
+                setAuthLoading(false);
+            }
+        };
+        void checkEditAccess();
+    }, [supabase]);
+
+    useEffect(() => {
+        if (!authLoading && !canEdit) {
+            setShowCreateForm(false);
+            setSelectedSport(null);
+        }
+    }, [authLoading, canEdit]);
 
     const fetchTournaments = useCallback(async () => {
         try {
@@ -83,7 +115,11 @@ export default function TournamentsPage() {
         setShowCreateForm(true);
     };
 
-    if (showCreateForm && selectedSport) {
+    const notifyGuestCreateBlocked = () => {
+        window.alert(GUEST_CREATE_BLOCKED_MESSAGE);
+    };
+
+    if (canEdit && !authLoading && showCreateForm && selectedSport) {
         return <CreateTournamentForm sport={selectedSport} onBack={() => setShowCreateForm(false)} />;
     }
 
@@ -103,23 +139,49 @@ export default function TournamentsPage() {
                         <Image src="/logo.jpeg" alt="Simplifit" width={120} height={40} className="h-6 sm:h-8 w-auto object-contain flex-shrink-0 max-w-[72px] sm:max-w-none" />
                         <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-gray-900 truncate min-w-0">Tournaments</h1>
                     </div>
-                    <button
-                        onClick={() => setShowCreateForm(true)}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm md:text-base w-full sm:w-auto"
-                    >
-                        Create Tournament
-                    </button>
+                    {!authLoading ? (
+                        canEdit ? (
+                            <button
+                                type="button"
+                                onClick={() => setShowCreateForm(true)}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm md:text-base w-full sm:w-auto"
+                            >
+                                Create Tournament
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={notifyGuestCreateBlocked}
+                                className="w-full sm:w-auto rounded-md border border-gray-200 bg-gray-100 px-4 py-2 text-sm font-medium text-gray-500 md:text-base cursor-not-allowed"
+                            >
+                                Create Tournament
+                            </button>
+                        )
+                    ) : null}
                 </div>
 
                 {tournaments.length === 0 ? (
                     <div className="text-center py-12">
                         <div className="text-gray-400 mb-4">No active tournaments (upcoming or live). Completed events are hidden here.</div>
-                        <button
-                            onClick={() => setShowCreateForm(true)}
-                            className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700"
-                        >
-                            Create Your First Tournament
-                        </button>
+                        {!authLoading ? (
+                            canEdit ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCreateForm(true)}
+                                    className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700"
+                                >
+                                    Create Your First Tournament
+                                </button>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={notifyGuestCreateBlocked}
+                                    className="cursor-not-allowed rounded-md border border-gray-200 bg-gray-100 px-6 py-3 font-medium text-gray-500"
+                                >
+                                    Create Your First Tournament
+                                </button>
+                            )
+                        ) : null}
                     </div>
                 ) : (
                     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -139,7 +201,7 @@ export default function TournamentsPage() {
                                 </div>
                                 <a
                                     href={`/scoring/tournaments/${tournament.id}`}
-                                    className="block w-full mt-4 bg-gray-100 text-gray-700 py-2 px-4 rounded-md hover:bg-gray-200 text-center border border-gray-200"
+                                    className="block w-full mt-4 rounded-md bg-blue-600 py-2.5 px-4 text-center text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                                 >
                                     View Details
                                 </a>
@@ -148,18 +210,27 @@ export default function TournamentsPage() {
                     </div>
                 )}
 
-                {!selectedSport && (
+                {!authLoading && !selectedSport && (
                     <div className="mt-8">
                         <h2 className="text-xl font-semibold text-gray-900 mb-4">Create New Tournament</h2>
                         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
                             {sports.map((sport) => (
                                 <button
                                     key={sport.id}
-                                    onClick={() => handleSportSelect(sport.id)}
-                                    className="flex flex-col items-center p-4 rounded-xl hover:shadow-sm transition-shadow border border-gray-200 bg-white"
+                                    type="button"
+                                    onClick={() =>
+                                        canEdit ? handleSportSelect(sport.id) : notifyGuestCreateBlocked()
+                                    }
+                                    className={
+                                        canEdit
+                                            ? "flex flex-col items-center p-4 rounded-xl hover:shadow-sm transition-shadow border border-gray-200 bg-white"
+                                            : "flex flex-col items-center p-4 rounded-xl border border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed opacity-90"
+                                    }
                                 >
                                     <div className="text-4xl mb-2">{sport.icon}</div>
-                                    <span className="text-sm text-gray-800 text-center">{sport.name}</span>
+                                    <span className={`text-sm text-center ${canEdit ? "text-gray-800" : "text-gray-500"}`}>
+                                        {sport.name}
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -568,6 +639,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                             onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 text-sm md:text-base"
                                         >
+                                            <option value={11}>11 points (pickleball-style)</option>
                                             <option value={21}>21 points (Standard)</option>
                                             <option value={15}>15 points (Legacy)</option>
                                         </select>
@@ -577,6 +649,7 @@ function CreateTournamentForm({ sport, onBack }: { sport: string; onBack: () => 
                                             onChange={(e) => setFormData({ ...formData, points_per_set: parseInt(e.target.value) })}
                                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-900 text-sm md:text-base"
                                         >
+                                            <option value={11}>11 points (pickleball)</option>
                                             <option value={15}>15 points</option>
                                             <option value={21}>21 points</option>
                                         </select>

@@ -24,7 +24,11 @@ import {
     shouldUsePlayerAwareAssignment,
 } from "@/lib/assignMatchTimeSlots";
 import { buildScheduleExportRows, downloadSchedulePdf, downloadScheduleXlsx } from "@/lib/exportTournamentSchedule";
-import { allowedPointsPerSetForSport, normalizePointsPerSetForSport } from "@/lib/tournamentPointsPerSet";
+import {
+    allowedPointsPerSetForSport,
+    normalizePointsPerSetForSport,
+    pointsPerSetOptionLabel,
+} from "@/lib/tournamentPointsPerSet";
 import { allUnorderedPairs, roundRobinGroupSlug } from "@/lib/generateGroupRoundRobin";
 import {
     bracketRoundName,
@@ -43,6 +47,52 @@ function clampCourtCount(n: unknown): number {
 
 function getCourtCount(t: Tournament): number {
     return clampCourtCount(t.number_of_courts);
+}
+
+function parseCourtLabelsFromDb(raw: unknown): string[] {
+    if (raw == null) return [];
+    if (!Array.isArray(raw)) return [];
+    return raw.map((x) => (typeof x === "string" ? x : String(x ?? "")));
+}
+
+/** Editable labels from Settings; length follows number_of_courts (empty string = use default "Court N"). */
+function courtLabelsStateFromTournament(t: Tournament): string[] {
+    const n = clampCourtCount(t.number_of_courts ?? 3);
+    const stored = parseCourtLabelsFromDb(t.court_labels);
+    return Array.from({ length: n }, (_, i) => (stored[i] != null ? String(stored[i]) : ""));
+}
+
+function getCourtDisplayLabels(t: Tournament): string[] {
+    const n = getCourtCount(t);
+    const stored = parseCourtLabelsFromDb(t.court_labels);
+    return Array.from({ length: n }, (_, i) => {
+        const s = (stored[i] ?? "").trim();
+        return s || `Court ${i + 1}`;
+    });
+}
+
+function courtDisplayLabelForKey(t: Tournament, courtKey: string): string {
+    const idx = parseInt(courtKey, 10) - 1;
+    if (Number.isFinite(idx) && idx >= 0 && idx < getCourtCount(t)) {
+        return getCourtDisplayLabels(t)[idx];
+    }
+    return `Court ${courtKey}`;
+}
+
+/** Schedule cards / exports: map stored numeric court keys to Settings labels; keep other values as-is. */
+function formatStoredCourtForDisplay(t: Tournament, court_number: string | null | undefined): string {
+    const c = String(court_number ?? "").trim();
+    if (!c) return "—";
+    if (/^\d+$/.test(c)) {
+        const num = parseInt(c, 10);
+        if (num >= 1 && num <= getCourtCount(t)) return courtDisplayLabelForKey(t, c);
+    }
+    const m = c.match(/^court\s*(\d+)$/i);
+    if (m) {
+        const num = parseInt(m[1], 10);
+        if (num >= 1 && num <= getCourtCount(t)) return courtDisplayLabelForKey(t, m[1]);
+    }
+    return c;
 }
 
 /** Match slot length for “Assign match times” / court-time generation (aligned with assignMatchTimeSlots). */
@@ -111,6 +161,8 @@ interface Tournament {
     created_by: string;
     /** Parallel courts for schedule UI and generators (default 3). */
     number_of_courts?: number | null;
+    /** JSON array of optional display names; index 0 = court 1. */
+    court_labels?: unknown;
     format?: string;
     sets_per_match?: number;
     points_per_set?: number;
@@ -256,12 +308,25 @@ export default function TournamentDetailPage() {
         }
     }, [tournamentId, fetchTournamentData]);
 
+    const showSettingsTab = !authLoading && canEdit;
+
     useEffect(() => {
         const t = searchParams.get("tab");
+        if (t === "settings" && !showSettingsTab) {
+            setActiveTab("overview");
+            return;
+        }
         if (t === "results") setActiveTab("results");
         if (t === "schedule") setActiveTab("schedule");
         if (t === "player_stats") setActiveTab("player_stats");
-    }, [searchParams]);
+        if (t === "settings" && showSettingsTab) setActiveTab("settings");
+    }, [searchParams, showSettingsTab]);
+
+    useEffect(() => {
+        if (!showSettingsTab && activeTab === "settings") {
+            setActiveTab("overview");
+        }
+    }, [showSettingsTab, activeTab]);
 
     const handleStartTournament = async () => {
         if (!tournament) return;
@@ -392,24 +457,24 @@ export default function TournamentDetailPage() {
                         <div className="flex gap-2 overflow-x-auto scrollbar-hide min-w-0 flex-1">
                             {(isTeamTournament
                                 ? [
-                                    { id: 'overview', label: 'Overview' },
-                                    { id: 'participants', label: `Participants (${participants.length})` },
-                                    { id: 'teams', label: 'Teams' },
-                                    { id: 'schedule', label: 'Schedule' },
-                                    { id: 'results', label: 'Results' },
-                                    { id: 'team_stats', label: 'Team Stats' },
-                                    { id: 'player_stats', label: 'Player Stats' },
-                                    { id: 'settings', label: 'Settings' },
+                                      { id: "overview", label: "Overview" },
+                                      { id: "participants", label: `Participants (${participants.length})` },
+                                      { id: "teams", label: "Teams" },
+                                      { id: "schedule", label: "Schedule" },
+                                      { id: "results", label: "Results" },
+                                      { id: "team_stats", label: "Team Stats" },
+                                      { id: "player_stats", label: "Player Stats" },
+                                      ...(showSettingsTab ? [{ id: "settings" as const, label: "Settings" }] : []),
                                   ]
                                 : [
-                            { id: 'overview', label: 'Overview' },
-                            { id: 'participants', label: `Participants (${participants.length})` },
-                            { id: 'groups', label: 'Groups' },
-                            { id: 'brackets', label: 'Brackets' },
-                                    { id: 'schedule', label: 'Schedule' },
-                                    { id: 'results', label: 'Results' },
-                                    { id: 'player_stats', label: 'Player Stats' },
-                            { id: 'settings', label: 'Settings' },
+                                      { id: "overview", label: "Overview" },
+                                      { id: "participants", label: `Participants (${participants.length})` },
+                                      { id: "groups", label: "Groups" },
+                                      { id: "brackets", label: "Brackets" },
+                                      { id: "schedule", label: "Schedule" },
+                                      { id: "results", label: "Results" },
+                                      { id: "player_stats", label: "Player Stats" },
+                                      ...(showSettingsTab ? [{ id: "settings" as const, label: "Settings" }] : []),
                                   ]
                             ).map((tab) => (
                             <button
@@ -444,8 +509,8 @@ export default function TournamentDetailPage() {
 
             {/* Content */}
             <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4 md:py-6 min-w-0 w-full overflow-x-hidden">
-                {activeTab === 'overview' && (
-                    <TournamentOverview tournament={tournament} participants={participants} />
+                {activeTab === "overview" && (
+                    <TournamentOverview tournament={tournament} participants={participants} canEdit={canEdit} />
                 )}
 
                 {activeTab === 'participants' && (
@@ -504,7 +569,7 @@ export default function TournamentDetailPage() {
                     <IndividualPlayerStatsTab tournament={tournament} participants={participants} />
                 )}
 
-                {activeTab === 'settings' && (
+                {activeTab === "settings" && showSettingsTab && (
                     <SettingsTab tournament={tournament} onTournamentUpdate={fetchTournamentData} canEdit={canEdit} />
                 )}
             </div>
@@ -513,7 +578,15 @@ export default function TournamentDetailPage() {
 }
 
 // Overview Tab Component
-function TournamentOverview({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
+function TournamentOverview({
+    tournament,
+    participants,
+    canEdit = false,
+}: {
+    tournament: Tournament;
+    participants: Participant[];
+    canEdit?: boolean;
+}) {
     const confirmedParticipants = participants.filter(p => p.status === 'confirmed' || p.status === 'registered');
     const eliminatedParticipants = participants.filter(p => p.status === 'eliminated');
     const winner = participants.find(p => p.status === 'winner');
@@ -540,34 +613,33 @@ function TournamentOverview({ tournament, participants }: { tournament: Tourname
                 </div>
             </div>
 
-            {/* Tournament Info */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
-                <h2 className={`text-base md:text-lg font-semibold text-gray-900 mb-4`}>Tournament Information</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
-                    <div>
-                        <div className="text-gray-600 mb-1">Format</div>
-                        <div className={`font-medium text-gray-900`}>
-                            {tournament.format?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Single Elimination'}
+            {canEdit && (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+                    <h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4">Tournament Information</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
+                        <div>
+                            <div className="text-gray-600 mb-1">Format</div>
+                            <div className="font-medium text-gray-900">
+                                {tournament.format?.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Single Elimination"}
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <div className="text-gray-600 mb-1">Match Format</div>
-                        <div className={`font-medium text-gray-900`}>
-                            Best of {tournament.sets_per_match || 3} sets, {tournament.points_per_set || 21} points
+                        <div>
+                            <div className="text-gray-600 mb-1">Match Format</div>
+                            <div className="font-medium text-gray-900">
+                                Best of {tournament.sets_per_match || 3} sets, {tournament.points_per_set || 21} points
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <div className="text-gray-600 mb-1">Prize Pool</div>
-                        <div className={`font-medium text-gray-900`}>₹{tournament.prize_pool}</div>
-                    </div>
-                    <div>
-                        <div className="text-gray-600 mb-1">Start Date</div>
-                        <div className={`font-medium text-gray-900`}>
-                            {new Date(tournament.start_date).toLocaleString()}
+                        <div>
+                            <div className="text-gray-600 mb-1">Prize Pool</div>
+                            <div className="font-medium text-gray-900">₹{tournament.prize_pool}</div>
+                        </div>
+                        <div>
+                            <div className="text-gray-600 mb-1">Start Date</div>
+                            <div className="font-medium text-gray-900">{new Date(tournament.start_date).toLocaleString()}</div>
                         </div>
                     </div>
                 </div>
-            </div>
+            )}
 
             {winner && (
                 <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6">
@@ -1876,6 +1948,8 @@ function IndividualScheduleTab({
         return `Player contains: ${scheduleFilterPlayer.trim()}`;
     }, [scheduleFilterPlayer]);
 
+    const resolveCourtExport = useCallback((raw: string) => formatStoredCourtForDisplay(tournament, raw), [tournament]);
+
     const refreshMatches = useCallback(() => {
         supabase
             .from("matches")
@@ -1895,8 +1969,8 @@ function IndividualScheduleTab({
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
-        downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+        downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     const handleScheduleDownloadPdf = useCallback(async () => {
         if (filteredMatches.length === 0) {
@@ -1904,8 +1978,8 @@ function IndividualScheduleTab({
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
-        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     const handleAssignTimesToExistingMatches = async () => {
         if (!assignSessionStart.trim()) {
@@ -1998,18 +2072,13 @@ function IndividualScheduleTab({
 
     return (
         <div className="space-y-4 min-w-0 w-full overflow-hidden">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between min-w-0">
-                <h2 className="text-xl font-semibold text-gray-900 shrink-0">Schedule</h2>
-                {!canEdit && <p className="text-sm text-gray-600">View only</p>}
-            </div>
+            {!canEdit && (
+                <div className="flex justify-end min-w-0">
+                    <p className="text-sm text-gray-600">View only</p>
+                </div>
+            )}
             {canEdit && drawMatches.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4 space-y-2">
-                    <p className="text-sm font-medium text-gray-900">Assign match times</p>
-                    <p className="text-xs text-gray-600">
-                        <strong>{clampAssignSlotMinutes(assignSlotMinutes)} minutes</strong> per match (change below). When both players link to tournament participants (name or user),
-                        scheduling is <strong>player-aware</strong> like the team schedule. Otherwise times fill{" "}
-                        <strong>per court</strong>. Matches with no court use Court 1.
-                    </p>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                         <div className="min-w-0">
                             <label htmlFor="indiv-assign-session-start" className="block text-xs font-medium text-gray-600 mb-1">
@@ -2061,7 +2130,6 @@ function IndividualScheduleTab({
                 </div>
             )}
             <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
-                <div className="text-sm font-medium text-gray-900">Filter schedule</div>
                 <div>
                     <label htmlFor="indiv-sched-filter-player" className="block text-xs font-medium text-gray-600 mb-1">
                         Player name contains
@@ -2076,15 +2144,7 @@ function IndividualScheduleTab({
                     />
                 </div>
                 {drawMatches.length > 0 && (
-                    <p className="text-xs text-gray-600">
-                        Showing <strong>{filteredMatches.length}</strong> of <strong>{drawMatches.length}</strong> match
-                        {drawMatches.length === 1 ? "" : "es"}
-                        {scheduleFilterPlayer.trim() ? " matching filter" : ""}.
-                    </p>
-                )}
-                {drawMatches.length > 0 && (
                     <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
-                        <span className="text-xs text-gray-600 shrink-0">Export schedule</span>
                         <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
@@ -2111,6 +2171,7 @@ function IndividualScheduleTab({
                 participants={participants}
                 tournament={tournament}
                 poolSize={drawMatches.length}
+                hideCourtsNote
             />
             {drawMatches.length === 0 && (
                 <p className="text-gray-600 text-sm">No singles/bracket matches yet. Generate brackets to create matches.</p>
@@ -2771,10 +2832,12 @@ function IndividualScheduleMatchCard({
     match,
     participants,
     tournamentId,
+    tournament,
 }: {
     match: TournamentMatch;
     participants: Participant[];
     tournamentId: string;
+    tournament: Tournament;
 }) {
     const m = match;
     const p1 = m.match_players?.find((x) => x.team === "player_1");
@@ -2799,6 +2862,9 @@ function IndividualScheduleMatchCard({
                             : "No time set"}
                     </div>
                     {umpireName ? <div className="text-xs text-gray-600">Umpire: {umpireName}</div> : null}
+                    {m.court_number != null && String(m.court_number).trim() !== "" ? (
+                        <div className="text-xs text-gray-600">{formatStoredCourtForDisplay(tournament, m.court_number)}</div>
+                    ) : null}
                     <Link
                         href={`/scoring/tournaments/${tournamentId}?tab=results&resultMatch=${m.id}`}
                         className="inline-block text-red-600 hover:text-red-800 text-xs font-medium mt-0.5"
@@ -3047,6 +3113,7 @@ function ScheduleBreakCell() {
 function AlignedMultiCourtScheduleGrid({
     matches,
     courtKeys,
+    courtHeaders,
     renderMatch,
     breakGapMs = SCHEDULE_TIME_BREAK_GAP_MS,
     poolSize,
@@ -3054,6 +3121,8 @@ function AlignedMultiCourtScheduleGrid({
 }: {
     matches: TournamentMatch[];
     courtKeys: string[];
+    /** Same order/length as courtKeys — column titles. */
+    courtHeaders: string[];
     renderMatch: (m: TournamentMatch) => ReactNode;
     breakGapMs?: number;
     poolSize: number;
@@ -3080,9 +3149,9 @@ function AlignedMultiCourtScheduleGrid({
                     className="grid divide-x divide-gray-200 border-b border-gray-200 bg-gray-50"
                     style={colTemplate}
                 >
-                    {courtKeys.map((ck) => (
+                    {courtKeys.map((ck, i) => (
                         <div key={ck} className="px-3 py-2 text-sm font-medium text-gray-900">
-                            Court {ck}
+                            {courtHeaders[i] ?? `Court ${ck}`}
                         </div>
                     ))}
                 </div>
@@ -3139,13 +3208,13 @@ function AlignedMultiCourtScheduleGrid({
                 <div className="space-y-2">
                     <p className="text-sm font-semibold text-gray-900">No time set</p>
                     <div className="grid gap-3 sm:gap-4" style={colTemplate}>
-                        {courtKeys.map((ck) => (
+                        {courtKeys.map((ck, i) => (
                             <div
                                 key={ck}
                                 className="min-w-0 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm"
                             >
                                 <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 text-sm font-medium text-gray-900">
-                                    Court {ck}
+                                    {courtHeaders[i] ?? `Court ${ck}`}
                                 </div>
                                 <div className="divide-y divide-gray-200">
                                     {(unscheduledByCourt[ck] || []).map((m) => (
@@ -3187,12 +3256,16 @@ function IndividualCourtScheduleGrid({
         if (!courtKeys.includes(mobileCourtKey)) setMobileCourtKey(courtKeys[0] || "1");
     }, [mobileCourtKey, courtKeys]);
     const visibleCourtKeys = isMobileLayout ? [mobileCourtKey] : courtKeys;
+    const courtHeadersVisible = useMemo(
+        () => visibleCourtKeys.map((ck) => courtDisplayLabelForKey(tournament, ck)),
+        [tournament, visibleCourtKeys],
+    );
     return (
         <>
             {!hideCourtsNote && (
                 <p className="text-xs text-gray-500 mb-2">
                     Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change{" "}
-                    <strong>Number of courts</strong> in Settings if needed.
+                    <strong>Number of courts</strong> and optional <strong>Court names</strong> in Settings if needed.
                 </p>
             )}
             {!hideCourtsNote && (
@@ -3215,7 +3288,7 @@ function IndividualCourtScheduleGrid({
                                     : "bg-white text-gray-700 border-gray-300"
                             }`}
                         >
-                            Court {ck}
+                            {courtDisplayLabelForKey(tournament, ck)}
                         </button>
                     ))}
                 </div>
@@ -3224,12 +3297,14 @@ function IndividualCourtScheduleGrid({
                 <AlignedMultiCourtScheduleGrid
                     matches={matches}
                     courtKeys={visibleCourtKeys}
+                    courtHeaders={courtHeadersVisible}
                     poolSize={poolSize}
                     renderMatch={(m) => (
                         <IndividualScheduleMatchCard
                             match={m}
                             participants={participants}
                             tournamentId={tournament.id}
+                            tournament={tournament}
                         />
                     )}
                 />
@@ -3240,10 +3315,12 @@ function IndividualCourtScheduleGrid({
 
 function ScheduleMatchCard({
     match,
+    tournament,
     canEdit = false,
     onSaveUmpire,
 }: {
     match: TournamentMatch;
+    tournament: Tournament;
     canEdit?: boolean;
     onSaveUmpire?: (matchId: string, umpireName: string) => Promise<void>;
 }) {
@@ -3281,6 +3358,9 @@ function ScheduleMatchCard({
                             : "No time set"}
                     </div>
                     {initialUmpire ? <div className="text-xs text-gray-600">Umpire: {initialUmpire}</div> : null}
+                    {m.court_number != null && String(m.court_number).trim() !== "" ? (
+                        <div className="text-xs text-gray-600">{formatStoredCourtForDisplay(tournament, m.court_number)}</div>
+                    ) : null}
                     {canEdit && onSaveUmpire ? (
                         <div className="pt-1 flex flex-wrap items-center gap-2">
                             <input
@@ -3357,6 +3437,10 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         if (!courtKeys.includes(mobileCourtKey)) setMobileCourtKey(courtKeys[0] || "1");
     }, [mobileCourtKey, courtKeys]);
     const visibleCourtKeys = isMobileLayout ? [mobileCourtKey] : courtKeys;
+    const courtHeadersVisible = useMemo(
+        () => visibleCourtKeys.map((ck) => courtDisplayLabelForKey(tournament, ck)),
+        [tournament, visibleCourtKeys],
+    );
     const isRoundRobin = tournament.format === "round_robin" || tournament.format === "round_robin_knockout";
     const teamIds = teams.map((t) => t.id);
     const memberNamesByTeam = useTeamMemberNames(teamIds);
@@ -3398,14 +3482,16 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         return bits.join(" • ");
     }, [teams, scheduleFilterTeamId, scheduleFilterPlayer]);
 
+    const resolveCourtExport = useCallback((raw: string) => formatStoredCourtForDisplay(tournament, raw), [tournament]);
+
     const handleScheduleDownloadXlsx = useCallback(() => {
         if (filteredMatches.length === 0) {
             alert("No matches to export.");
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches);
-        downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+        downloadScheduleXlsx(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     const handleScheduleDownloadPdf = useCallback(async () => {
         if (filteredMatches.length === 0) {
@@ -3413,8 +3499,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             return;
         }
         const rows = buildScheduleExportRows(filteredMatches);
-        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote]);
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
@@ -3945,7 +4031,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             : "\n\n(No participant lineups in notes / rosters — per-court timing only.)";
         if (
             !confirm(
-                `Assign ${updates.length} match time(s)?\n\nSession from ${sessionLabel} until midnight each day, then next evening. Matches without a court use Court ${defaultCourtKey}.${smartNote}`
+                `Assign ${updates.length} match time(s)?\n\nSession from ${sessionLabel} until midnight each day, then next evening. Matches without a court use ${courtDisplayLabelForKey(tournament, defaultCourtKey)}.${smartNote}`
             )
         ) {
             return;
@@ -3974,8 +4060,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
 
     return (
         <div className="space-y-4 min-w-0 w-full overflow-hidden">
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between min-w-0">
-                <h2 className="text-xl font-semibold text-gray-900 shrink-0">Schedule</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end min-w-0">
                 {canEdit ? (
                 <div className="flex flex-wrap items-center gap-2 min-w-0 w-full sm:w-auto">
                     {isRoundRobin && (
@@ -4032,14 +4117,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 ) : <p className="text-sm text-gray-600">View only</p>}
                 </div>
             {canEdit && matches.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4 space-y-2">
-                    <p className="text-sm font-medium text-gray-900">Assign match times</p>
-                    <p className="text-xs text-gray-600">
-                        <strong>{clampAssignSlotMinutes(assignSlotMinutes)} minutes</strong> per match (change below). When lineups exist (doubles in match notes + rosters), times are{" "}
-                        <strong>player-aware</strong>: each clock slot uses <strong>all courts that can start there</strong> (disjoint players). No double-booking; max{" "}
-                        <strong>two matches in a row</strong> per player without a gap; <strong>max 9 matches/day</strong> per player. Tie-break uses match number. Each
-                        evening runs until <strong>midnight</strong>, then the <strong>next evening</strong> at the same start. Matches with no court use Court 1.
-                    </p>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                         <div className="min-w-0">
                             <label htmlFor="assign-session-start" className="block text-xs font-medium text-gray-600 mb-1">
@@ -4091,15 +4169,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 </div>
             )}
             {canEdit && teams.length >= 2 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 sm:p-4 space-y-2">
-                    <p className="text-sm font-medium text-gray-900">Balanced doubles (skill-matched lineups)</p>
-                    <p className="text-xs text-gray-700">
-                        Builds many team-vs-team matches. Each match picks <strong>two players per side</strong> so the{" "}
-                        <strong>skill mix matches</strong> (e.g. Advanced+Beginner vs Advanced+Beginner). A side pair can repeat, but not against the exact same opponent side pair again.
-                        Set each participant&apos;s <strong>category</strong> on the Participants tab first. Run DB migration{" "}
-                        <code className="text-[11px] bg-white px-1 rounded border border-amber-200">tournament_team_member_position_expand.sql</code> if
-                        teams can have more than 2 members.
-                    </p>
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 sm:p-4">
                     <div className="flex flex-wrap items-center gap-2">
                         <label className="text-xs text-gray-700 whitespace-nowrap" htmlFor="doubles-target">
                             Target matches per player
@@ -4122,27 +4192,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             {isGenerating ? "Generating…" : "Generate balanced doubles schedule"}
                         </button>
                     </div>
-                    <p className="text-xs text-gray-600">
-                        Match numbers <code className="text-[11px]">DD-001</code>… Lineups appear under each card. Results still pick a winning <em>team</em>; player stats currently count by team membership per match.
-                    </p>
-                    <p className="text-xs text-gray-600">
-                        <strong>Why not “players × target ÷ 4” matches?</strong> Example: 36 unique players × 12 ÷ 4 = 108 matches only if every player reaches 12 <em>and</em> the scheduler can keep finding{" "}
-                        <strong>mirrored skill pairs</strong> (e.g. Adv+Int vs Adv+Int). With fewer unique players or lopsided categories, the cap is lower (e.g. 34×12÷4 = 102). The generator runs many random tries to get as close as possible.
-                    </p>
-                    <p className="text-xs text-gray-600">
-                        <strong>Teammate pairs:</strong> each pair of players on the same team is scheduled together on one side of a match at least once when possible (extra matches may be added after the per-player target).{" "}
-                        <strong>Advanced+Advanced:</strong> for every two teams that can both field Adv+Adv, at least one such match is scheduled; and each Advanced player who can form an Adv+Adv pair gets at least one of those matches vs <em>each</em> other Adv-capable team (e.g. Apurva vs B, C, D…). Categories must normalize to &quot;advanced&quot;.
-                    </p>
                 </div>
-            )}
-            {isRoundRobin && teams.length >= 2 && (
-                <p className="text-sm text-gray-600 break-words">
-                    {teams.some((t) => t.category) ? (
-                        <>Teams have categories. &quot;Generate round-robin schedule&quot; creates matches <strong>within each category</strong> (Category A vs A, B vs B, C vs C). Match numbers: A-M1, B-M1, etc.</>
-                    ) : (
-                        <>Format is Round Robin. Use &quot;Generate round-robin schedule&quot; to create all {teams.length * (teams.length - 1) / 2} matches (each team vs every other team once).</>
-                    )}
-                </p>
             )}
             {canEdit && showAdd && (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3 shadow-sm">
@@ -4177,13 +4227,18 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
-                            <input
-                                type="text"
+                            <select
                                 value={newMatch.court_number}
                                 onChange={(e) => setNewMatch((m) => ({ ...m, court_number: e.target.value }))}
-                                placeholder="Court 1"
                                 className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md text-sm"
-                            />
+                            >
+                                <option value="">—</option>
+                                {courtKeys.map((ck) => (
+                                    <option key={ck} value={ck}>
+                                        {courtDisplayLabelForKey(tournament, ck)}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Date & time</label>
@@ -4221,7 +4276,6 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 </div>
             )}
             <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
-                <div className="text-sm font-medium text-gray-900">Filter schedule</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                     <div>
                         <label htmlFor="sched-filter-team" className="block text-xs font-medium text-gray-600 mb-1">
@@ -4256,30 +4310,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     </div>
                 </div>
                 {matches.length > 0 && (
-                    <p className="text-xs text-gray-600">
-                        {scheduleFilterPlayer.trim() ? (
-                            <>
-                                <strong>{filteredMatches.length}</strong> match{filteredMatches.length === 1 ? "" : "es"} include this player name (of{" "}
-                                <strong>{matches.length}</strong> total). This is usually every game for that player, not a partial page.
-                            </>
-                        ) : scheduleFilterTeamId ? (
-                            <>
-                                Showing <strong>{filteredMatches.length}</strong> of <strong>{matches.length}</strong> match{matches.length === 1 ? "" : "es"}{" "}
-                                for the selected team.
-                            </>
-                        ) : (
-                            <>
-                                Showing <strong>{filteredMatches.length}</strong> of <strong>{matches.length}</strong> match{matches.length === 1 ? "" : "es"}.
-                            </>
-                        )}
-                    </p>
-                )}
-                {matches.length > 0 && (
                     <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
-                        <span className="text-xs text-gray-600 shrink-0">Export schedule</span>
-                        <span className="text-[11px] text-gray-500">
-                            Uses the same list as above (respects team / player filters). Cleared filters = full tournament.
-                                    </span>
                         <div className="flex flex-wrap gap-2">
                             <button
                                 type="button"
@@ -4299,16 +4330,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             </button>
                         </div>
                     </div>
-                                    )}
-                                </div>
-            <p className="text-xs text-gray-500">
-                Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change <strong>Number of courts</strong> in Settings if needed.
-            </p>
-            <p className="text-xs text-gray-500">
-                Day headers and match rows line up across all courts. If the next start on a court is more than{" "}
-                {Math.round(SCHEDULE_TIME_BREAK_GAP_MS / 60000)} minutes after the previous one on that court, a{" "}
-                <strong>Break</strong> box appears in that column.
-            </p>
+                )}
+            </div>
             {isMobileLayout && courtKeys.length > 1 && (
                 <div className="flex flex-wrap gap-2">
                     {courtKeys.map((ck) => (
@@ -4322,7 +4345,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                     : "bg-white text-gray-700 border-gray-300"
                             }`}
                         >
-                            Court {ck}
+                            {courtDisplayLabelForKey(tournament, ck)}
                         </button>
                     ))}
                 </div>
@@ -4331,6 +4354,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 <AlignedMultiCourtScheduleGrid
                     matches={filteredMatches as TournamentMatch[]}
                     courtKeys={visibleCourtKeys}
+                    courtHeaders={courtHeadersVisible}
                     poolSize={matches.length}
                     emptyHint={
                         matches.length > 0 && filteredMatches.length === 0
@@ -4340,6 +4364,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     renderMatch={(m) => (
                         <ScheduleMatchCard
                             match={m}
+                            tournament={tournament}
                             canEdit={canEdit}
                             onSaveUmpire={handleSaveMatchUmpire}
                         />
@@ -4478,6 +4503,33 @@ function BracketResultsTab({
         }
     };
 
+    const handleResetMatch = async (matchId: string) => {
+        if (!confirm("Clear this result and set the match back to upcoming?")) return;
+        try {
+            const { error } = await supabase
+                .from("matches")
+                .update({
+                    status: "upcoming",
+                    winner_id: null,
+                    winner_team_id: null,
+                    final_score: null,
+                    completed_at: null,
+                })
+                .eq("id", matchId);
+            if (error) throw error;
+            if (editingId === matchId) {
+                setEditingId(null);
+                setWinnerPlayerId("");
+                setSetScores(Array(numSets).fill(""));
+            }
+            onRefresh();
+            refreshMatches();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to reset match");
+        }
+    };
+
     const startEdit = (m: TournamentMatch) => {
         setEditingId(m.id);
         setWinnerPlayerId(m.winner_id || "");
@@ -4536,7 +4588,7 @@ function BracketResultsTab({
                                                       })
                                                     : "No time set"}
                                                 {m.court_number != null && String(m.court_number).trim() !== ""
-                                                    ? ` · Court ${String(m.court_number).trim()}`
+                                                    ? ` · ${formatStoredCourtForDisplay(tournament, m.court_number)}`
                                                     : ""}
                                             </div>
                                         ) : null}
@@ -4618,7 +4670,18 @@ function BracketResultsTab({
                                             <span className="text-gray-600 text-sm">Upcoming</span>
                                         )
                                     ) : (
-                                        <span className="text-green-600 text-sm font-medium shrink-0">Completed</span>
+                                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                            <span className="text-green-600 text-sm font-medium">Completed</span>
+                                            {canEdit ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void handleResetMatch(match.id)}
+                                                    className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                                                >
+                                                    Reset match
+                                                </button>
+                                            ) : null}
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -4680,6 +4743,38 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
         } catch (e) {
             console.error(e);
             alert("Failed to save result");
+        }
+    };
+
+    const handleResetMatch = async (matchId: string) => {
+        if (!confirm("Clear this result and set the match back to upcoming?")) return;
+        try {
+            const { error } = await supabase
+                .from("matches")
+                .update({
+                    status: "upcoming",
+                    winner_team_id: null,
+                    winner_id: null,
+                    final_score: null,
+                    completed_at: null,
+                })
+                .eq("id", matchId);
+            if (error) throw error;
+            if (editingId === matchId) {
+                setEditingId(null);
+                setWinnerId("");
+                setSetScores(Array(numSets).fill(""));
+            }
+            onRefresh();
+            supabase
+                .from("matches")
+                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name), winner_team:tournament_teams!winner_team_id(id,name)")
+                .eq("tournament_id", tournament.id)
+                .order("match_date", { ascending: true })
+                .then(({ data }) => setMatches(data || []));
+        } catch (e) {
+            console.error(e);
+            alert("Failed to reset match");
         }
     };
 
@@ -4818,7 +4913,18 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                         <span className="text-gray-600 text-sm">Upcoming</span>
                                     )
                                 ) : (
-                                    <span className="text-green-600 text-sm font-medium shrink-0">Completed</span>
+                                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                        <span className="text-green-600 text-sm font-medium">Completed</span>
+                                        {canEdit ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleResetMatch(match.id)}
+                                                className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100"
+                                            >
+                                                Reset match
+                                            </button>
+                                        ) : null}
+                                    </div>
                                 )}
                             </div>
                         </div>
@@ -4892,7 +4998,7 @@ function GeneratePlayoffsBlock({
                 <>
                     <p className="text-sm text-gray-600 mb-2">8 qualified: {qualifiedTeams.map((t) => t.name).join(", ")}</p>
                     <p className="text-xs text-gray-500 mb-2">
-                        QF1 (Court {(0 % nc) + 1}): 1st vs 8th · QF2 (Court {(1 % nc) + 1}): 4th vs 5th · QF3 (Court {(2 % nc) + 1}): 2nd vs 7th · QF4 (Court {(3 % nc) + 1}): 3rd vs 6th. Winners go to semis, then final.
+                        {`QF1 (${courtDisplayLabelForKey(tournament, String((0 % nc) + 1))}): 1st vs 8th · QF2 (${courtDisplayLabelForKey(tournament, String((1 % nc) + 1))}): 4th vs 5th · QF3 (${courtDisplayLabelForKey(tournament, String((2 % nc) + 1))}): 2nd vs 7th · QF4 (${courtDisplayLabelForKey(tournament, String((3 % nc) + 1))}): 3rd vs 6th. Winners go to semis, then final.`}
                     </p>
                     <button
                         type="button"
@@ -5700,6 +5806,7 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
         max_points: tournament.max_points || 30,
         seeding_method: tournament.seeding_method || 'random',
         number_of_courts: clampCourtCount(tournament.number_of_courts ?? 3),
+        court_labels: courtLabelsStateFromTournament(tournament),
         entry_fee: Number(tournament.entry_fee) || 0,
     });
     const [isSaving, setIsSaving] = useState(false);
@@ -5715,6 +5822,7 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
             max_points: tournament.max_points || 30,
             seeding_method: tournament.seeding_method || 'random',
             number_of_courts: clampCourtCount(tournament.number_of_courts ?? 3),
+            court_labels: courtLabelsStateFromTournament(tournament),
             entry_fee: Number(tournament.entry_fee) || 0,
         });
     }, [tournament]);
@@ -5722,27 +5830,52 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const { error } = await supabase
-                .from('tournaments')
-                .update({
-                    tournament_mode: settings.tournament_mode,
-                    format: settings.format,
-                    sets_per_match: settings.sets_per_match,
-                    points_per_set: normalizePointsPerSetForSport(tournament.sport, settings.points_per_set),
-                    win_by_two: settings.win_by_two,
-                    max_points: settings.max_points,
-                    seeding_method: settings.seeding_method,
-                    number_of_courts: clampCourtCount(settings.number_of_courts),
-                    entry_fee: Math.max(0, Number(settings.entry_fee) || 0),
-                })
-                .eq('id', tournament.id);
+            const nCourts = clampCourtCount(settings.number_of_courts);
+            const labelSlice = Array.from({ length: nCourts }, (_, i) => (settings.court_labels[i] ?? "").trim());
+            const court_labels = labelSlice.every((s) => !s) ? null : labelSlice;
+
+            const baseUpdate = {
+                tournament_mode: settings.tournament_mode,
+                format: settings.format,
+                sets_per_match: settings.sets_per_match,
+                points_per_set: normalizePointsPerSetForSport(tournament.sport, settings.points_per_set),
+                win_by_two: settings.win_by_two,
+                max_points: settings.max_points,
+                seeding_method: settings.seeding_method,
+                number_of_courts: nCourts,
+                entry_fee: Math.max(0, Number(settings.entry_fee) || 0),
+            };
+
+            let { error } = await supabase
+                .from("tournaments")
+                .update({ ...baseUpdate, court_labels })
+                .eq("id", tournament.id);
+
+            const errObj = error as { code?: string; message?: string } | null;
+            const missingCourtLabelsCol =
+                errObj?.code === "PGRST204" &&
+                typeof errObj.message === "string" &&
+                errObj.message.includes("court_labels");
+
+            if (missingCourtLabelsCol) {
+                const retry = await supabase.from("tournaments").update(baseUpdate).eq("id", tournament.id);
+                error = retry.error;
+                if (!error) {
+                    alert(
+                        "Other settings were saved. Court names were skipped because your database does not have a court_labels column yet.\n\n" +
+                            "In Supabase: SQL Editor → run the script db/add_tournament_court_labels.sql (or: ALTER TABLE public.tournaments ADD COLUMN IF NOT EXISTS court_labels JSONB DEFAULT NULL;), then click Save again to store court names.",
+                    );
+                    onTournamentUpdate();
+                    return;
+                }
+            }
 
             if (error) throw error;
-            alert('Settings saved successfully!');
+            alert("Settings saved successfully!");
             onTournamentUpdate();
         } catch (error) {
-            console.error('Error saving settings:', error);
-            alert('Failed to save settings');
+            console.error("Error saving settings:", error);
+            alert("Failed to save settings");
         } finally {
             setIsSaving(false);
         }
@@ -5817,13 +5950,46 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
                             value={settings.number_of_courts}
                             onChange={(e) => {
                                 if (!canEdit) return;
-                                const v = parseInt(e.target.value, 10);
-                                setSettings({ ...settings, number_of_courts: Number.isFinite(v) ? v : 3 });
+                                const v = clampCourtCount(parseInt(e.target.value, 10));
+                                setSettings((s) => {
+                                    const nextLabels = [...s.court_labels];
+                                    while (nextLabels.length < v) nextLabels.push("");
+                                    nextLabels.length = v;
+                                    return { ...s, number_of_courts: v, court_labels: nextLabels };
+                                });
                             }}
                             disabled={!canEdit}
                             className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
                         />
                         <p className="text-xs text-gray-500 mt-1">Columns on the Schedule tab and court assignment when generating matches (1–16).</p>
+                    </div>
+                </div>
+
+                <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">Court names (optional)</label>
+                    <p className="text-xs text-gray-500">
+                        Shown on the schedule grid, mobile court tabs, match cards, and exports when a match is assigned to court 1, 2, … Leave blank to use
+                        &quot;Court 1&quot;, etc.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {Array.from({ length: settings.number_of_courts }, (_, i) => (
+                            <div key={i}>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Court {i + 1}</label>
+                                <input
+                                    type="text"
+                                    value={settings.court_labels[i] ?? ""}
+                                    onChange={(e) => {
+                                        if (!canEdit) return;
+                                        const next = [...settings.court_labels];
+                                        next[i] = e.target.value;
+                                        setSettings({ ...settings, court_labels: next });
+                                    }}
+                                    disabled={!canEdit}
+                                    placeholder={`Court ${i + 1}`}
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 disabled:bg-gray-100 disabled:cursor-not-allowed text-sm"
+                                />
+                            </div>
+                        ))}
                     </div>
                 </div>
 
@@ -5856,7 +6022,7 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
                         >
                             {allowedPointsPerSetForSport(tournament.sport).map((pts) => (
                                 <option key={pts} value={pts}>
-                                    {pts === 11 ? "11 points (pickleball)" : pts === 15 ? "15 points" : "21 points (badminton)"}
+                                    {pointsPerSetOptionLabel(tournament.sport, pts)}
                                 </option>
                             ))}
                         </select>

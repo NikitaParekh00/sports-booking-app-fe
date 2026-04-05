@@ -106,11 +106,16 @@ function safeFileBase(name: string, suffix: string): string {
     return `${base || "tournament"}_${suffix}`;
 }
 
-export function downloadScheduleXlsx(tournamentName: string, rows: ScheduleExportRow[], filterLabel?: string): void {
+export function downloadScheduleXlsx(
+    tournamentName: string,
+    rows: ScheduleExportRow[],
+    filterLabel?: string,
+    resolveCourtDisplay?: (rawCourt: string) => string,
+): void {
     const sheetRows = rows.map((r) => ({
         "Match #": r.matchNumber,
         "Date & time": r.dateStr,
-        Court: r.court,
+        Court: r.court === "—" ? "—" : resolveCourtDisplay ? resolveCourtDisplay(r.court) : r.court,
         "Team A": r.teamA,
         "Team B": r.teamB,
         Lineups: r.lineups,
@@ -126,7 +131,12 @@ export function downloadScheduleXlsx(tournamentName: string, rows: ScheduleExpor
     XLSX.writeFile(wb, fname);
 }
 
-export async function downloadSchedulePdf(tournamentName: string, rows: ScheduleExportRow[], filterLabel?: string): Promise<void> {
+export async function downloadSchedulePdf(
+    tournamentName: string,
+    rows: ScheduleExportRow[],
+    filterLabel?: string,
+    resolveCourtHeader?: (rawCourtKey: string) => string,
+): Promise<void> {
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -316,7 +326,13 @@ export async function downloadSchedulePdf(tournamentName: string, rows: Schedule
                 doc.setFont("helvetica", "bold");
                 doc.setFontSize(9);
                 doc.setTextColor(31, 41, 55);
-                doc.text(`Court ${courtKey === "—" ? "Unassigned" : courtKey}`, x + 2.6, topY + 4.8);
+                const headerLabel =
+                    courtKey === "—"
+                        ? "Unassigned"
+                        : resolveCourtHeader
+                          ? resolveCourtHeader(courtKey)
+                          : `Court ${courtKey}`;
+                doc.text(headerLabel, x + 2.6, topY + 4.8);
                 colY[i] = topY + courtHeaderH + 2;
             });
 
