@@ -757,9 +757,14 @@ export function parseDoublesMatchNotes(notes: string | null | undefined): Double
     return null;
 }
 
-/** e.g. `Aryan (Advanced) & Apurva (Advanced) vs Mayur (Advanced) & Daivik (Advanced)` */
-export function formatDoublesPlayersLineCompact(payload: DoublesLinePayload): string {
+/** e.g. `Aryan (Advanced) & Apurva (Advanced) vs Mayur (Advanced) & Daivik (Advanced)` (with categories; omit via opts). */
+export function formatDoublesPlayersLineCompact(
+    payload: DoublesLinePayload,
+    opts?: { includeCategories?: boolean },
+): string {
+    const includeCategories = opts?.includeCategories !== false;
     const lab = (name: string, cat: string) => {
+        if (!includeCategories) return (name && String(name).trim()) || "—";
         const c = (cat && String(cat).trim()) || "—";
         return `${name} (${c})`;
     };

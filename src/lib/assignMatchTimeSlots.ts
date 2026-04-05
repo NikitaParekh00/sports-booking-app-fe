@@ -1,6 +1,9 @@
 /**
- * Assign consecutive match_date values per court using a fixed daily window (local time).
+ * Assign consecutive match_date values per court using a daily window (local time).
  * Example: Apr 11–12, 6:00 PM–midnight, 15-minute slots → 24 starts per court per day.
+ *
+ * Optional `dailyStarts`: day 0 uses [0], day 1 uses [1] if present, else the last entry repeats
+ * (e.g. day 1 at 6 PM, day 2 at 10 AM, day 3+ same as day 2).
  *
  * For doubles / roster-aware scheduling use `assignMatchTimesWithPlayerConstraints` so the same
  * participant is never on two courts at once and never plays more than N consecutive 15-min slots.
@@ -16,10 +19,24 @@ export type MatchForSlotAssign = {
 
 export type DailyClock = { hour: number; minute: number };
 
+/** Parse HTML `type="time"` value `HH:MM` (24h). */
+export function parseTimeInputToDailyClock(value: string): DailyClock | null {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+    if (!m) return null;
+    const hour = parseInt(m[1], 10);
+    const minute = parseInt(m[2], 10);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return null;
+    }
+    return { hour, minute };
+}
+
 export type AssignMatchTimesByCourtOptions = {
     /** Any instant on the first competition day (local date used; use `dailyStart` for clock). */
     anchorDate: Date;
-    /** First slot on each day (default 18:00 = 6 PM). */
+    /** Per-day first slot (local). If omitted, `dailyStart` / anchor time applies every day. */
+    dailyStarts?: DailyClock[];
+    /** First slot on each day when `dailyStarts` is not used (default: anchor clock). */
     dailyStart?: DailyClock;
     /** End of session, exclusive (default 24:00 = midnight). Last start is 23:45 for 15-min slots. */
     dailyEnd?: DailyClock;
@@ -54,6 +71,174 @@ function minutesOfDay(h: number, m: number): number {
     return h * 60 + m;
 }
 
+function resolveDailyStartsArray(options: AssignMatchTimesByCourtOptions): DailyClock[] {
+    if (options.dailyStarts && options.dailyStarts.length > 0) {
+        return options.dailyStarts;
+    }
+    const ds =
+        options.dailyStart ??
+        (() => {
+            const a = options.anchorDate;
+            return { hour: a.getHours(), minute: a.getMinutes() };
+        })();
+    return [ds];
+}
+
+function getDailyStartClockForOffset(dailyStarts: DailyClock[], dayOffset: number): DailyClock {
+    const i = dailyStarts.length === 0 ? 0 : Math.min(Math.max(0, dayOffset), dailyStarts.length - 1);
+    return dailyStarts[i];
+}
+
+function anchorDayAsDate(anchorDate: Date, dayOffset: number): Date {
+    return new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate() + dayOffset, 0, 0, 0, 0);
+}
+
+function localDayOffsetFromAnchor(slotDate: Date, anchorDate: Date): number {
+    const a = anchorDayAsDate(anchorDate, 0).getTime();
+    const d = anchorDayAsDate(slotDate, 0).getTime();
+    return Math.round((d - a) / 86400000);
+}
+
+function startOfSessionDay(anchorDate: Date, dayOffset: number, dailyStarts: DailyClock[]): Date {
+    const start = getDailyStartClockForOffset(dailyStarts, dayOffset);
+    const day = anchorDayAsDate(anchorDate, dayOffset);
+    day.setHours(start.hour, start.minute, 0, 0);
+    return day;
+}
+
+function lastSlotStartMsOnDay(
+    anchorDate: Date,
+    dayOffset: number,
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): number {
+    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    const lastStartMin = endMin - slotMinutes;
+    if (lastStartMin < 0) return -1;
+    const d = anchorDayAsDate(anchorDate, dayOffset);
+    d.setHours(Math.floor(lastStartMin / 60), lastStartMin % 60, 0, 0);
+    return d.getTime();
+}
+
+function slotsOnDay(
+    anchorDate: Date,
+    dayOffset: number,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): number {
+    const start = getDailyStartClockForOffset(dailyStarts, dayOffset);
+    const startMin = minutesOfDay(start.hour, start.minute);
+    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    const windowLen = endMin - startMin;
+    return Math.max(0, Math.floor(windowLen / slotMinutes));
+}
+
+function validateSessionWindows(
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number,
+    label: string
+): void {
+    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    for (let i = 0; i < dailyStarts.length; i++) {
+        const startMin = minutesOfDay(dailyStarts[i].hour, dailyStarts[i].minute);
+        const windowLen = endMin - startMin;
+        if (windowLen <= 0) {
+            throw new Error(`${label}: day ${i + 1} session end must be after session start`);
+        }
+        const spd = Math.floor(windowLen / slotMinutes);
+        if (spd <= 0) {
+            throw new Error(`${label}: day ${i + 1} session window too short for this slot length`);
+        }
+    }
+}
+
+function matchIndexToDayAndSlot(
+    idx: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): { dayOffset: number; slotInDay: number } {
+    let dayOff = 0;
+    let rem = idx;
+    for (let guard = 0; guard < 5000; guard++) {
+        const spd = slotsOnDay(anchorDate, dayOff, dailyStarts, dailyEnd, slotMinutes);
+        if (spd <= 0) {
+            throw new Error("assignMatchTimesByCourt: no slots available for a session day (check start/end times)");
+        }
+        if (rem < spd) return { dayOffset: dayOff, slotInDay: rem };
+        rem -= spd;
+        dayOff++;
+    }
+    throw new Error("assignMatchTimesByCourt: too many days needed for matches");
+}
+
+function isValidSessionSlotStartMulti(
+    tMs: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): boolean {
+    const d = new Date(tMs);
+    if (d.getSeconds() !== 0 || d.getMilliseconds() !== 0) return false;
+    const off = localDayOffsetFromAnchor(d, anchorDate);
+    if (off < 0) return false;
+    const dayStartMs = startOfSessionDay(anchorDate, off, dailyStarts).getTime();
+    const dayLastMs = lastSlotStartMsOnDay(anchorDate, off, dailyEnd, slotMinutes);
+    if (dayLastMs < 0 || tMs < dayStartMs || tMs > dayLastMs) return false;
+    const slotMs = slotMinutes * 60 * 1000;
+    return (tMs - dayStartMs) % slotMs === 0;
+}
+
+function snapToNextSessionStart(
+    tMs: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): number {
+    const d = new Date(tMs);
+    let off = localDayOffsetFromAnchor(d, anchorDate);
+    if (off < 0) {
+        return startOfSessionDay(anchorDate, 0, dailyStarts).getTime();
+    }
+    const dayStartMs = startOfSessionDay(anchorDate, off, dailyStarts).getTime();
+    const dayLastMs = lastSlotStartMsOnDay(anchorDate, off, dailyEnd, slotMinutes);
+    if (tMs < dayStartMs) return dayStartMs;
+    if (dayLastMs >= 0 && tMs > dayLastMs) {
+        return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
+    }
+    const slotMs = slotMinutes * 60 * 1000;
+    let x = tMs;
+    for (let guard = 0; guard < 500; guard++) {
+        if (isValidSessionSlotStartMulti(x, anchorDate, dailyStarts, dailyEnd, slotMinutes)) return x;
+        x += slotMs;
+        if (dayLastMs >= 0 && x > dayLastMs) {
+            return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
+        }
+    }
+    return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
+}
+
+function nextSessionSlotStartAfter(
+    fromMs: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): number {
+    const slotMs = slotMinutes * 60 * 1000;
+    const cand = fromMs + slotMs;
+    if (isValidSessionSlotStartMulti(cand, anchorDate, dailyStarts, dailyEnd, slotMinutes)) {
+        return cand;
+    }
+    const fromDay = localDayOffsetFromAnchor(new Date(fromMs), anchorDate);
+    return startOfSessionDay(anchorDate, fromDay + 1, dailyStarts).getTime();
+}
+
 /**
  * @returns ISO strings for `match_date` (via `Date.toISOString()`), local wall-clock rules.
  */
@@ -61,31 +246,13 @@ export function assignMatchTimesByCourt(
     matches: MatchForSlotAssign[],
     options: AssignMatchTimesByCourtOptions
 ): { id: string; match_date: string }[] {
-    const dailyStart =
-        options.dailyStart ??
-        (() => {
-            const a = options.anchorDate;
-            return { hour: a.getHours(), minute: a.getMinutes() };
-        })();
+    const dailyStartsArr = resolveDailyStartsArray(options);
     const dailyEnd = options.dailyEnd ?? { hour: 24, minute: 0 };
     const slotMinutes = Math.max(1, Math.min(180, options.slotMinutes ?? 15));
     const defaultCourtKey = options.defaultCourtKey ?? "1";
-
-    const startMin = minutesOfDay(dailyStart.hour, dailyStart.minute);
-    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
-    const windowLen = endMin - startMin;
-    if (windowLen <= 0) {
-        throw new Error("assignMatchTimesByCourt: dailyEnd must be after dailyStart");
-    }
-    const slotsPerDay = Math.floor(windowLen / slotMinutes);
-    if (slotsPerDay <= 0) {
-        throw new Error("assignMatchTimesByCourt: session window too short for this slot length");
-    }
-
     const anchor = options.anchorDate;
-    const y = anchor.getFullYear();
-    const mo = anchor.getMonth();
-    const da = anchor.getDate();
+
+    validateSessionWindows(dailyStartsArr, dailyEnd, slotMinutes, "assignMatchTimesByCourt");
 
     const sorted = [...matches].sort((a, b) => compareMatchesForSchedule(a, b, defaultCourtKey));
     const byCourt = new Map<number, MatchForSlotAssign[]>();
@@ -98,10 +265,16 @@ export function assignMatchTimesByCourt(
     const out: { id: string; match_date: string }[] = [];
     for (const [, list] of [...byCourt.entries()].sort((a, b) => a[0] - b[0])) {
         list.forEach((m, idx) => {
-            const dayOff = Math.floor(idx / slotsPerDay);
-            const slotInDay = idx % slotsPerDay;
-            const d = new Date(y, mo, da + dayOff, 0, 0, 0, 0);
-            d.setHours(dailyStart.hour, dailyStart.minute + slotInDay * slotMinutes, 0, 0);
+            const { dayOffset, slotInDay } = matchIndexToDayAndSlot(
+                idx,
+                anchor,
+                dailyStartsArr,
+                dailyEnd,
+                slotMinutes
+            );
+            const start = getDailyStartClockForOffset(dailyStartsArr, dayOffset);
+            const d = anchorDayAsDate(anchor, dayOffset);
+            d.setHours(start.hour, start.minute + slotInDay * slotMinutes, 0, 0);
             out.push({ id: m.id, match_date: d.toISOString() });
         });
     }
@@ -173,36 +346,6 @@ function playerAllowsDailyCap(existingTimes: number[] | undefined, slotStartMs: 
     return count < maxPerDay;
 }
 
-function isValidSessionSlotStart(d: Date, dailyStart: DailyClock, endMin: number, slotMinutes: number): boolean {
-    const startMin = minutesOfDay(dailyStart.hour, dailyStart.minute);
-    const md = d.getHours() * 60 + d.getMinutes();
-    const lastStartMin = endMin - slotMinutes;
-    return md >= startMin && md <= lastStartMin && d.getSeconds() === 0 && d.getMilliseconds() === 0;
-}
-
-/** Next evening session start on or after calendar day of `d` (local). */
-function nextEveningSessionStart(d: Date, dailyStart: DailyClock): Date {
-    const startMin = minutesOfDay(dailyStart.hour, dailyStart.minute);
-    const md = d.getHours() * 60 + d.getMinutes();
-    const x = new Date(d);
-    if (md < startMin) {
-        x.setHours(dailyStart.hour, dailyStart.minute, 0, 0);
-        return x;
-    }
-    x.setDate(x.getDate() + 1);
-    x.setHours(dailyStart.hour, dailyStart.minute, 0, 0);
-    return x;
-}
-
-function advanceSlotStartMs(fromSlotStartMs: number, dailyStart: DailyClock, endMin: number, slotMinutes: number): number {
-    const slotMs = slotMinutes * 60 * 1000;
-    const cand = new Date(fromSlotStartMs + slotMs);
-    if (isValidSessionSlotStart(cand, dailyStart, endMin, slotMinutes)) {
-        return cand.getTime();
-    }
-    return nextEveningSessionStart(cand, dailyStart).getTime();
-}
-
 /**
  * Time-wave packing: for each slot (6:00, 6:15, …), place as many matches as possible at that
  * exact start time—one per court, no shared players across those placements, respecting
@@ -213,12 +356,7 @@ export function assignMatchTimesWithPlayerConstraints(
     matches: MatchForPlayerAwareAssign[],
     options: AssignWithPlayerOptions
 ): { id: string; match_date: string }[] {
-    const dailyStart =
-        options.dailyStart ??
-        (() => {
-            const a = options.anchorDate;
-            return { hour: a.getHours(), minute: a.getMinutes() };
-        })();
+    const dailyStartsArr = resolveDailyStartsArray(options);
     const dailyEnd = options.dailyEnd ?? { hour: 24, minute: 0 };
     const slotMinutes = Math.max(1, Math.min(180, options.slotMinutes ?? 15));
     const defaultCourtKey = options.defaultCourtKey ?? "1";
@@ -226,20 +364,19 @@ export function assignMatchTimesWithPlayerConstraints(
     const maxPerDay = Math.max(1, Math.min(50, options.maxMatchesPerPlayerPerDay ?? 9));
     const slotMs = slotMinutes * 60 * 1000;
 
-    const startMin = minutesOfDay(dailyStart.hour, dailyStart.minute);
-    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
-    const windowLen = endMin - startMin;
-    if (windowLen <= 0) {
-        throw new Error("assignMatchTimesWithPlayerConstraints: dailyEnd must be after dailyStart");
-    }
-    const slotsPerDay = Math.floor(windowLen / slotMinutes);
-    if (slotsPerDay <= 0) {
-        throw new Error("assignMatchTimesWithPlayerConstraints: session window too short for this slot length");
-    }
+    validateSessionWindows(dailyStartsArr, dailyEnd, slotMinutes, "assignMatchTimesWithPlayerConstraints");
 
     const anchor = options.anchorDate;
-    const anchorSlotStart = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), dailyStart.hour, dailyStart.minute, 0, 0);
-    const anchorMs = anchorSlotStart.getTime();
+    const anchorMs = startOfSessionDay(anchor, 0, dailyStartsArr).getTime();
+
+    let maxSlotsPerDay = 0;
+    for (let i = 0; i < dailyStartsArr.length; i++) {
+        maxSlotsPerDay = Math.max(maxSlotsPerDay, slotsOnDay(anchor, i, dailyStartsArr, dailyEnd, slotMinutes));
+    }
+    maxSlotsPerDay = Math.max(
+        maxSlotsPerDay,
+        slotsOnDay(anchor, dailyStartsArr.length + 20, dailyStartsArr, dailyEnd, slotMinutes)
+    );
 
     const sorted = [...matches].sort((a, b) => compareByMatchNumberGlobal(a, b, defaultCourtKey));
     const courtsInUse = new Set(sorted.map((m) => courtSortKey(m.court_number, defaultCourtKey)));
@@ -252,7 +389,10 @@ export function assignMatchTimesWithPlayerConstraints(
     const out: { id: string; match_date: string }[] = [];
     let pool = sorted;
 
-    const maxOuterSteps = Math.min(500_000, Math.max(slotsPerDay * 200, slotsPerDay * 50 * Math.max(1, matches.length)));
+    const maxOuterSteps = Math.min(
+        500_000,
+        Math.max(maxSlotsPerDay * 200, maxSlotsPerDay * 50 * Math.max(1, matches.length))
+    );
     let T = anchorMs;
     let steps = 0;
 
@@ -263,8 +403,8 @@ export function assignMatchTimesWithPlayerConstraints(
             );
         }
 
-        if (!isValidSessionSlotStart(new Date(T), dailyStart, endMin, slotMinutes)) {
-            T = nextEveningSessionStart(new Date(T), dailyStart).getTime();
+        if (!isValidSessionSlotStartMulti(T, anchor, dailyStartsArr, dailyEnd, slotMinutes)) {
+            T = snapToNextSessionStart(T, anchor, dailyStartsArr, dailyEnd, slotMinutes);
             continue;
         }
 
@@ -309,7 +449,7 @@ export function assignMatchTimesWithPlayerConstraints(
             pool = pool.filter((x) => x.id !== pick.id);
         }
 
-        T = advanceSlotStartMs(T, dailyStart, endMin, slotMinutes);
+        T = nextSessionSlotStartAfter(T, anchor, dailyStartsArr, dailyEnd, slotMinutes);
     }
 
     return out;

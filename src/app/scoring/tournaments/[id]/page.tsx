@@ -20,6 +20,7 @@ import {
 import {
     assignMatchTimesByCourt,
     assignMatchTimesWithPlayerConstraints,
+    parseTimeInputToDailyClock,
     participantIdsForMatchScheduling,
     shouldUsePlayerAwareAssignment,
 } from "@/lib/assignMatchTimeSlots";
@@ -266,8 +267,8 @@ export default function TournamentDetailPage() {
                 let userData: { user_id?: string };
                 try {
                     userData = JSON.parse(storedUser) as { user_id?: string };
-                } catch {
-                    setCanEdit(false);
+            } catch {
+                setCanEdit(false);
                     alert("Please log in to view tournaments.");
                     router.push("/login");
                     return;
@@ -665,27 +666,27 @@ function TournamentOverview({
             </div>
 
             {canEdit && (
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 md:p-6">
                     <h2 className="text-base md:text-lg font-semibold text-gray-900 mb-4">Tournament Information</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
-                        <div>
-                            <div className="text-gray-600 mb-1">Format</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 text-xs md:text-sm">
+                    <div>
+                        <div className="text-gray-600 mb-1">Format</div>
                             <div className="font-medium text-gray-900">
                                 {tournament.format?.replace("_", " ").replace(/\b\w/g, (l) => l.toUpperCase()) || "Single Elimination"}
-                            </div>
                         </div>
-                        <div>
-                            <div className="text-gray-600 mb-1">Match Format</div>
+                    </div>
+                    <div>
+                        <div className="text-gray-600 mb-1">Match Format</div>
                             <div className="font-medium text-gray-900">
-                                Best of {tournament.sets_per_match || 3} sets, {tournament.points_per_set || 21} points
-                            </div>
+                            Best of {tournament.sets_per_match || 3} sets, {tournament.points_per_set || 21} points
                         </div>
-                        <div>
-                            <div className="text-gray-600 mb-1">Prize Pool</div>
+                    </div>
+                    <div>
+                        <div className="text-gray-600 mb-1">Prize Pool</div>
                             <div className="font-medium text-gray-900">₹{tournament.prize_pool}</div>
-                        </div>
-                        <div>
-                            <div className="text-gray-600 mb-1">Start Date</div>
+                    </div>
+                    <div>
+                        <div className="text-gray-600 mb-1">Start Date</div>
                             <div className="font-medium text-gray-900">{new Date(tournament.start_date).toLocaleString()}</div>
                         </div>
                     </div>
@@ -1976,6 +1977,8 @@ function IndividualScheduleTab({
     });
     const [assignOverwriteTimes, setAssignOverwriteTimes] = useState(false);
     const [assignSlotMinutes, setAssignSlotMinutes] = useState(DEFAULT_ASSIGN_SLOT_MINUTES);
+    /** Optional: day 2 (and later days) session start; day 1 uses datetime-local above. */
+    const [assignSessionDay2Time, setAssignSessionDay2Time] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
     const supabase = createClient();
 
@@ -2042,6 +2045,13 @@ function IndividualScheduleTab({
             alert("Invalid date/time.");
             return;
         }
+        const day2Clock = assignSessionDay2Time.trim() ? parseTimeInputToDailyClock(assignSessionDay2Time) : null;
+        if (assignSessionDay2Time.trim() && !day2Clock) {
+            alert("Invalid day 2 session start (use the time picker).");
+            return;
+        }
+        const day1Clock = { hour: anchor.getHours(), minute: anchor.getMinutes() };
+        const dailyStarts = day2Clock ? [day1Clock, day2Clock] : undefined;
         const defaultCourtKey = "1";
         const list = drawMatches.filter((m) => {
             if (assignOverwriteTimes) return true;
@@ -2070,7 +2080,7 @@ function IndividualScheduleTab({
             if (shouldUsePlayerAwareAssignment(enriched)) {
                 updates = assignMatchTimesWithPlayerConstraints(enriched, {
                     anchorDate: anchor,
-                    dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                    ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
                     dailyEnd: { hour: 24, minute: 0 },
                     slotMinutes: slotM,
                     defaultCourtKey,
@@ -2082,7 +2092,7 @@ function IndividualScheduleTab({
                     enriched.map(({ id, court_number, match_number }) => ({ id, court_number, match_number })),
                     {
                         anchorDate: anchor,
-                        dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                        ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
                         dailyEnd: { hour: 24, minute: 0 },
                         slotMinutes: slotM,
                         defaultCourtKey,
@@ -2097,9 +2107,13 @@ function IndividualScheduleTab({
         const smartNote = shouldUsePlayerAwareAssignment(enriched)
             ? `\n\nPlayer-aware: same rules as team schedule (no double-booking; max 2 consecutive ${slotM}-minute matches per player; max 9 matches per player per day).`
             : "\n\nPer-court timing only (link players to tournament participants for smarter slots).";
+        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → midnight (local).`;
+        const day2Line = day2Clock
+            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → midnight (local); further days use the same start as day 2.`
+            : "Each day uses the same session start as day 1 until midnight.";
         if (
             !confirm(
-                `Assign ${updates.length} match time(s)?\n\nSession from ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} until midnight each day.${smartNote}`,
+                `Assign ${updates.length} match time(s)?\n\n${day1Line}\n${day2Line}${smartNote}`,
             )
         ) {
             return;
@@ -2126,7 +2140,7 @@ function IndividualScheduleTab({
             {!canEdit && (
                 <div className="flex justify-end min-w-0">
                     <p className="text-sm text-gray-600">View only</p>
-                </div>
+            </div>
             )}
             {canEdit && drawMatches.length > 0 && (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
@@ -2142,6 +2156,21 @@ function IndividualScheduleTab({
                                 onChange={(e) => setAssignSessionStart(e.target.value)}
                                 className="w-full max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             />
+                        </div>
+                        <div className="min-w-0">
+                            <label htmlFor="indiv-assign-session-day2" className="block text-xs font-medium text-gray-600 mb-1">
+                                Day 2+ start (optional)
+                            </label>
+                            <input
+                                id="indiv-assign-session-day2"
+                                type="time"
+                                value={assignSessionDay2Time}
+                                onChange={(e) => setAssignSessionDay2Time(e.target.value)}
+                                className="w-full max-w-[11rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                            <p className="text-[11px] text-gray-500 mt-1 max-w-xs">
+                                Leave empty to use the same start time every day. If set, day 2 and later use this time (until midnight).
+                            </p>
                         </div>
                         <div className="min-w-0">
                             <label htmlFor="indiv-assign-slot-minutes" className="block text-xs font-medium text-gray-600 mb-1">
@@ -2588,86 +2617,86 @@ function TeamsTab({
                     const tabTheme = getTeamTabCardTheme(team.name);
                     const memberBlock = (
                         <>
-                            <ul className="space-y-2 mb-3">
-                                {[...(membersByTeam[team.id] || [])]
-                                    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-                                    .map((m) => {
-                                        const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
-                                        return (
+                        <ul className="space-y-2 mb-3">
+                            {[...(membersByTeam[team.id] || [])]
+                                .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+                                .map((m) => {
+                                    const part = (m as TournamentTeamMember & { participant?: Participant }).participant;
+                                    return (
                                             <li
                                                 key={m.id}
                                                 className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5"
                                             >
-                                                <span className="text-gray-900">
-                                                    P{m.position}: {part?.player_name ?? "—"}
-                                                </span>
-                                                {canEdit && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleRemoveMember(m.id)}
-                                                        className="text-red-600 hover:underline text-xs sm:text-sm"
-                                                    >
-                                                        Remove
-                                                    </button>
-                                                )}
-                                            </li>
-                                        );
-                                    })}
-                            </ul>
+                                    <span className="text-gray-900">
+                                        P{m.position}: {part?.player_name ?? "—"}
+                                    </span>
+                                    {canEdit && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleRemoveMember(m.id)}
+                                        className="text-red-600 hover:underline text-xs sm:text-sm"
+                                    >
+                                        Remove
+                                    </button>
+                                    )}
+                                </li>
+                            );
+                                })}
+                        </ul>
                             {canEdit &&
                                 (addingToTeamId === team.id ? (
-                                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
-                                        <select
-                                            value={selectedParticipantId || ""}
-                                            onChange={(e) => setSelectedParticipantId(e.target.value || null)}
-                                            className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                                        >
-                                            <option value="">Select participant</option>
-                                            {availableParticipants.map((p) => (
+                            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-200">
+                                <select
+                                    value={selectedParticipantId || ""}
+                                    onChange={(e) => setSelectedParticipantId(e.target.value || null)}
+                                    className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">Select participant</option>
+                                    {availableParticipants.map((p) => (
                                                 <option key={p.id} value={p.id}>
                                                     {p.player_name}
                                                 </option>
-                                            ))}
-                                        </select>
-                                        <select
-                                            value={position}
-                                            onChange={(e) => setPosition(parseInt(e.target.value, 10) || 1)}
-                                            className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                                        >
-                                            {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
-                                                <option key={n} value={n}>
-                                                    P{n}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <button
-                                            type="button"
-                                            onClick={handleAddMember}
-                                            className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm"
-                                        >
-                                            Add
-                                        </button>
-                                        <button
-                                            type="button"
+                                    ))}
+                                </select>
+                                <select
+                                    value={position}
+                                    onChange={(e) => setPosition(parseInt(e.target.value, 10) || 1)}
+                                    className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    {Array.from({ length: 20 }, (_, i) => i + 1).map((n) => (
+                                        <option key={n} value={n}>
+                                            P{n}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    type="button"
+                                    onClick={handleAddMember}
+                                    className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm"
+                                >
+                                    Add
+                                </button>
+                                <button
+                                    type="button"
                                             onClick={() => {
                                                 setAddingToTeamId(null);
                                                 setSelectedParticipantId(null);
                                             }}
-                                            className="text-gray-700 hover:text-gray-900 text-sm font-medium"
-                                        >
-                                            Cancel
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <button
-                                        type="button"
-                                        onClick={() => setAddingToTeamId(team.id)}
-                                        disabled={availableParticipants.length === 0}
-                                        className="text-sm text-red-600 hover:underline disabled:opacity-50"
-                                    >
-                                        + Add member
-                                    </button>
-                                ))}
+                                    className="text-gray-700 hover:text-gray-900 text-sm font-medium"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setAddingToTeamId(team.id)}
+                                disabled={availableParticipants.length === 0}
+                                className="text-sm text-red-600 hover:underline disabled:opacity-50"
+                            >
+                                + Add member
+                            </button>
+                        ))}
                         </>
                     );
 
@@ -2678,7 +2707,7 @@ function TeamsTab({
                                     <h3 className={`font-semibold text-base ${tabTheme.title}`}>
                                         {displayTeamCardTitle(team.name)}
                                     </h3>
-                                </div>
+                    </div>
                                 <div className={`p-4 ${tabTheme.contentBg}`}>{memberBlock}</div>
                             </div>
                         );
@@ -3468,6 +3497,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     });
     const [assignOverwriteTimes, setAssignOverwriteTimes] = useState(false);
     const [assignSlotMinutes, setAssignSlotMinutes] = useState(DEFAULT_ASSIGN_SLOT_MINUTES);
+    /** Optional: day 2+ session start; day 1 uses datetime-local above. */
+    const [assignSessionDay2Time, setAssignSessionDay2Time] = useState("");
     const [newMatch, setNewMatch] = useState({
         team_a_id: "",
         team_b_id: "",
@@ -3993,6 +4024,13 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             alert("Invalid date/time.");
             return;
         }
+        const day2Clock = assignSessionDay2Time.trim() ? parseTimeInputToDailyClock(assignSessionDay2Time) : null;
+        if (assignSessionDay2Time.trim() && !day2Clock) {
+            alert("Invalid day 2 session start (use the time picker).");
+            return;
+        }
+        const day1Clock = { hour: anchor.getHours(), minute: anchor.getMinutes() };
+        const dailyStarts = day2Clock ? [day1Clock, day2Clock] : undefined;
         const defaultCourtKey = "1";
         const list = matches.filter((m) => {
             if (assignOverwriteTimes) return true;
@@ -4052,7 +4090,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             if (shouldUsePlayerAwareAssignment(enriched)) {
                 updates = assignMatchTimesWithPlayerConstraints(enriched, {
                     anchorDate: anchor,
-                    dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                    ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
                     dailyEnd: { hour: 24, minute: 0 },
                     slotMinutes: slotM,
                     defaultCourtKey,
@@ -4064,7 +4102,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     enriched.map(({ id, court_number, match_number }) => ({ id, court_number, match_number })),
                     {
                         anchorDate: anchor,
-                        dailyStart: { hour: anchor.getHours(), minute: anchor.getMinutes() },
+                        ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
                         dailyEnd: { hour: 24, minute: 0 },
                         slotMinutes: slotM,
                         defaultCourtKey,
@@ -4076,13 +4114,16 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             alert(e instanceof Error ? e.message : "Could not build time slots.");
             return;
         }
-        const sessionLabel = anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → midnight (local).`;
+        const day2Line = day2Clock
+            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → midnight (local); further days match day 2.`
+            : "Each day uses the same session start as day 1 until midnight.";
             const smartNote = shouldUsePlayerAwareAssignment(enriched)
             ? `\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive ${slotM}-minute matches per player without a gap; max 9 matches per player per day.`
             : "\n\n(No participant lineups in notes / rosters — per-court timing only.)";
         if (
             !confirm(
-                `Assign ${updates.length} match time(s)?\n\nSession from ${sessionLabel} until midnight each day, then next evening. Matches without a court use ${courtDisplayLabelForKey(tournament, defaultCourtKey)}.${smartNote}`
+                `Assign ${updates.length} match time(s)?\n\n${day1Line}\n${day2Line}\nMatches without a court use ${courtDisplayLabelForKey(tournament, defaultCourtKey)}.${smartNote}`
             )
         ) {
             return;
@@ -4181,6 +4222,21 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 onChange={(e) => setAssignSessionStart(e.target.value)}
                                 className="w-full max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             />
+                        </div>
+                        <div className="min-w-0">
+                            <label htmlFor="assign-session-day2" className="block text-xs font-medium text-gray-600 mb-1">
+                                Day 2+ start (optional)
+                            </label>
+                            <input
+                                id="assign-session-day2"
+                                type="time"
+                                value={assignSessionDay2Time}
+                                onChange={(e) => setAssignSessionDay2Time(e.target.value)}
+                                className="w-full max-w-[11rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                            <p className="text-[11px] text-gray-500 mt-1 max-w-xs">
+                                Leave empty for the same start every day. If set, day 2+ use this time until midnight.
+                            </p>
                         </div>
                         <div className="min-w-0">
                             <label htmlFor="assign-slot-minutes" className="block text-xs font-medium text-gray-600 mb-1">
@@ -4381,8 +4437,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             </button>
                         </div>
                     </div>
-                )}
-            </div>
+                                    )}
+                                </div>
             {isMobileLayout && courtKeys.length > 1 && (
                 <div className="flex flex-wrap gap-2">
                     {courtKeys.map((ck) => (
@@ -4863,11 +4919,11 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                                         {doublesPayload ? (
                                             <>
-                                                <span className="text-base font-bold text-gray-900 leading-snug">{na}</span>
+                                        <span className="text-base font-bold text-gray-900 leading-snug">{na}</span>
                                                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
                                                     vs
                                                 </span>
-                                                <span className="text-base font-bold text-gray-900 leading-snug">{nb}</span>
+                                        <span className="text-base font-bold text-gray-900 leading-snug">{nb}</span>
                                             </>
                                         ) : (
                                             <>
@@ -5555,14 +5611,14 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                             </tr>
                         </thead>
                         <tbody>
-                            {sorted.map((row, idx) => {
-                                const rank = idx + 1;
-                                const participantName =
+                        {sorted.map((row, idx) => {
+                            const rank = idx + 1;
+                            const participantName =
                                     (row.member as TournamentTeamMember & { participant?: Participant }).participant
                                         ?.player_name ?? "—";
-                                const teamNameRaw =
-                                    (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
-                                const teamName = stripTrailingBracketLabel(teamNameRaw);
+                            const teamNameRaw =
+                                (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
+                            const teamName = stripTrailingBracketLabel(teamNameRaw);
                                 const pd = row.pointsDifference;
                                 const rankDisplay =
                                     rank === 1 ? (
@@ -5580,12 +5636,12 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                                     ) : (
                                         <span className="text-gray-700">{rank}</span>
                                     );
-                                return (
+                            return (
                                     <tr
-                                        key={row.member.id}
+                                    key={row.member.id}
                                         className="border-t border-gray-200"
-                                        style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
-                                    >
+                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                >
                                         <td className="py-2.5 px-4 text-sm sm:text-base">
                                             <div className="font-semibold text-gray-900">{participantName}</div>
                                             <div className="text-xs text-gray-600 mt-0.5">{teamName}</div>
@@ -5599,8 +5655,8 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                                         </td>
                                         <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
                                     </tr>
-                                );
-                            })}
+                            );
+                        })}
                         </tbody>
                     </table>
                 )}
@@ -5788,13 +5844,13 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                             </tr>
                         </thead>
                         <tbody>
-                            {sorted.map((row, idx) => {
-                                const rank = idx + 1;
-                                const participantName = row.participant.player_name || "—";
+                        {sorted.map((row, idx) => {
+                            const rank = idx + 1;
+                            const participantName = row.participant.player_name || "—";
                                 const club =
                                     row.participant.club != null && String(row.participant.club).trim() !== ""
-                                        ? stripTrailingBracketLabel(String(row.participant.club).trim())
-                                        : null;
+                                ? stripTrailingBracketLabel(String(row.participant.club).trim())
+                                : null;
                                 const pd = row.pointsDifference;
                                 const rankDisplay =
                                     rank === 1 ? (
@@ -5812,12 +5868,12 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                                     ) : (
                                         <span className="text-gray-700">{rank}</span>
                                     );
-                                return (
+                            return (
                                     <tr
-                                        key={row.participant.id}
+                                    key={row.participant.id}
                                         className="border-t border-gray-200"
-                                        style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
-                                    >
+                                    style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
+                                >
                                         <td className="py-2.5 px-4 text-sm sm:text-base">
                                             <div className="font-semibold text-gray-900">{participantName}</div>
                                             <div className="text-xs text-gray-600 mt-0.5">{club || "—"}</div>
@@ -5831,8 +5887,8 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                                         </td>
                                         <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
                                     </tr>
-                                );
-                            })}
+                            );
+                        })}
                         </tbody>
                     </table>
                 )}
@@ -5886,15 +5942,15 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
             const court_labels = labelSlice.every((s) => !s) ? null : labelSlice;
 
             const baseUpdate = {
-                tournament_mode: settings.tournament_mode,
-                format: settings.format,
-                sets_per_match: settings.sets_per_match,
-                points_per_set: normalizePointsPerSetForSport(tournament.sport, settings.points_per_set),
-                win_by_two: settings.win_by_two,
-                max_points: settings.max_points,
-                seeding_method: settings.seeding_method,
+                    tournament_mode: settings.tournament_mode,
+                    format: settings.format,
+                    sets_per_match: settings.sets_per_match,
+                    points_per_set: normalizePointsPerSetForSport(tournament.sport, settings.points_per_set),
+                    win_by_two: settings.win_by_two,
+                    max_points: settings.max_points,
+                    seeding_method: settings.seeding_method,
                 number_of_courts: nCourts,
-                entry_fee: Math.max(0, Number(settings.entry_fee) || 0),
+                    entry_fee: Math.max(0, Number(settings.entry_fee) || 0),
             };
 
             let { error } = await supabase

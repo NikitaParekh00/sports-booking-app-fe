@@ -74,7 +74,9 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
     });
     return sorted.map((m) => {
         const d = parseDoublesMatchNotes(m.notes ?? null);
-        const lineups = d ? formatDoublesPlayersLineCompact(d) : (m.notes?.trim() || "—");
+        const lineups = d
+            ? formatDoublesPlayersLineCompact(d, { includeCategories: false })
+            : (m.notes?.trim() || "—");
         const dateStr = m.match_date
             ? new Date(m.match_date).toLocaleString(undefined, {
                   weekday: "short",
