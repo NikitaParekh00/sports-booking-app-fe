@@ -14,7 +14,6 @@ export default function SignupPage() {
         fullName: '',
         mobileNumber: '',
         email: '',
-        referralCode: '',
     });
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,7 +86,6 @@ export default function SignupPage() {
                     full_name: formData.fullName,
                     phone: formattedMobileNumber,
                     email: formData.email || null,
-                    referral_code: formData.referralCode || null,
                     role: 'player',
                     points: 10, // Welcome bonus
                     points_earned: 10
@@ -160,18 +158,6 @@ export default function SignupPage() {
                         value={formData.email}
                         onChange={handleInputChange}
                         placeholder="Email (Optional)"
-                        className="w-full px-4 py-4 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
-                    />
-                </div>
-
-                {/* Referral Code (Optional) */}
-                <div>
-                    <input
-                        type="text"
-                        name="referralCode"
-                        value={formData.referralCode}
-                        onChange={handleInputChange}
-                        placeholder="Referral Code (Optional)"
                         className="w-full px-4 py-4 border border-gray-200 rounded-xl text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
                     />
                 </div>

@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
+
+const OTP_LEN = 5;
 
 function VerifyOtpContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const supabase = createClient();
+    const otpInputRef = useRef<HTMLInputElement>(null);
 
     const [loading, setLoading] = useState(false);
-    const [otp, setOtp] = useState(['', '', '', '', '']);
+    const [otp, setOtp] = useState('');
     const [phone, setPhone] = useState('');
     const [loginType, setLoginType] = useState('');
 
@@ -21,44 +24,21 @@ function VerifyOtpContent() {
         if (typeParam) setLoginType(typeParam);
     }, [searchParams]);
 
+    // One real input over the digit row keeps the mobile numeric keyboard open (no focus hopping).
+    useEffect(() => {
+        const t = window.setTimeout(() => otpInputRef.current?.focus(), 100);
+        return () => window.clearTimeout(t);
+    }, []);
 
-    const handleOtpChange = (index: number, value: string) => {
-        if (value.length > 1) return; // Only allow single digit
-
-        const newOtp = [...otp];
-        newOtp[index] = value.replace(/\D/g, ''); // Only allow digits
-        setOtp(newOtp);
-
-        // Auto-focus next input
-        if (value && index < 4) {
-            const nextInput = document.getElementById(`otp-${index + 1}`);
-            nextInput?.focus();
-        }
+    const handleOtpChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const next = e.target.value.replace(/\D/g, '').slice(0, OTP_LEN);
+        setOtp(next);
     };
 
-    const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-        // Handle backspace
-        if (e.key === 'Backspace' && !otp[index] && index > 0) {
-            const prevInput = document.getElementById(`otp-${index - 1}`);
-            prevInput?.focus();
-        }
-    };
-
-    const handlePaste = (e: React.ClipboardEvent) => {
+    const handleOtpPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
         e.preventDefault();
-        const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 5);
-        const newOtp = ['', '', '', '', ''];
-
-        for (let i = 0; i < pastedData.length; i++) {
-            newOtp[i] = pastedData[i];
-        }
-
-        setOtp(newOtp);
-
-        // Focus the last filled input or the first empty one
-        const lastFilledIndex = Math.min(pastedData.length - 1, 4);
-        const nextInput = document.getElementById(`otp-${lastFilledIndex}`);
-        nextInput?.focus();
+        const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LEN);
+        setOtp(pasted);
     };
 
     const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -67,8 +47,8 @@ function VerifyOtpContent() {
 
         try {
             // Validate OTP format
-            const otpString = otp.join('');
-            if (otpString.length !== 5) {
+            const otpString = otp;
+            if (otpString.length !== OTP_LEN) {
                 alert('Please enter a valid 5-digit code.');
                 return;
             }
@@ -186,27 +166,48 @@ function VerifyOtpContent() {
                 {/* OTP Form */}
                 <form onSubmit={handleVerifyOtp} className="space-y-6">
                     {/* OTP Input Boxes */}
-                    <div className="flex justify-center gap-3">
-                        {otp.map((digit, index) => (
-                            <input
+                    <div
+                        className="relative mx-auto flex w-fit justify-center gap-3"
+                        onPointerDown={() => otpInputRef.current?.focus()}
+                    >
+                        {Array.from({ length: OTP_LEN }, (_, index) => {
+                            const activeIndex = Math.min(otp.length, OTP_LEN - 1);
+                            const isActive = index === activeIndex;
+                            return (
+                            <div
                                 key={index}
-                                id={`otp-${index}`}
-                                type="text"
-                                value={digit}
-                                onChange={(e) => handleOtpChange(index, e.target.value)}
-                                onKeyDown={(e) => handleKeyDown(index, e)}
-                                onPaste={handlePaste}
-                                className="w-12 h-12 border border-gray-200 rounded-xl text-center text-2xl font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all duration-200"
-                                maxLength={1}
-                                required
-                            />
-                        ))}
+                                className={`pointer-events-none flex h-12 w-12 items-center justify-center rounded-xl border text-2xl font-bold text-gray-900 transition-colors duration-200 ${
+                                    isActive
+                                        ? 'border-red-500 ring-2 ring-red-500 ring-offset-0'
+                                        : 'border-gray-200'
+                                }`}
+                                aria-hidden
+                            >
+                                {otp[index] ?? ''}
+                            </div>
+                            );
+                        })}
+                        <input
+                            ref={otpInputRef}
+                            type="text"
+                            inputMode="numeric"
+                            autoComplete="one-time-code"
+                            autoCorrect="off"
+                            spellCheck={false}
+                            name="otp"
+                            value={otp}
+                            onChange={handleOtpChange}
+                            onPaste={handleOtpPaste}
+                            className="absolute inset-0 z-10 w-full cursor-text opacity-0"
+                            aria-label="Verification code"
+                            maxLength={OTP_LEN}
+                        />
                     </div>
 
                     {/* Verify Button */}
                     <button
                         type="submit"
-                        disabled={loading || otp.join('').length !== 5}
+                        disabled={loading || otp.length !== OTP_LEN}
                         className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {loading ? 'Verifying...' : 'VERIFY CODE'}
