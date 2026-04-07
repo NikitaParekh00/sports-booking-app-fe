@@ -4436,6 +4436,12 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 Download .pdf
                             </button>
                         </div>
+                        <p className="text-xs text-gray-600">
+                            Total matches: <span className="font-medium text-gray-800">{filteredMatches.length}</span>
+                            {filteredMatches.length !== matches.length ? (
+                                <span className="text-gray-500"> (filtered from {matches.length})</span>
+                            ) : null}
+                        </p>
                     </div>
                                     )}
                                 </div>
