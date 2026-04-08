@@ -404,6 +404,25 @@ export default function TournamentDetailPage() {
         );
     }
 
+    if (!canEdit) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-white px-4">
+                <div className="text-center bg-amber-50 rounded-2xl shadow-sm p-6 max-w-md w-full border border-amber-200">
+                    <p className="text-amber-800 text-lg font-semibold mb-2">Scheduling in progress</p>
+                    <p className="text-sm text-amber-800">
+                        Tournament scheduling is currently being updated. Please check back shortly.
+                    </p>
+                    <button
+                        onClick={() => router.push("/")}
+                        className="mt-4 w-full bg-amber-600 text-white py-2 rounded-lg font-semibold hover:bg-amber-700 transition-colors"
+                    >
+                        Go back
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-white px-4">
@@ -2081,7 +2100,7 @@ function IndividualScheduleTab({
                 updates = assignMatchTimesWithPlayerConstraints(enriched, {
                     anchorDate: anchor,
                     ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
-                    dailyEnd: { hour: 24, minute: 0 },
+                    dailyEnd: { hour: 25, minute: 0 },
                     slotMinutes: slotM,
                     defaultCourtKey,
                     maxConsecutivePlayingSlots: 2,
@@ -2093,7 +2112,7 @@ function IndividualScheduleTab({
                     {
                         anchorDate: anchor,
                         ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
-                        dailyEnd: { hour: 24, minute: 0 },
+                        dailyEnd: { hour: 25, minute: 0 },
                         slotMinutes: slotM,
                         defaultCourtKey,
                     },
@@ -2107,10 +2126,10 @@ function IndividualScheduleTab({
         const smartNote = shouldUsePlayerAwareAssignment(enriched)
             ? `\n\nPlayer-aware: same rules as team schedule (no double-booking; max 2 consecutive ${slotM}-minute matches per player; max 9 matches per player per day).`
             : "\n\nPer-court timing only (link players to tournament participants for smarter slots).";
-        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → midnight (local).`;
+        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → 1:00 AM next day (local).`;
         const day2Line = day2Clock
-            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → midnight (local); further days use the same start as day 2.`
-            : "Each day uses the same session start as day 1 until midnight.";
+            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → 1:00 AM next day (local); further days use the same start as day 2.`
+            : "Each day uses the same session start as day 1 until 1:00 AM next day.";
         if (
             !confirm(
                 `Assign ${updates.length} match time(s)?\n\n${day1Line}\n${day2Line}${smartNote}`,
@@ -2169,7 +2188,7 @@ function IndividualScheduleTab({
                                 className="w-full max-w-[11rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             />
                             <p className="text-[11px] text-gray-500 mt-1 max-w-xs">
-                                Leave empty to use the same start time every day. If set, day 2 and later use this time (until midnight).
+                                Leave empty to use the same start time every day. If set, day 2 and later use this time (until 1:00 AM next day).
                             </p>
                         </div>
                         <div className="min-w-0">
@@ -3948,7 +3967,10 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             })();
             const theoryMatches = theoreticalDoublesMatchCountIfFullyMet(uniqueParticipantCount, target);
             const theoryStr = Number.isInteger(theoryMatches) ? String(theoryMatches) : theoryMatches.toFixed(2);
-            const result = generateBalancedDoublesSchedule(rosters, target, { randomTrials: 80 });
+            const result = generateBalancedDoublesSchedule(rosters, target, {
+                randomTrials: 120,
+                teammatePairNameCaps: [{ playerAName: "Vijay G", playerBName: "Jignesh", maxTogether: 2 }],
+            });
             if (result.matches.length === 0) {
                 alert(
                     "Could not build any balanced doubles matches. Check that opponent teams can mirror your skill mixes (e.g. each team needs pairs with the same category combo)."
@@ -4091,7 +4113,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 updates = assignMatchTimesWithPlayerConstraints(enriched, {
                     anchorDate: anchor,
                     ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
-                    dailyEnd: { hour: 24, minute: 0 },
+                    dailyEnd: { hour: 25, minute: 0 },
                     slotMinutes: slotM,
                     defaultCourtKey,
                     maxConsecutivePlayingSlots: 2,
@@ -4103,7 +4125,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     {
                         anchorDate: anchor,
                         ...(dailyStarts ? { dailyStarts } : { dailyStart: day1Clock }),
-                        dailyEnd: { hour: 24, minute: 0 },
+                        dailyEnd: { hour: 25, minute: 0 },
                         slotMinutes: slotM,
                         defaultCourtKey,
                     }
@@ -4114,10 +4136,10 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             alert(e instanceof Error ? e.message : "Could not build time slots.");
             return;
         }
-        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → midnight (local).`;
+        const day1Line = `Day 1: ${anchor.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} → 1:00 AM next day (local).`;
         const day2Line = day2Clock
-            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → midnight (local); further days match day 2.`
-            : "Each day uses the same session start as day 1 until midnight.";
+            ? `Day 2+: ${new Date(2000, 0, 1, day2Clock.hour, day2Clock.minute).toLocaleTimeString(undefined, { timeStyle: "short" })} → 1:00 AM next day (local); further days match day 2.`
+            : "Each day uses the same session start as day 1 until 1:00 AM next day.";
             const smartNote = shouldUsePlayerAwareAssignment(enriched)
             ? `\n\nPlayer-aware: fills each time slot on as many courts as possible (e.g. all 6:00 PM slots when lineups don’t share players). No double-booking; max 2 consecutive ${slotM}-minute matches per player without a gap; max 9 matches per player per day.`
             : "\n\n(No participant lineups in notes / rosters — per-court timing only.)";
@@ -4235,7 +4257,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 className="w-full max-w-[11rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             />
                             <p className="text-[11px] text-gray-500 mt-1 max-w-xs">
-                                Leave empty for the same start every day. If set, day 2+ use this time until midnight.
+                                Leave empty for the same start every day. If set, day 2+ use this time until 1:00 AM next day.
                             </p>
                         </div>
                         <div className="min-w-0">

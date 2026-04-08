@@ -129,7 +129,7 @@ function slotsOnDay(
 ): number {
     const start = getDailyStartClockForOffset(dailyStarts, dayOffset);
     const startMin = minutesOfDay(start.hour, start.minute);
-    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    const endMin = minutesOfDay(dailyEnd.hour, dailyEnd.minute);
     const windowLen = endMin - startMin;
     return Math.max(0, Math.floor(windowLen / slotMinutes));
 }
@@ -140,7 +140,7 @@ function validateSessionWindows(
     slotMinutes: number,
     label: string
 ): void {
-    const endMin = dailyEnd.hour >= 24 ? 24 * 60 : minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    const endMin = minutesOfDay(dailyEnd.hour, dailyEnd.minute);
     for (let i = 0; i < dailyStarts.length; i++) {
         const startMin = minutesOfDay(dailyStarts[i].hour, dailyStarts[i].minute);
         const windowLen = endMin - startMin;
@@ -152,6 +152,43 @@ function validateSessionWindows(
             throw new Error(`${label}: day ${i + 1} session window too short for this slot length`);
         }
     }
+}
+
+function sessionWindowBounds(
+    anchorDate: Date,
+    dayOffset: number,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): { startMs: number; lastStartMs: number } {
+    const start = getDailyStartClockForOffset(dailyStarts, dayOffset);
+    const startMin = minutesOfDay(start.hour, start.minute);
+    const endMin = minutesOfDay(dailyEnd.hour, dailyEnd.minute);
+    const lastStartMin = endMin - slotMinutes;
+    const day = anchorDayAsDate(anchorDate, dayOffset);
+    const startDate = new Date(day);
+    startDate.setHours(Math.floor(startMin / 60), startMin % 60, 0, 0);
+    const lastStartDate = new Date(day);
+    lastStartDate.setHours(Math.floor(lastStartMin / 60), lastStartMin % 60, 0, 0);
+    return { startMs: startDate.getTime(), lastStartMs: lastStartDate.getTime() };
+}
+
+function logicalDayForSessionSlot(
+    tMs: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): { dayOffset: number; startMs: number } | null {
+    // A slot near midnight can belong to previous logical day if that session crosses 24:00.
+    const guess = localDayOffsetFromAnchor(new Date(tMs), anchorDate);
+    const from = Math.max(0, guess - 1);
+    const to = Math.max(2, guess + 2);
+    for (let off = from; off <= to; off++) {
+        const { startMs, lastStartMs } = sessionWindowBounds(anchorDate, off, dailyStarts, dailyEnd, slotMinutes);
+        if (tMs >= startMs && tMs <= lastStartMs) return { dayOffset: off, startMs };
+    }
+    return null;
 }
 
 function matchIndexToDayAndSlot(
@@ -184,13 +221,10 @@ function isValidSessionSlotStartMulti(
 ): boolean {
     const d = new Date(tMs);
     if (d.getSeconds() !== 0 || d.getMilliseconds() !== 0) return false;
-    const off = localDayOffsetFromAnchor(d, anchorDate);
-    if (off < 0) return false;
-    const dayStartMs = startOfSessionDay(anchorDate, off, dailyStarts).getTime();
-    const dayLastMs = lastSlotStartMsOnDay(anchorDate, off, dailyEnd, slotMinutes);
-    if (dayLastMs < 0 || tMs < dayStartMs || tMs > dayLastMs) return false;
+    const logical = logicalDayForSessionSlot(tMs, anchorDate, dailyStarts, dailyEnd, slotMinutes);
+    if (!logical) return false;
     const slotMs = slotMinutes * 60 * 1000;
-    return (tMs - dayStartMs) % slotMs === 0;
+    return (tMs - logical.startMs) % slotMs === 0;
 }
 
 function snapToNextSessionStart(
@@ -200,27 +234,24 @@ function snapToNextSessionStart(
     dailyEnd: DailyClock,
     slotMinutes: number
 ): number {
-    const d = new Date(tMs);
-    let off = localDayOffsetFromAnchor(d, anchorDate);
-    if (off < 0) {
-        return startOfSessionDay(anchorDate, 0, dailyStarts).getTime();
-    }
-    const dayStartMs = startOfSessionDay(anchorDate, off, dailyStarts).getTime();
-    const dayLastMs = lastSlotStartMsOnDay(anchorDate, off, dailyEnd, slotMinutes);
-    if (tMs < dayStartMs) return dayStartMs;
-    if (dayLastMs >= 0 && tMs > dayLastMs) {
-        return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
-    }
-    const slotMs = slotMinutes * 60 * 1000;
-    let x = tMs;
-    for (let guard = 0; guard < 500; guard++) {
-        if (isValidSessionSlotStartMulti(x, anchorDate, dailyStarts, dailyEnd, slotMinutes)) return x;
-        x += slotMs;
-        if (dayLastMs >= 0 && x > dayLastMs) {
-            return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
+    const firstStart = startOfSessionDay(anchorDate, 0, dailyStarts).getTime();
+    if (tMs <= firstStart) return firstStart;
+
+    const guess = localDayOffsetFromAnchor(new Date(tMs), anchorDate);
+    const from = Math.max(0, guess - 1);
+    const to = Math.max(2, guess + 3);
+    for (let off = from; off <= to; off++) {
+        const { startMs, lastStartMs } = sessionWindowBounds(anchorDate, off, dailyStarts, dailyEnd, slotMinutes);
+        if (tMs <= startMs) return startMs;
+        if (tMs <= lastStartMs) {
+            const slotMs = slotMinutes * 60 * 1000;
+            const k = Math.ceil((tMs - startMs) / slotMs);
+            const cand = startMs + k * slotMs;
+            if (cand <= lastStartMs) return cand;
+            continue;
         }
     }
-    return startOfSessionDay(anchorDate, off + 1, dailyStarts).getTime();
+    return startOfSessionDay(anchorDate, to + 1, dailyStarts).getTime();
 }
 
 function nextSessionSlotStartAfter(
@@ -235,8 +266,7 @@ function nextSessionSlotStartAfter(
     if (isValidSessionSlotStartMulti(cand, anchorDate, dailyStarts, dailyEnd, slotMinutes)) {
         return cand;
     }
-    const fromDay = localDayOffsetFromAnchor(new Date(fromMs), anchorDate);
-    return startOfSessionDay(anchorDate, fromDay + 1, dailyStarts).getTime();
+    return snapToNextSessionStart(cand, anchorDate, dailyStarts, dailyEnd, slotMinutes);
 }
 
 /**
