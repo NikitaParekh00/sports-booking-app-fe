@@ -369,10 +369,37 @@ function localDayKey(ms: number): string {
     return `${y}-${m}-${da}`;
 }
 
-function playerAllowsDailyCap(existingTimes: number[] | undefined, slotStartMs: number, maxPerDay: number): boolean {
+function sessionDayKey(
+    ms: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): string {
+    const logical = logicalDayForSessionSlot(ms, anchorDate, dailyStarts, dailyEnd, slotMinutes);
+    if (!logical) return localDayKey(ms);
+    const day = anchorDayAsDate(anchorDate, logical.dayOffset);
+    const y = day.getFullYear();
+    const m = String(day.getMonth() + 1).padStart(2, "0");
+    const da = String(day.getDate()).padStart(2, "0");
+    return `${y}-${m}-${da}`;
+}
+
+function playerAllowsDailyCap(
+    existingTimes: number[] | undefined,
+    slotStartMs: number,
+    maxPerDay: number,
+    anchorDate: Date,
+    dailyStarts: DailyClock[],
+    dailyEnd: DailyClock,
+    slotMinutes: number
+): boolean {
     const times = existingTimes ?? [];
-    const day = localDayKey(slotStartMs);
-    const count = times.reduce((acc, t) => (localDayKey(t) === day ? acc + 1 : acc), 0);
+    const day = sessionDayKey(slotStartMs, anchorDate, dailyStarts, dailyEnd, slotMinutes);
+    const count = times.reduce(
+        (acc, t) => (sessionDayKey(t, anchorDate, dailyStarts, dailyEnd, slotMinutes) === day ? acc + 1 : acc),
+        0
+    );
     return count < maxPerDay;
 }
 
@@ -460,7 +487,7 @@ export function assignMatchTimesWithPlayerConstraints(
                 for (const p of players) {
                     const existing = playerToTimes.get(p);
                     if (!playerAllowsSlot(existing, T, slotMs, maxConsecutive)) return false;
-                    if (!playerAllowsDailyCap(existing, T, maxPerDay)) return false;
+                    if (!playerAllowsDailyCap(existing, T, maxPerDay, anchor, dailyStartsArr, dailyEnd, slotMinutes)) return false;
                 }
                 return true;
             });

@@ -908,6 +908,264 @@ export function generateBalancedDoublesSchedule(
     return best!;
 }
 
+/**
+ * Count-only generator:
+ * - no category constraints
+ * - no advanced coverage checks
+ * - no teammate-repeat constraints
+ * Produces exact target appearances per player when feasible.
+ */
+export function generateDoublesScheduleByCountsOnly(
+    rosters: TeamRosterInput[],
+    targetPerPlayer: number,
+): DoublesScheduleResult {
+    const target = Math.max(1, Math.floor(targetPerPlayer));
+    const nTeams = rosters.length;
+    const teamById = new Map(rosters.map((r) => [r.teamId, r]));
+    const teamIds = rosters.map((r) => r.teamId);
+    const teamPairKey = (a: string, b: string) => (a < b ? `${a}\t${b}` : `${b}\t${a}`);
+
+    // 1) Build per-team pair pool without forced 2/3 teammate distribution.
+    const teamPairRemaining = new Map<string, number>();
+    for (const r of rosters) {
+        const pairs = enumeratePairs(r.players);
+        for (const p of pairs) {
+            const k = `${r.teamId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
+            teamPairRemaining.set(k, target);
+        }
+    }
+
+    // 2) Team-vs-team counts from greedy degree pairing (no forced 7/8 split).
+    const sidePerTeam = Math.floor(((rosters[0]?.players.length ?? 0) * target) / 2);
+    const edgeCounts = new Map<string, number>();
+    const deg = new Map(teamIds.map((id) => [id, sidePerTeam]));
+    for (let guard = 0; guard < 10000; guard++) {
+        const ordered = [...teamIds].map((id) => ({ id, d: deg.get(id) ?? 0 })).sort((a, b) => b.d - a.d);
+        if ((ordered[0]?.d ?? 0) === 0) break;
+        if ((ordered[1]?.d ?? 0) === 0) break;
+        const a = ordered[0].id;
+        const b = ordered[1].id;
+        deg.set(a, (deg.get(a) ?? 0) - 1);
+        deg.set(b, (deg.get(b) ?? 0) - 1);
+        const ek = teamPairKey(a, b);
+        edgeCounts.set(ek, (edgeCounts.get(ek) ?? 0) + 1);
+    }
+
+    const matches: GeneratedDoublesMatch[] = [];
+    const selectPairCombo = (teamAId: string, teamBId: string): { sideA: [RosterPlayer, RosterPlayer]; sideB: [RosterPlayer, RosterPlayer] } | null => {
+        const teamA = teamById.get(teamAId);
+        const teamB = teamById.get(teamBId);
+        if (!teamA || !teamB) return null;
+        const pairsA = enumeratePairs(teamA.players)
+            .map((p) => {
+                const pk = `${teamAId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
+                const remPair = teamPairRemaining.get(pk) ?? 0;
+                return { p, pk, remPair };
+            })
+            .filter((x) => x.remPair > 0);
+        const pairsB = enumeratePairs(teamB.players)
+            .map((p) => {
+                const pk = `${teamBId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
+                const remPair = teamPairRemaining.get(pk) ?? 0;
+                return { p, pk, remPair };
+            })
+            .filter((x) => x.remPair > 0);
+
+        let best: { a: typeof pairsA[number]; b: typeof pairsB[number]; score: number } | null = null;
+        for (const a of pairsA) {
+            for (const b of pairsB) {
+                if (a.p.key !== b.p.key) continue;
+                const sideA: [RosterPlayer, RosterPlayer] = [a.p.a, a.p.b];
+                const sideB: [RosterPlayer, RosterPlayer] = [b.p.a, b.p.b];
+                const score = a.remPair + b.remPair;
+                if (!best || score > best.score || (score === best.score && Math.random() < 0.5)) best = { a, b, score };
+            }
+        }
+        if (!best) return null;
+        teamPairRemaining.set(best.a.pk, (teamPairRemaining.get(best.a.pk) ?? 0) - 1);
+        teamPairRemaining.set(best.b.pk, (teamPairRemaining.get(best.b.pk) ?? 0) - 1);
+        return { sideA: [best.a.p.a, best.a.p.b], sideB: [best.b.p.a, best.b.p.b] };
+    };
+
+    const edges = [...edgeCounts.entries()]
+        .map(([k, n]) => {
+            const [a, b] = k.split("\t");
+            return { a, b, n };
+        })
+        .sort((x, y) => (y.n !== x.n ? y.n - x.n : Math.random() - 0.5));
+    for (const e of edges) {
+        for (let i = 0; i < e.n; i++) {
+            const chosen = selectPairCombo(e.a, e.b);
+            if (!chosen) continue;
+            matches.push({
+                teamAId: e.a,
+                teamBId: e.b,
+                teamAName: teamById.get(e.a)?.teamName ?? e.a,
+                teamBName: teamById.get(e.b)?.teamName ?? e.b,
+                sideA: chosen.sideA,
+                sideB: chosen.sideB,
+                categoryKey: pairKey(chosen.sideA[0], chosen.sideA[1]),
+            });
+        }
+    }
+
+    const counts: Record<string, number> = {};
+    for (const r of rosters) for (const p of r.players) counts[p.participantId] = 0;
+    for (const m of matches) {
+        for (const p of [...m.sideA, ...m.sideB]) counts[p.participantId] = (counts[p.participantId] ?? 0) + 1;
+    }
+    const unmetPlayerIds = Object.entries(counts).filter(([, c]) => c < target).map(([id]) => id);
+    const coverageNotes: string[] = [];
+    if (unmetPlayerIds.length > 0) {
+        coverageNotes.push(`${unmetPlayerIds.length} player(s) below ${target} matches.`);
+    }
+    return {
+        matches,
+        counts,
+        unmetPlayerIds,
+        targetPerPlayer: target,
+        coverageNotes: coverageNotes.length > 0 ? coverageNotes : undefined,
+    };
+}
+
+/**
+ * Single-team mode:
+ * Generate matches only for one focus team so each of its players reaches target appearances.
+ * Opponent appearances are unconstrained.
+ */
+export function generateDoublesScheduleForTeamOnly(
+    rosters: TeamRosterInput[],
+    focusTeamId: string,
+    targetPerPlayer: number,
+): DoublesScheduleResult {
+    const focus = rosters.find((r) => r.teamId === focusTeamId);
+    if (!focus) {
+        return { matches: [], counts: {}, unmetPlayerIds: [], targetPerPlayer, coverageNotes: ["Focus team not found."] };
+    }
+    const opponents = rosters.filter((r) => r.teamId !== focusTeamId);
+    if (opponents.length === 0) {
+        return { matches: [], counts: {}, unmetPlayerIds: [], targetPerPlayer, coverageNotes: ["Need at least one opponent team."] };
+    }
+    const target = Math.max(1, Math.floor(targetPerPlayer));
+    const focusRemaining = new Map<string, number>(focus.players.map((p) => [p.participantId, target]));
+    const oppUse = new Map<string, number>(opponents.map((o) => [o.teamId, 0]));
+    const matches: GeneratedDoublesMatch[] = [];
+    const focusPairs = enumeratePairs(focus.players);
+    const pairNeed = new Map<string, number>();
+    const pairKeyLocal = (p1: string, p2: string) => edgeKey(p1, p2);
+    for (const p of focusPairs) pairNeed.set(pairKeyLocal(p.a.participantId, p.b.participantId), 2);
+    // For 6 players and target 12: exactly six pair-links get one extra (become 3) so each player gets +2.
+    if (focus.players.length === 6 && target === 12) {
+        const cyc = [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 4],
+            [4, 5],
+            [5, 0],
+        ] as const;
+        for (const [i, j] of cyc) {
+            const k = pairKeyLocal(focus.players[i].participantId, focus.players[j].participantId);
+            pairNeed.set(k, (pairNeed.get(k) ?? 0) + 1);
+        }
+    }
+
+    const wantedMatches = Math.floor((focus.players.length * target) / 2);
+    for (let step = 0; step < wantedMatches; step++) {
+        const pairCandidates = focusPairs
+            .map((p) => {
+                const r1 = focusRemaining.get(p.a.participantId) ?? 0;
+                const r2 = focusRemaining.get(p.b.participantId) ?? 0;
+                const need = pairNeed.get(pairKeyLocal(p.a.participantId, p.b.participantId)) ?? 0;
+                return { p, score: r1 + r2, r1, r2, need };
+            })
+            .filter((x) => x.r1 > 0 && x.r2 > 0 && x.need > 0)
+            .sort((a, b) => (b.need !== a.need ? b.need - a.need : b.score - a.score));
+        if (pairCandidates.length === 0) break;
+
+        let placed = false;
+        for (const cand of pairCandidates) {
+            const oppOrder = [...opponents].sort((a, b) => (oppUse.get(a.teamId) ?? 0) - (oppUse.get(b.teamId) ?? 0));
+            for (const opp of oppOrder) {
+                // Keep same-category-pair vs same-category-pair check.
+                const oppPair = enumeratePairs(opp.players).find((q) => q.key === cand.p.key);
+                if (!oppPair) continue;
+                matches.push({
+                    teamAId: focus.teamId,
+                    teamBId: opp.teamId,
+                    teamAName: focus.teamName,
+                    teamBName: opp.teamName,
+                    sideA: [cand.p.a, cand.p.b],
+                    sideB: [oppPair.a, oppPair.b],
+                    categoryKey: cand.p.key,
+                });
+                const k = pairKeyLocal(cand.p.a.participantId, cand.p.b.participantId);
+                pairNeed.set(k, (pairNeed.get(k) ?? 0) - 1);
+                focusRemaining.set(cand.p.a.participantId, (focusRemaining.get(cand.p.a.participantId) ?? 0) - 1);
+                focusRemaining.set(cand.p.b.participantId, (focusRemaining.get(cand.p.b.participantId) ?? 0) - 1);
+                oppUse.set(opp.teamId, (oppUse.get(opp.teamId) ?? 0) + 1);
+                placed = true;
+                break;
+            }
+            if (placed) break;
+        }
+        if (!placed) break;
+    }
+
+    const counts: Record<string, number> = {};
+    for (const r of rosters) for (const p of r.players) counts[p.participantId] = 0;
+    for (const m of matches) for (const p of [...m.sideA, ...m.sideB]) counts[p.participantId] = (counts[p.participantId] ?? 0) + 1;
+    const unmetPlayerIds = focus.players
+        .filter((p) => (counts[p.participantId] ?? 0) < target)
+        .map((p) => p.participantId);
+    const unfilledPairs = [...pairNeed.values()].reduce((a, b) => a + Math.max(0, b), 0);
+    const notes: string[] = [];
+    if (matches.length !== wantedMatches) notes.push(`Created ${matches.length}/${wantedMatches} matches for ${focus.teamName}.`);
+    if (unfilledPairs > 0) notes.push(`${focus.teamName}: ${unfilledPairs} teammate-pair slots still unfilled for equal pairing.`);
+
+    // Strict equal teammate distribution for focus team: each player's counts across 5 teammates differ by at most 1 and total target.
+    const pairCount = new Map<string, number>();
+    for (const m of matches) {
+        if (m.teamAId === focus.teamId) {
+            const [x, y] = m.sideA;
+            const k = edgeKey(x.participantId, y.participantId);
+            pairCount.set(k, (pairCount.get(k) ?? 0) + 1);
+        }
+        if (m.teamBId === focus.teamId) {
+            const [x, y] = m.sideB;
+            const k = edgeKey(x.participantId, y.participantId);
+            pairCount.set(k, (pairCount.get(k) ?? 0) + 1);
+        }
+    }
+    let badPartnerPlayers = 0;
+    for (const p of focus.players) {
+        const withMates: number[] = [];
+        for (const q of focus.players) {
+            if (q.participantId === p.participantId) continue;
+            withMates.push(pairCount.get(edgeKey(p.participantId, q.participantId)) ?? 0);
+        }
+        const total = withMates.reduce((a, b) => a + b, 0);
+        const mn = Math.min(...withMates);
+        const mx = Math.max(...withMates);
+        if (total !== target || mx - mn > 1) badPartnerPlayers++;
+    }
+    if (badPartnerPlayers > 0) {
+        notes.push(`${focus.teamName}: ${badPartnerPlayers} player(s) are not equally distributed across teammates.`);
+    }
+
+    // Strict equal opponent distribution for focus team: across all other teams, counts differ by at most 1 and total wantedMatches.
+    const vsOpp: number[] = opponents.map((o) => oppUse.get(o.teamId) ?? 0);
+    const totalVsOpp = vsOpp.reduce((a, b) => a + b, 0);
+    const mnOpp = Math.min(...vsOpp);
+    const mxOpp = Math.max(...vsOpp);
+    if (totalVsOpp !== wantedMatches || mxOpp - mnOpp > 1) {
+        notes.push(`${focus.teamName}: not equally distributed against opponent teams.`);
+    }
+
+    const coverageNotes = notes.length > 0 ? notes : undefined;
+    return { matches, counts, unmetPlayerIds, targetPerPlayer: target, coverageNotes };
+}
+
 const NOTES_JSON_MARK = "__JSON__";
 
 /** Stored in `matches.notes` for balanced-doubles rows; parsed by the schedule/results UI. */

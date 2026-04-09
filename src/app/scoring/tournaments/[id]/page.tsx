@@ -11,6 +11,8 @@ import PhoneInput from "@/components/PhoneInput";
 import { parseParticipantCsv, BADMINTON_PARTICIPANT_CSV_TEMPLATE } from "@/lib/csvParticipantParser";
 import type { DoublesLinePayload } from "@/lib/generateBalancedDoublesSchedule";
 import {
+    generateDoublesScheduleForTeamOnly,
+    generateDoublesScheduleByCountsOnly,
     generateBalancedDoublesSchedule,
     formatDoublesMatchNotes,
     normalizeCategoryLabel,
@@ -2839,7 +2841,10 @@ function DoublesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideA.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>
+                            <span className="font-semibold">
+                                {p.name}
+                                {p.category?.trim() ? ` (${p.category})` : ""}
+                            </span>
                         </li>
                     ))}
                 </ul>
@@ -2861,7 +2866,10 @@ function DoublesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideB.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>
+                            <span className="font-semibold">
+                                {p.name}
+                                {p.category?.trim() ? ` (${p.category})` : ""}
+                            </span>
                         </li>
                     ))}
                 </ul>
@@ -3006,9 +3014,14 @@ function scheduleMatchDayKey(m: TournamentMatch): string {
     if (!m.match_date) return "unscheduled";
     const d = new Date(m.match_date);
     if (Number.isNaN(d.getTime())) return "unscheduled";
-    const y = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
+    // Session day runs until 1:00 AM; 12:xx AM belongs to previous day block.
+    const sessionDay = new Date(d);
+    if (sessionDay.getHours() < 1) {
+        sessionDay.setDate(sessionDay.getDate() - 1);
+    }
+    const y = sessionDay.getFullYear();
+    const mm = String(sessionDay.getMonth() + 1).padStart(2, "0");
+    const dd = String(sessionDay.getDate()).padStart(2, "0");
     return `${y}-${mm}-${dd}`;
 }
 
@@ -3084,10 +3097,7 @@ function buildAlignedScheduleBlocks(
             continue;
         }
 
-        const label =
-            dayMatches.length > 0 && dayMatches[0].match_date
-                ? scheduleMatchDayLabel(dayMatches[0])
-                : dayKey;
+        const label = `Day ${dayCounter + 1}`;
         blocks.push({ kind: "day", key: `day-${dayKey}-${dayCounter}`, label });
         dayCounter += 1;
 
@@ -3529,6 +3539,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(12);
     const [scheduleFilterTeamId, setScheduleFilterTeamId] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
+    const [scheduleFilterDayKey, setScheduleFilterDayKey] = useState("");
     const supabase = createClient();
     const numCourts = getCourtCount(tournament);
     const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
@@ -3545,9 +3556,18 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     const isRoundRobin = tournament.format === "round_robin" || tournament.format === "round_robin_knockout";
     const teamIds = teams.map((t) => t.id);
     const memberNamesByTeam = useTeamMemberNames(teamIds);
+    const scheduleDayOptions = useMemo(() => {
+        const dayKeys = sortScheduleDayKeys(
+            [...new Set(matches.map((m) => scheduleMatchDayKey(m as TournamentMatch)))].filter((k) => k !== "unscheduled")
+        );
+        return dayKeys.map((key, idx) => ({ key, label: `Day ${idx + 1}` }));
+    }, [matches]);
 
     const filteredMatches = useMemo(() => {
         let list = matches;
+        if (scheduleFilterDayKey) {
+            list = list.filter((m) => scheduleMatchDayKey(m as TournamentMatch) === scheduleFilterDayKey);
+        }
         if (scheduleFilterTeamId) {
             list = list.filter((m) => {
                 const tm = m as TournamentMatch;
@@ -3568,11 +3588,15 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             });
         }
         return list;
-    }, [matches, scheduleFilterTeamId, scheduleFilterPlayer, memberNamesByTeam]);
+    }, [matches, scheduleFilterDayKey, scheduleFilterTeamId, scheduleFilterPlayer, memberNamesByTeam]);
 
     const scheduleExportFilterNote = useMemo(() => {
-        if (!scheduleFilterTeamId && !scheduleFilterPlayer.trim()) return undefined;
+        if (!scheduleFilterTeamId && !scheduleFilterPlayer.trim() && !scheduleFilterDayKey) return undefined;
         const bits: string[] = [];
+        if (scheduleFilterDayKey) {
+            const day = scheduleDayOptions.find((d) => d.key === scheduleFilterDayKey);
+            bits.push(day ? day.label : "Day filter");
+        }
         if (scheduleFilterTeamId) {
             const t = teams.find((x) => x.id === scheduleFilterTeamId);
             bits.push(t ? `Team: ${displayTeamCardTitle(t.name)}` : "Team filter");
@@ -3581,7 +3605,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             bits.push(`Player contains: ${scheduleFilterPlayer.trim()}`);
         }
         return bits.join(" • ");
-    }, [teams, scheduleFilterTeamId, scheduleFilterPlayer]);
+    }, [teams, scheduleFilterTeamId, scheduleFilterPlayer, scheduleFilterDayKey, scheduleDayOptions]);
 
     const resolveCourtExport = useCallback((raw: string) => formatStoredCourtForDisplay(tournament, raw), [tournament]);
 
@@ -3906,10 +3930,6 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     };
 
     const handleGenerateBalancedDoubles = async () => {
-        if (teams.length < 2) {
-            alert("Need at least two teams.");
-            return;
-        }
         const target = Math.min(50, Math.max(1, Math.floor(Number(doublesTargetPerPlayer) || 12)));
         const teamIds = teams.map((t) => t.id);
         setIsGenerating(true);
@@ -3936,25 +3956,6 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     categoryNorm,
                 });
             });
-            const missingCat: string[] = [];
-            Object.entries(byTeam).forEach(([, plist]) => {
-                plist.forEach((pl) => {
-                    if (!pl.categoryNorm) missingCat.push(pl.name);
-                });
-            });
-            if (missingCat.length > 0) {
-                alert(
-                    `Every player needs a category (e.g. Advanced, Beginner) on their participant row for fair doubles pairing.\nMissing: ${missingCat.slice(0, 8).join(", ")}${missingCat.length > 8 ? "…" : ""}`
-                );
-                setIsGenerating(false);
-                return;
-            }
-            const sizes = teams.map((t) => byTeam[t.id]?.length ?? 0);
-            if (sizes.some((s) => s < 2)) {
-                alert("Each team needs at least two players to form a doubles pair.");
-                setIsGenerating(false);
-                return;
-            }
             const rosters = teams.map((t) => ({
                 teamId: t.id,
                 teamName: t.name,
@@ -3973,11 +3974,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             });
             if (result.matches.length === 0) {
                 alert(
-                    "Could not build any balanced doubles matches. Check that opponent teams can mirror your skill mixes (e.g. each team needs pairs with the same category combo)."
+                    "Could not build doubles schedule for target counts."
                 );
                 setIsGenerating(false);
                 return;
             }
+            const constraintNotes = result.coverageNotes && result.coverageNotes.length > 0
+                ? `\n\nNotes:\n${result.coverageNotes.join("\n")}`
+                : "";
             const storedUser = localStorage.getItem("sf:user");
             const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
             const existingDd = matches.filter((m) => (m.match_number || "").startsWith("DD-")).length;
@@ -4018,15 +4022,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 .then(({ data }) => setMatches(data || []));
             const shortN = result.unmetPlayerIds.length;
             const mathHint =
-                `Unique players in rosters: ${uniqueParticipantCount}. If every one played exactly ${target} times, total appearances would be ${uniqueParticipantCount * target}; each match uses 4 players → at most ~${theoryStr} matches (${uniqueParticipantCount}×${target}÷4). Fewer matches means either not everyone reached ${target} yet, or skill-matched pairings ran out (same category mix required on both sides).`;
-            const coverageHint =
-                result.coverageNotes && result.coverageNotes.length > 0
-                    ? `\n\nCould not fully meet all extra rules (see below). You may need another team with matching categories or more players.\n${result.coverageNotes.join("\n")}\n\nExtra rules never add a match if any of the four players would go past ${target} appearances (max ≈ ${theoryStr} matches when everyone reaches ${target}).`
-                    : `\n\nRules applied: teammate pair coverage; every Adv-capable team pair gets Adv+Adv vs Adv+Adv; each Advanced player (with an Adv partner on the roster) gets that matchup vs every other Adv-capable team. Extra rules never add a match if any of the four players would go past ${target} appearances (max ≈ ${theoryStr} matches when everyone reaches ${target}).`;
+                `All teams mode. Target is 12 matches per player (${Math.floor((6 * 12) / 2)} matches per team).`;
+            const coverageHint = `\n\nAll-teams mode with same-category pair vs same-category pair.`;
+            const bestEffortWarn =
+                shortN > 0 ? `\n\nBest-effort result: ${shortN} player(s) are below 12 matches.` : "";
             alert(
                 shortN === 0
-                    ? `Created ${result.matches.length} doubles matches (${target} appearances each). Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}\n\nLineups are in each match note.`
-                    : `Created ${result.matches.length} doubles matches. ${shortN} player(s) still below ${target} appearances. Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}\n\nTry more overlapping category mixes across teams, or run again (randomized).`
+                    ? `Created ${result.matches.length} doubles matches (${target} appearances each). Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}${constraintNotes}\n\nLineups are in each match note.`
+                    : `Created ${result.matches.length} doubles matches. Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}${bestEffortWarn}${constraintNotes}\n\nTry more overlapping category mixes across teams, or run again (randomized).`
             );
         } catch (e) {
             console.error(e);
@@ -4405,7 +4408,25 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 </div>
             )}
             <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                    <div>
+                        <label htmlFor="sched-filter-day" className="block text-xs font-medium text-gray-600 mb-1">
+                            Day
+                        </label>
+                        <select
+                            id="sched-filter-day"
+                            value={scheduleFilterDayKey}
+                            onChange={(e) => setScheduleFilterDayKey(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="">All days</option>
+                            {scheduleDayOptions.map((d) => (
+                                <option key={d.key} value={d.key}>
+                                    {d.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                     <div>
                         <label htmlFor="sched-filter-team" className="block text-xs font-medium text-gray-600 mb-1">
                             Team
@@ -4438,6 +4459,12 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         />
                     </div>
                 </div>
+                <p className="text-xs text-gray-600">
+                    Total matches: <span className="font-medium text-gray-800">{filteredMatches.length}</span>
+                    {filteredMatches.length !== matches.length ? (
+                        <span className="text-gray-500"> (filtered from {matches.length})</span>
+                    ) : null}
+                </p>
                 {matches.length > 0 && (
                     <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
                         <div className="flex flex-wrap gap-2">
@@ -4507,7 +4534,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 />
             </div>
             {matches.length === 0 && !showAdd && <p className="text-gray-600 text-sm">No matches yet. Add a match to build the schedule.</p>}
-            {matches.length > 0 && filteredMatches.length === 0 && (scheduleFilterTeamId || scheduleFilterPlayer.trim()) && (
+            {matches.length > 0 && filteredMatches.length === 0 && (scheduleFilterDayKey || scheduleFilterTeamId || scheduleFilterPlayer.trim()) && (
                 <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                     No matches match your filters. Try a different team, clear the player search, or another name.
                 </p>
