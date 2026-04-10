@@ -406,25 +406,6 @@ export default function TournamentDetailPage() {
         );
     }
 
-    if (!canEdit) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-white px-4">
-                <div className="text-center bg-amber-50 rounded-2xl shadow-sm p-6 max-w-md w-full border border-amber-200">
-                    <p className="text-amber-800 text-lg font-semibold mb-2">Scheduling in progress</p>
-                    <p className="text-sm text-amber-800">
-                        Tournament scheduling is currently being updated. Please check back shortly.
-                    </p>
-                    <button
-                        onClick={() => router.push("/")}
-                        className="mt-4 w-full bg-amber-600 text-white py-2 rounded-lg font-semibold hover:bg-amber-700 transition-colors"
-                    >
-                        Go back
-                    </button>
-                </div>
-            </div>
-        );
-    }
-
     if (isLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-white px-4">
@@ -3970,7 +3951,22 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             const theoryStr = Number.isInteger(theoryMatches) ? String(theoryMatches) : theoryMatches.toFixed(2);
             const result = generateBalancedDoublesSchedule(rosters, target, {
                 randomTrials: 120,
-                teammatePairNameCaps: [{ playerAName: "Vijay G", playerBName: "Jignesh", maxTogether: 2 }],
+                localSearchIterations: 500,
+                teammateMax3RepeatPlayerNames: [
+                    "Arvind",
+                    "Ashok Nayak",
+                    "Hardik Parekh",
+                    "Jignesh",
+                    "Mounish Ambaiya",
+                    "Naitik",
+                    "Om Chatbar",
+                    "Parth Gandhi",
+                    "Ritesh R Raul",
+                    "Rohan",
+                    "Viral Desai 501",
+                    "Viral Desai",
+                    "Vivek",
+                ],
             });
             if (result.matches.length === 0) {
                 alert(

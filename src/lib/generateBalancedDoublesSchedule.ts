@@ -84,6 +84,34 @@ function enumeratePairs(players: RosterPlayer[]): { a: RosterPlayer; b: RosterPl
     return out;
 }
 
+/** Default max times the same two club teammates may share a side (no name list). */
+const DEFAULT_TEAMMATE_PAIR_REPEAT_CAP = 4;
+
+function buildNormalizedDisplayNameSet(rawNames?: string[]): Set<string> {
+    const s = new Set<string>();
+    for (const n of rawNames ?? []) {
+        const t = n.trim().toLowerCase();
+        if (t) s.add(t);
+    }
+    return s;
+}
+
+/**
+ * Teammate-edge repeat cap when `teammateMax3RepeatPlayerNames` is set:
+ * exactly one name on the list on that side → 3; both on the list → 4; neither → 4.
+ * If no list is configured, uses DEFAULT_TEAMMATE_PAIR_REPEAT_CAP (4) for every side.
+ */
+function teammateEdgeRepeatCap(a: RosterPlayer, b: RosterPlayer, max3PartnerNameSet: Set<string>): number {
+    if (max3PartnerNameSet.size === 0) return DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+    const na = a.name.trim().toLowerCase();
+    const nb = b.name.trim().toLowerCase();
+    const aListed = max3PartnerNameSet.has(na);
+    const bListed = max3PartnerNameSet.has(nb);
+    if (aListed && bListed) return 4;
+    if (aListed || bListed) return 3;
+    return 4;
+}
+
 function rosterHasAdvAdvPair(team: TeamRosterInput): boolean {
     return enumeratePairs(team.players).some((p) => p.key === ADV_ADV_CATEGORY_KEY);
 }
@@ -120,18 +148,6 @@ function buildAdvAdvTeamPairKeys(matches: GeneratedDoublesMatch[]): Set<string> 
         s.add(edgeKey(g.teamAId, g.teamBId));
     }
     return s;
-}
-
-function countMissingTeammatePairs(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
-    const cov = buildTeammateCoverage(matches);
-    let n = 0;
-    for (const r of rosters) {
-        const c = cov.get(r.teamId) ?? new Set();
-        for (const p of enumeratePairs(r.players)) {
-            if (!c.has(edgeKey(p.a.participantId, p.b.participantId))) n++;
-        }
-    }
-    return n;
 }
 
 function countAdvAdvUnsatisfiedTeams(rosters: TeamRosterInput[], matches: GeneratedDoublesMatch[]): number {
@@ -224,98 +240,7 @@ export function reportDoublesConstraintGaps(
             );
         }
     }
-    const advPairSat = buildAdvAdvTeamPairKeys(matches);
-    for (let i = 0; i < rosters.length; i++) {
-        for (let j = i + 1; j < rosters.length; j++) {
-            const A = rosters[i];
-            const B = rosters[j];
-            if (!rosterHasAdvAdvPair(A) || !rosterHasAdvAdvPair(B)) continue;
-            if (!advPairSat.has(edgeKey(A.teamId, B.teamId))) {
-                notes.push(
-                    `Missing Advanced+Advanced vs Advanced+Advanced between "${A.teamName}" and "${B.teamName}" (both need two Advanced players; add/fix categories or another team).`
-                );
-            }
-        }
-    }
-    for (const TA of rosters) {
-        for (const pl of TA.players) {
-            if (pl.categoryNorm !== "advanced") continue;
-            if (!playerIsInSomeAdvAdvPairOnTeam(TA, pl.participantId)) continue;
-            for (const TB of rosters) {
-                if (TB.teamId === TA.teamId) continue;
-                if (!rosterHasAdvAdvPair(TB)) continue;
-                if (!hasPlayerAdvAdvVersusTeam(matches, TA.teamId, pl.participantId, TB.teamId)) {
-                    notes.push(
-                        `"${pl.name}" (${TA.teamName}): no Advanced+Advanced vs Advanced+Advanced match scheduled vs "${TB.teamName}".`
-                    );
-                }
-            }
-        }
-    }
     return notes;
-}
-
-function tryAppendCoverageMatch(
-    rosters: TeamRosterInput[],
-    matches: GeneratedDoublesMatch[],
-    plays: Record<string, number>,
-    teamCoverage: Map<string, Set<string>>,
-    advAdvSatisfied: Set<string>,
-    usedLineupDuels: Set<string>,
-    targetPerPlayer: number,
-    teammatePairCountsByName: Map<string, number>,
-    teammatePairCapMap: TeammatePairCapMap
-): boolean {
-    const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
-        const duel = lineupDuelKey(pa, pb);
-        if (usedLineupDuels.has(duel)) return false;
-        if (teammatePairWouldExceedNameCap(pa.a, pa.b, teammatePairCountsByName, teammatePairCapMap)) return false;
-        if (teammatePairWouldExceedNameCap(pb.a, pb.b, teammatePairCountsByName, teammatePairCapMap)) return false;
-        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
-        if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
-        ids.forEach((id) => {
-            plays[id] = (plays[id] ?? 0) + 1;
-        });
-        recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
-        recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
-        matches.push({
-            teamAId: TA.teamId,
-            teamBId: TB.teamId,
-            teamAName: TA.teamName,
-            teamBName: TB.teamName,
-            sideA: [pa.a, pa.b],
-            sideB: [pb.a, pb.b],
-            categoryKey: pa.key,
-        });
-        if (!teamCoverage.has(TA.teamId)) teamCoverage.set(TA.teamId, new Set());
-        if (!teamCoverage.has(TB.teamId)) teamCoverage.set(TB.teamId, new Set());
-        teamCoverage.get(TA.teamId)!.add(edgeKey(pa.a.participantId, pa.b.participantId));
-        teamCoverage.get(TB.teamId)!.add(edgeKey(pb.a.participantId, pb.b.participantId));
-        if (pa.key === ADV_ADV_CATEGORY_KEY) {
-            advAdvSatisfied.add(TA.teamId);
-            advAdvSatisfied.add(TB.teamId);
-        }
-        usedLineupDuels.add(duel);
-        return true;
-    };
-
-    // Missing teammate edge (same-side pair at least once)
-    for (const TA of rosters) {
-        const covA = teamCoverage.get(TA.teamId) ?? new Set();
-        for (const pa of enumeratePairs(TA.players)) {
-            const ek = edgeKey(pa.a.participantId, pa.b.participantId);
-            if (covA.has(ek)) continue;
-            for (const TB of rosters) {
-                if (TB.teamId === TA.teamId) continue;
-                const pairsB = enumeratePairs(TB.players).filter((pb) => pb.key === pa.key);
-                for (const pb of pairsB) {
-                    if (pushMatch(TA, TB, pa, pb)) return true;
-                }
-            }
-        }
-    }
-
-    return false;
 }
 
 /** One Adv+Adv vs Adv+Adv match for a team pair that does not have one yet. */
@@ -329,13 +254,18 @@ function tryAppendAdvAdvTeamPairing(
     usedLineupDuels: Set<string>,
     targetPerPlayer: number,
     teammatePairCountsByName: Map<string, number>,
-    teammatePairCapMap: TeammatePairCapMap
+    teammatePairCapMap: TeammatePairCapMap,
+    teammatePairCountsById: Map<string, number>
 ): boolean {
     const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
         const duel = lineupDuelKey(pa, pb);
         if (usedLineupDuels.has(duel)) return false;
         if (teammatePairWouldExceedNameCap(pa.a, pa.b, teammatePairCountsByName, teammatePairCapMap)) return false;
         if (teammatePairWouldExceedNameCap(pb.a, pb.b, teammatePairCountsByName, teammatePairCapMap)) return false;
+        const capA = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        const capB = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        if (teammatePairWouldExceedRepeatCap(pa.a, pa.b, teammatePairCountsById, capA)) return false;
+        if (teammatePairWouldExceedRepeatCap(pb.a, pb.b, teammatePairCountsById, capB)) return false;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
         ids.forEach((id) => {
@@ -343,6 +273,8 @@ function tryAppendAdvAdvTeamPairing(
         });
         recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
         recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
+        recordTeammatePairById(pa.a, pa.b, teammatePairCountsById);
+        recordTeammatePairById(pb.a, pb.b, teammatePairCountsById);
         matches.push({
             teamAId: TA.teamId,
             teamBId: TB.teamId,
@@ -393,13 +325,18 @@ function tryAppendAdvancedPlayerVersusAdvTeam(
     usedLineupDuels: Set<string>,
     targetPerPlayer: number,
     teammatePairCountsByName: Map<string, number>,
-    teammatePairCapMap: TeammatePairCapMap
+    teammatePairCapMap: TeammatePairCapMap,
+    teammatePairCountsById: Map<string, number>
 ): boolean {
     const pushMatch = (TA: TeamRosterInput, TB: TeamRosterInput, pa: { a: RosterPlayer; b: RosterPlayer; key: string }, pb: { a: RosterPlayer; b: RosterPlayer; key: string }) => {
         const duel = lineupDuelKey(pa, pb);
         if (usedLineupDuels.has(duel)) return false;
         if (teammatePairWouldExceedNameCap(pa.a, pa.b, teammatePairCountsByName, teammatePairCapMap)) return false;
         if (teammatePairWouldExceedNameCap(pb.a, pb.b, teammatePairCountsByName, teammatePairCapMap)) return false;
+        const capA = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        const capB = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        if (teammatePairWouldExceedRepeatCap(pa.a, pa.b, teammatePairCountsById, capA)) return false;
+        if (teammatePairWouldExceedRepeatCap(pb.a, pb.b, teammatePairCountsById, capB)) return false;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
         if (!allFourPlayersHaveRoom(plays, ids, targetPerPlayer)) return false;
         ids.forEach((id) => {
@@ -407,6 +344,8 @@ function tryAppendAdvancedPlayerVersusAdvTeam(
         });
         recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
         recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
+        recordTeammatePairById(pa.a, pa.b, teammatePairCountsById);
+        recordTeammatePairById(pb.a, pb.b, teammatePairCountsById);
         matches.push({
             teamAId: TA.teamId,
             teamBId: TB.teamId,
@@ -465,7 +404,8 @@ function seedAdvAdvVersusEveryAdvTeamPair(
     usedLineupDuels: Set<string>,
     targetPerPlayer: number,
     teammatePairCountsByName: Map<string, number>,
-    teammatePairCapMap: TeammatePairCapMap
+    teammatePairCapMap: TeammatePairCapMap,
+    teammatePairCountsById: Map<string, number>
 ): void {
     const indexPairs: [number, number][] = [];
     for (let i = 0; i < rosters.length; i++) {
@@ -504,12 +444,18 @@ function seedAdvAdvVersusEveryAdvTeamPair(
         if (usedLineupDuels.has(duel)) continue;
         if (teammatePairWouldExceedNameCap(pa.a, pa.b, teammatePairCountsByName, teammatePairCapMap)) continue;
         if (teammatePairWouldExceedNameCap(pb.a, pb.b, teammatePairCountsByName, teammatePairCapMap)) continue;
+        const capA = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        const capB = DEFAULT_TEAMMATE_PAIR_REPEAT_CAP;
+        if (teammatePairWouldExceedRepeatCap(pa.a, pa.b, teammatePairCountsById, capA)) continue;
+        if (teammatePairWouldExceedRepeatCap(pb.a, pb.b, teammatePairCountsById, capB)) continue;
 
         ids.forEach((id) => {
             plays[id] = (plays[id] ?? 0) + 1;
         });
         recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
         recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
+        recordTeammatePairById(pa.a, pa.b, teammatePairCountsById);
+        recordTeammatePairById(pb.a, pb.b, teammatePairCountsById);
         matches.push({
             teamAId: TA.teamId,
             teamBId: TB.teamId,
@@ -527,70 +473,10 @@ function seedAdvAdvVersusEveryAdvTeamPair(
     }
 }
 
-function fillCoverageGaps(
-    rosters: TeamRosterInput[],
-    matches: GeneratedDoublesMatch[],
-    plays: Record<string, number>,
-    usedLineupDuels: Set<string>,
-    targetPerPlayer: number,
-    teammatePairCountsByName: Map<string, number>,
-    teammatePairCapMap: TeammatePairCapMap
-): void {
-    const teamCoverage = buildTeammateCoverage(matches);
-    const advAdvSatisfied = teamsSatisfiedAdvAdv(matches);
-    while (
-        tryAppendCoverageMatch(
-            rosters,
-            matches,
-            plays,
-            teamCoverage,
-            advAdvSatisfied,
-            usedLineupDuels,
-            targetPerPlayer,
-            teammatePairCountsByName,
-            teammatePairCapMap
-        )
-    ) {
-        /* teammate pair coverage */
-    }
-    const pairSat = buildAdvAdvTeamPairKeys(matches);
-    while (
-        tryAppendAdvAdvTeamPairing(
-            rosters,
-            matches,
-            plays,
-            teamCoverage,
-            advAdvSatisfied,
-            pairSat,
-            usedLineupDuels,
-            targetPerPlayer,
-            teammatePairCountsByName,
-            teammatePairCapMap
-        )
-    ) {
-        /* every Adv-capable team pair gets ≥1 Adv+Adv vs Adv+Adv */
-    }
-    while (
-        tryAppendAdvancedPlayerVersusAdvTeam(
-            rosters,
-            matches,
-            plays,
-            teamCoverage,
-            advAdvSatisfied,
-            pairSat,
-            usedLineupDuels,
-            targetPerPlayer,
-            teammatePairCountsByName,
-            teammatePairCapMap
-        )
-    ) {
-        /* every Advanced player gets that lineup vs each other Adv-capable team */
-    }
-}
-
 /** Normalize participant category for matching (case-insensitive trim). */
 export function normalizeCategoryLabel(raw: string | null | undefined): string {
-    const t = (raw ?? "").trim().toLowerCase();
+    let t = (raw ?? "").trim().toLowerCase();
+    if (t === "emereging") t = "emerging"; // common DB/UI typo
     return t || "";
 }
 
@@ -608,70 +494,110 @@ export function theoreticalDoublesMatchCountIfFullyMet(totalParticipants: number
  * @param rosters One entry per club team; each must list all squad players with categories set.
  * @param targetPerPlayer Each player should play this many doubles matches (vs other teams).
  */
-function cmpScheduleQuality(a: DoublesScheduleResult, b: DoublesScheduleResult, rosters: TeamRosterInput[]): number {
+function cmpScheduleQuality(a: DoublesScheduleResult, b: DoublesScheduleResult): number {
     if (a.matches.length !== b.matches.length) return b.matches.length - a.matches.length;
     if (a.unmetPlayerIds.length !== b.unmetPlayerIds.length) return a.unmetPlayerIds.length - b.unmetPlayerIds.length;
-    const missA = countMissingTeammatePairs(rosters, a.matches);
-    const missB = countMissingTeammatePairs(rosters, b.matches);
-    if (missA !== missB) return missA - missB;
-    const advPairA = countMissingAdvAdvTeamPairings(rosters, a.matches);
-    const advPairB = countMissingAdvAdvTeamPairings(rosters, b.matches);
-    if (advPairA !== advPairB) return advPairA - advPairB;
-    const pcA = countMissingAdvancedPlayerAdvCross(rosters, a.matches);
-    const pcB = countMissingAdvancedPlayerAdvCross(rosters, b.matches);
-    if (pcA !== pcB) return pcA - pcB;
-    const advA = countAdvAdvUnsatisfiedTeams(rosters, a.matches);
-    const advB = countAdvAdvUnsatisfiedTeams(rosters, b.matches);
-    return advA - advB;
+    return 0;
 }
 
-function generateBalancedDoublesScheduleOnce(
-    rosters: TeamRosterInput[],
-    targetPerPlayer: number,
-    options?: GenerateBalancedDoublesOptions
-): DoublesScheduleResult {
-    const plays: Record<string, number> = {};
-    rosters.forEach((r) => {
-        r.players.forEach((p) => {
-            plays[p.participantId] = 0;
-        });
-    });
+function shuffleInPlace<T>(arr: T[]): void {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+}
 
-    const matches: GeneratedDoublesMatch[] = [];
-    const teammatePairCountsByName = new Map<string, number>();
-    const teammatePairCapMap = buildTeammatePairCapMap(options?.teammatePairNameCaps);
-    const teamCoverage = new Map<string, Set<string>>();
-    const usedLineupDuels = new Set<string>();
-    rosters.forEach((r) => teamCoverage.set(r.teamId, new Set()));
-
+function buildTeamPairs(rosters: TeamRosterInput[]): [TeamRosterInput, TeamRosterInput][] {
     const teamPairs: [TeamRosterInput, TeamRosterInput][] = [];
     for (let i = 0; i < rosters.length; i++) {
         for (let j = i + 1; j < rosters.length; j++) {
             teamPairs.push([rosters[i], rosters[j]]);
         }
     }
+    return teamPairs;
+}
 
-    seedAdvAdvVersusEveryAdvTeamPair(
-        rosters,
-        matches,
-        plays,
-        teamCoverage,
-        usedLineupDuels,
+type GreedyDoublesState = {
+    matches: GeneratedDoublesMatch[];
+    plays: Record<string, number>;
+    teammatePairCountsByName: Map<string, number>;
+    teammatePairCountsById: Map<string, number>;
+    teamCoverage: Map<string, Set<string>>;
+    usedLineupDuels: Set<string>;
+};
+
+function buildStateFromMatches(initialMatches: GeneratedDoublesMatch[], rosters: TeamRosterInput[]): GreedyDoublesState {
+    const plays: Record<string, number> = {};
+    rosters.forEach((r) => {
+        r.players.forEach((p) => {
+            plays[p.participantId] = 0;
+        });
+    });
+    const teammatePairCountsByName = new Map<string, number>();
+    const teammatePairCountsById = new Map<string, number>();
+    const teamCoverage = new Map<string, Set<string>>();
+    rosters.forEach((r) => teamCoverage.set(r.teamId, new Set()));
+    const usedLineupDuels = new Set<string>();
+    const matches: GeneratedDoublesMatch[] = [];
+
+    for (const m of initialMatches) {
+        const pa = { a: m.sideA[0], b: m.sideA[1], key: m.categoryKey };
+        const pb = { a: m.sideB[0], b: m.sideB[1], key: m.categoryKey };
+        const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
+        for (const id of ids) {
+            plays[id] = (plays[id] ?? 0) + 1;
+        }
+        recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
+        recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
+        recordTeammatePairById(pa.a, pa.b, teammatePairCountsById);
+        recordTeammatePairById(pb.a, pb.b, teammatePairCountsById);
+        usedLineupDuels.add(lineupDuelKey(pa, pb));
+        teamCoverage.get(m.teamAId)!.add(edgeKey(pa.a.participantId, pa.b.participantId));
+        teamCoverage.get(m.teamBId)!.add(edgeKey(pb.a.participantId, pb.b.participantId));
+        matches.push({
+            teamAId: m.teamAId,
+            teamBId: m.teamBId,
+            teamAName: m.teamAName,
+            teamBName: m.teamBName,
+            sideA: [m.sideA[0], m.sideA[1]],
+            sideB: [m.sideB[0], m.sideB[1]],
+            categoryKey: m.categoryKey,
+        });
+    }
+
+    return { matches, plays, teammatePairCountsByName, teammatePairCountsById, teamCoverage, usedLineupDuels };
+}
+
+function greedyStateToResult(state: GreedyDoublesState, targetPerPlayer: number): DoublesScheduleResult {
+    const unmetPlayerIds = Object.entries(state.plays)
+        .filter(([, c]) => c < targetPerPlayer)
+        .map(([id]) => id);
+    return {
+        matches: state.matches,
+        counts: state.plays,
+        unmetPlayerIds,
         targetPerPlayer,
-        teammatePairCountsByName,
-        teammatePairCapMap
-    );
+        coverageNotes: undefined,
+    };
+}
+
+function greedyExtendUntilStuck(
+    rosters: TeamRosterInput[],
+    targetPerPlayer: number,
+    options: GenerateBalancedDoublesOptions | undefined,
+    state: GreedyDoublesState,
+    teamPairs: [TeamRosterInput, TeamRosterInput][]
+): void {
+    const teammatePairCapMap = buildTeammatePairCapMap(options?.teammatePairNameCaps);
+    const teammateMax3PartnerNameSet = buildNormalizedDisplayNameSet(options?.teammateMax3RepeatPlayerNames);
+    const { matches, plays, teammatePairCountsByName, teammatePairCountsById, teamCoverage, usedLineupDuels } = state;
 
     const allSatisfied = () => Object.values(plays).every((c) => c >= targetPerPlayer);
-
     let stagnation = 0;
     const maxStagnation = Math.max(200, rosters.length * rosters.length * targetPerPlayer * 4);
 
     type MainCand = {
         score: number;
-        covGain: number;
-        /** 1 if this would add the first Adv+Adv vs Adv+Adv for this unordered team pair (else 0). */
-        advTeamPairMissing: number;
         TA: TeamRosterInput;
         TB: TeamRosterInput;
         pa: { a: RosterPlayer; b: RosterPlayer; key: string };
@@ -679,9 +605,6 @@ function generateBalancedDoublesScheduleOnce(
     };
 
     while (!allSatisfied() && stagnation < maxStagnation) {
-        const advAdvPairsDone = buildAdvAdvTeamPairKeys(matches);
-        // Global best over all team pairs (not “first pair in random order that works”) — avoids
-        // getting stuck at 107 when a better placement exists on another pairing.
         const pool: MainCand[] = [];
         for (const [TA, TB] of teamPairs) {
             const pairsA = enumeratePairs(TA.players);
@@ -692,27 +615,21 @@ function generateBalancedDoublesScheduleOnce(
                 byKeyB.get(pb.key)!.push(pb);
             }
 
-            const covA = teamCoverage.get(TA.teamId)!;
-            const covB = teamCoverage.get(TB.teamId)!;
-
             for (const pa of pairsA) {
                 const listB = byKeyB.get(pa.key);
                 if (!listB?.length) continue;
                 for (const pb of listB) {
                     if (teammatePairWouldExceedNameCap(pa.a, pa.b, teammatePairCountsByName, teammatePairCapMap)) continue;
                     if (teammatePairWouldExceedNameCap(pb.a, pb.b, teammatePairCountsByName, teammatePairCapMap)) continue;
+                    const capA = teammateEdgeRepeatCap(pa.a, pa.b, teammateMax3PartnerNameSet);
+                    const capB = teammateEdgeRepeatCap(pb.a, pb.b, teammateMax3PartnerNameSet);
+                    if (teammatePairWouldExceedRepeatCap(pa.a, pa.b, teammatePairCountsById, capA)) continue;
+                    if (teammatePairWouldExceedRepeatCap(pb.a, pb.b, teammatePairCountsById, capB)) continue;
                     const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
                     if (ids.some((id) => plays[id] >= targetPerPlayer)) continue;
                     const score = Math.min(...ids.map((id) => plays[id]));
-                    const ekA = edgeKey(pa.a.participantId, pa.b.participantId);
-                    const ekB = edgeKey(pb.a.participantId, pb.b.participantId);
-                    const covGain = (covA.has(ekA) ? 0 : 1) + (covB.has(ekB) ? 0 : 1);
-                    const advTeamPairMissing =
-                        pa.key === ADV_ADV_CATEGORY_KEY && !advAdvPairsDone.has(edgeKey(TA.teamId, TB.teamId))
-                            ? 1
-                            : 0;
                     if (usedLineupDuels.has(lineupDuelKey(pa, pb))) continue;
-                    pool.push({ score, covGain, advTeamPairMissing, TA, TB, pa, pb });
+                    pool.push({ score, TA, TB, pa, pb });
                 }
             }
         }
@@ -722,16 +639,12 @@ function generateBalancedDoublesScheduleOnce(
             continue;
         }
 
-        // Prefer closing each (teamA, teamB) Adv+Adv vs Adv+Adv edge once before “extra” Adv+Adv repeats,
-        // so two-Advanced teams (one Adv+Adv side) get that lineup vs every opponent — not a single game.
         pool.sort((x, y) => {
             if (x.score !== y.score) return x.score - y.score;
-            if (y.covGain !== x.covGain) return y.covGain - x.covGain;
-            if (y.advTeamPairMissing !== x.advTeamPairMissing) return y.advTeamPairMissing - x.advTeamPairMissing;
             return Math.random() - 0.5;
         });
-        const best = pool[0];
-        const { TA, TB, pa, pb } = best;
+        const pick = pool[0];
+        const { TA, TB, pa, pb } = pick;
         const covA = teamCoverage.get(TA.teamId)!;
         const covB = teamCoverage.get(TB.teamId)!;
         const ids = [pa.a.participantId, pa.b.participantId, pb.a.participantId, pb.b.participantId];
@@ -740,6 +653,8 @@ function generateBalancedDoublesScheduleOnce(
         });
         recordTeammatePairByName(pa.a, pa.b, teammatePairCountsByName);
         recordTeammatePairByName(pb.a, pb.b, teammatePairCountsByName);
+        recordTeammatePairById(pa.a, pa.b, teammatePairCountsById);
+        recordTeammatePairById(pb.a, pb.b, teammatePairCountsById);
         matches.push({
             teamAId: TA.teamId,
             teamBId: TB.teamId,
@@ -754,30 +669,18 @@ function generateBalancedDoublesScheduleOnce(
         usedLineupDuels.add(lineupDuelKey(pa, pb));
         stagnation = 0;
     }
+}
 
-    fillCoverageGaps(
-        rosters,
-        matches,
-        plays,
-        usedLineupDuels,
-        targetPerPlayer,
-        teammatePairCountsByName,
-        teammatePairCapMap
-    );
-
-    const unmetPlayerIds = Object.entries(plays)
-        .filter(([, c]) => c < targetPerPlayer)
-        .map(([id]) => id);
-
-    const gapLines = reportDoublesConstraintGaps(rosters, matches);
-
-    return {
-        matches,
-        counts: plays,
-        unmetPlayerIds,
-        targetPerPlayer,
-        coverageNotes: gapLines.length > 0 ? gapLines : undefined,
-    };
+function generateBalancedDoublesScheduleOnce(
+    rosters: TeamRosterInput[],
+    targetPerPlayer: number,
+    options?: GenerateBalancedDoublesOptions
+): DoublesScheduleResult {
+    const teamPairs = buildTeamPairs(rosters);
+    shuffleInPlace(teamPairs);
+    const state = buildStateFromMatches([], rosters);
+    greedyExtendUntilStuck(rosters, targetPerPlayer, options, state, teamPairs);
+    return greedyStateToResult(state, targetPerPlayer);
 }
 
 export type GenerateBalancedDoublesOptions = {
@@ -791,6 +694,16 @@ export type GenerateBalancedDoublesOptions = {
      * Example: [{ playerAName: "Vijay G", playerBName: "Jignesh", maxTogether: 2 }]
      */
     teammatePairNameCaps?: { playerAName: string; playerBName: string; maxTogether: number }[];
+    /**
+     * Display names (trim/case-insensitive): if exactly one player on a side is on the list,
+     * that teammate pair may repeat at most 3 times; if both are on the list, or neither, cap is 4.
+     */
+    teammateMax3RepeatPlayerNames?: string[];
+    /**
+     * After random trials, run this many local-search steps (remove random matches, reshuffle, greedy refill).
+     * Helps escape 107-vs-108 style local optima. Set 0 to disable.
+     */
+    localSearchIterations?: number;
 };
 
 function normalizeNameForCap(raw: string): string {
@@ -847,6 +760,24 @@ function recordTeammatePairByName(a: RosterPlayer, b: RosterPlayer, counts: Map<
     counts.set(key, (counts.get(key) ?? 0) + 1);
 }
 
+function teammatePairWouldExceedRepeatCap(
+    a: RosterPlayer,
+    b: RosterPlayer,
+    counts: Map<string, number>,
+    maxTeammatePairings: number | null
+): boolean {
+    if (maxTeammatePairings == null) return false;
+    const cap = Math.max(0, Math.floor(maxTeammatePairings));
+    if (cap <= 0) return true;
+    const key = edgeKey(a.participantId, b.participantId);
+    return (counts.get(key) ?? 0) + 1 > cap;
+}
+
+function recordTeammatePairById(a: RosterPlayer, b: RosterPlayer, counts: Map<string, number>): void {
+    const key = edgeKey(a.participantId, b.participantId);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
 function teammateNameCapViolationCount(
     matches: GeneratedDoublesMatch[],
     caps?: { playerAName: string; playerBName: string; maxTogether: number }[]
@@ -861,6 +792,52 @@ function teammateNameCapViolationCount(
         if (seen > maxTogether) violations += seen - maxTogether;
     }
     return violations;
+}
+
+function localSearchRefineDoubles(
+    result: DoublesScheduleResult,
+    rosters: TeamRosterInput[],
+    options: GenerateBalancedDoublesOptions | undefined,
+    iterations: number
+): DoublesScheduleResult {
+    if (iterations <= 0) return result;
+    let best = result;
+    let bestCapViolations = teammateNameCapViolationCount(best.matches, options?.teammatePairNameCaps);
+    const nPlayers = rosters.reduce((s, r) => s + r.players.length, 0);
+    const target = best.targetPerPlayer;
+    const theoreticalMaxMatches =
+        nPlayers > 0 && target > 0 && (nPlayers * target) % 4 === 0 ? (nPlayers * target) / 4 : -1;
+
+    for (let it = 0; it < iterations; it++) {
+        if (
+            best.unmetPlayerIds.length === 0 &&
+            theoreticalMaxMatches > 0 &&
+            best.matches.length >= theoreticalMaxMatches
+        ) {
+            break;
+        }
+        const m = best.matches;
+        if (m.length === 0) continue;
+        const maxK = Math.min(6, m.length);
+        const k = 1 + Math.floor(Math.random() * maxK);
+        const drop = new Set<number>();
+        while (drop.size < k) {
+            drop.add(Math.floor(Math.random() * m.length));
+        }
+        const reduced = m.filter((_, i) => !drop.has(i));
+        const state = buildStateFromMatches(reduced, rosters);
+        const teamPairs = buildTeamPairs(rosters);
+        shuffleInPlace(teamPairs);
+        greedyExtendUntilStuck(rosters, target, options, state, teamPairs);
+        const candidate = greedyStateToResult(state, target);
+        const v = teammateNameCapViolationCount(candidate.matches, options?.teammatePairNameCaps);
+        const qualityCmp = cmpScheduleQuality(candidate, best);
+        if (qualityCmp < 0 || (qualityCmp === 0 && v < bestCapViolations)) {
+            best = candidate;
+            bestCapViolations = v;
+        }
+    }
+    return best;
 }
 
 /**
@@ -883,13 +860,18 @@ export function generateBalancedDoublesSchedule(
             bestCapViolations = v;
             continue;
         }
-        const qualityCmp = cmpScheduleQuality(r, best, rosters);
+        const qualityCmp = cmpScheduleQuality(r, best);
         // Keep core schedule quality primary (match count / unmet players),
         // then use name-pair caps only as a tie-breaker.
         if (qualityCmp < 0 || (qualityCmp === 0 && v < bestCapViolations)) {
             best = r;
             bestCapViolations = v;
         }
+    }
+    const localIters = options?.localSearchIterations ?? 400;
+    if (best && localIters > 0) {
+        best = localSearchRefineDoubles(best, rosters, options, localIters);
+        bestCapViolations = teammateNameCapViolationCount(best.matches, options?.teammatePairNameCaps);
     }
     if (best && options?.teammatePairNameCaps?.length) {
         const lines = [...(best.coverageNotes ?? [])];

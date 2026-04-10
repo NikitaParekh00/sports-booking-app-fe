@@ -173,19 +173,6 @@ export default function TournamentsPage() {
         );
     }
 
-    if (!canEdit) {
-        return (
-            <div className="min-h-screen bg-white flex items-center justify-center p-4">
-                <div className="max-w-md w-full rounded-xl border border-amber-200 bg-amber-50 p-5 text-center">
-                    <h2 className="text-lg font-semibold text-amber-800">Scheduling in progress</h2>
-                    <p className="mt-2 text-sm text-amber-800">
-                        Tournament scheduling is currently being updated. Please check back shortly.
-                    </p>
-                </div>
-            </div>
-        );
-    }
-
     if (isLoading) {
         return (
             <div className="min-h-screen bg-white flex items-center justify-center">
