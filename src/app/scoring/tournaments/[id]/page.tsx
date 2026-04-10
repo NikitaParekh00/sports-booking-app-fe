@@ -2822,10 +2822,7 @@ function DoublesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideA.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">
-                                {p.name}
-                                {p.category?.trim() ? ` (${p.category})` : ""}
-                            </span>
+                            <span className="font-semibold">{p.name}</span>
                         </li>
                     ))}
                 </ul>
@@ -2847,10 +2844,7 @@ function DoublesLineupBlocks({
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideB.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">
-                                {p.name}
-                                {p.category?.trim() ? ` (${p.category})` : ""}
-                            </span>
+                            <span className="font-semibold">{p.name}</span>
                         </li>
                     ))}
                 </ul>
