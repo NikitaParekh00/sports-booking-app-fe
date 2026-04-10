@@ -4855,6 +4855,11 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
     const [editingId, setEditingId] = useState<string | null>(null);
     const [winnerId, setWinnerId] = useState("");
     const [setScores, setSetScores] = useState<string[]>(() => Array(numSets).fill(""));
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "upcoming" | "live" | "completed">("all");
+    const [dayFilter, setDayFilter] = useState("all");
+    const [courtFilter, setCourtFilter] = useState("all");
+    const [timeFilter, setTimeFilter] = useState("all");
     const supabase = createClient();
     const teamIds = teams.map((t) => t.id);
     const memberNamesByTeam = useTeamMemberNames(teamIds);
@@ -4869,8 +4874,20 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
             .then(({ data }) => setMatches(data || []));
     }, [tournament.id, supabase]);
 
-    const handleSaveResult = async (matchId: string) => {
-        const finalScoreStr = setScores.filter(Boolean).join(", ");
+    const mapWinnerFirstSetToTeamOrder = useCallback((setScore: string, winnerOnTeamB: boolean): string => {
+        const parts = setScore.split("-").map((n) => parseInt(n.trim(), 10));
+        if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return setScore.trim();
+        if (!winnerOnTeamB) return `${parts[0]}-${parts[1]}`;
+        return `${parts[1]}-${parts[0]}`;
+    }, []);
+
+    const handleSaveResult = async (m: TournamentMatch) => {
+        const winnerOnTeamB = Boolean(winnerId && m.team_b_id && winnerId === m.team_b_id);
+        const normalizedScores = setScores
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .map((s) => mapWinnerFirstSetToTeamOrder(s, winnerOnTeamB));
+        const finalScoreStr = normalizedScores.join(", ");
         try {
             const { error } = await supabase
                 .from("matches")
@@ -4880,7 +4897,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                     final_score: finalScoreStr || null,
                     completed_at: new Date().toISOString(),
                 })
-                .eq("id", matchId);
+                .eq("id", m.id);
             if (error) throw error;
             setEditingId(null);
             setWinnerId("");
@@ -4936,6 +4953,96 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
         setSetScores(parseFinalScoreToSets(m.final_score, numSets));
     };
 
+    const dayKeyForMatch = useCallback((m: TournamentMatch): string => {
+        if (!m.match_date) return "unscheduled";
+        const d = new Date(m.match_date);
+        if (Number.isNaN(d.getTime())) return "unscheduled";
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+    }, []);
+
+    const dayLabelForKey = useCallback((k: string): string => {
+        if (k === "unscheduled") return "No date";
+        const d = new Date(`${k}T00:00:00`);
+        if (Number.isNaN(d.getTime())) return k;
+        return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    }, []);
+
+    const dayOptions = useMemo(() => {
+        const uniq = Array.from(new Set(matches.map((m) => dayKeyForMatch(m))));
+        const dated = uniq.filter((k) => k !== "unscheduled").sort();
+        return uniq.includes("unscheduled") ? [...dated, "unscheduled"] : dated;
+    }, [matches, dayKeyForMatch]);
+
+    const courtKeyForMatch = useCallback((m: TournamentMatch): string => {
+        const raw = String(m.court_number ?? "").trim();
+        if (!raw) return "none";
+        const digits = raw.replace(/\D/g, "");
+        return digits || raw;
+    }, []);
+
+    const courtLabelForKey = useCallback((k: string): string => {
+        if (k === "none") return "No court";
+        return courtDisplayLabelForKey(tournament, k);
+    }, [tournament]);
+
+    const courtOptions = useMemo(() => {
+        const uniq = Array.from(new Set(matches.map((m) => courtKeyForMatch(m))));
+        const withCourt = uniq.filter((k) => k !== "none").sort((a, b) => {
+            const an = parseInt(a, 10);
+            const bn = parseInt(b, 10);
+            if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+            return a.localeCompare(b, undefined, { sensitivity: "base" });
+        });
+        return uniq.includes("none") ? [...withCourt, "none"] : withCourt;
+    }, [matches, courtKeyForMatch]);
+
+    const timeKeyForMatch = useCallback((m: TournamentMatch): string => {
+        if (!m.match_date) return "unscheduled";
+        const d = new Date(m.match_date);
+        if (Number.isNaN(d.getTime())) return "unscheduled";
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }, []);
+
+    const timeLabelForKey = useCallback((k: string): string => {
+        if (k === "unscheduled") return "No time";
+        const [hh, mm] = k.split(":").map((v) => parseInt(v, 10));
+        const d = new Date(2000, 0, 1, Number.isFinite(hh) ? hh : 0, Number.isFinite(mm) ? mm : 0);
+        return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    }, []);
+
+    const timeOptions = useMemo(() => {
+        const uniq = Array.from(new Set(matches.map((m) => timeKeyForMatch(m))));
+        const withTime = uniq.filter((k) => k !== "unscheduled").sort();
+        return uniq.includes("unscheduled") ? [...withTime, "unscheduled"] : withTime;
+    }, [matches, timeKeyForMatch]);
+
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const filteredMatches = useMemo(() => {
+        return matches.filter((m) => {
+            if (statusFilter !== "all" && m.status !== statusFilter) return false;
+            if (dayFilter !== "all" && dayKeyForMatch(m) !== dayFilter) return false;
+            if (courtFilter !== "all" && courtKeyForMatch(m) !== courtFilter) return false;
+            if (timeFilter !== "all" && timeKeyForMatch(m) !== timeFilter) return false;
+            if (!normalizedSearch) return true;
+
+            const teamAName = displayTeamCardTitle(m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD");
+            const teamBName = displayTeamCardTitle(m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD");
+            const winnerName = displayTeamCardTitle((m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "");
+            const doublesPayload = parseDoublesMatchNotes(m.notes);
+            const doublesPlayerNames = doublesPayload
+                ? [...doublesPayload.sideA.map((p) => p.name), ...doublesPayload.sideB.map((p) => p.name)].join(" ")
+                : "";
+            const memberNames = [...(memberNamesByTeam[m.team_a_id || ""] || []), ...(memberNamesByTeam[m.team_b_id || ""] || [])].join(" ");
+            const haystack = `${teamAName} ${teamBName} ${winnerName} ${doublesPlayerNames} ${memberNames} ${m.match_number ?? ""} ${m.court_number ?? ""}`.toLowerCase();
+            return haystack.includes(normalizedSearch);
+        });
+    }, [matches, statusFilter, dayFilter, dayKeyForMatch, courtFilter, courtKeyForMatch, timeFilter, timeKeyForMatch, normalizedSearch, teams, memberNamesByTeam]);
+
+    const hasActiveFilters = Boolean(normalizedSearch) || statusFilter !== "all" || dayFilter !== "all" || courtFilter !== "all" || timeFilter !== "all";
+
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4943,8 +5050,83 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                 {!canEdit && <p className="text-sm text-gray-600">View only</p>}
             </div>
             {canEdit && <p className="text-sm text-gray-600">Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set blank if the match ended early (e.g. 2-0).</p>}
+            <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search team or player name"
+                        className="w-full sm:max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    />
+                    <select
+                        value={dayFilter}
+                        onChange={(e) => setDayFilter(e.target.value)}
+                        className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    >
+                        <option value="all">All days</option>
+                        {dayOptions.map((k) => (
+                            <option key={k} value={k}>
+                                {dayLabelForKey(k)}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value as "all" | "upcoming" | "live" | "completed")}
+                        className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    >
+                        <option value="all">All status</option>
+                        <option value="upcoming">Upcoming</option>
+                        <option value="live">Live</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                    <select
+                        value={courtFilter}
+                        onChange={(e) => setCourtFilter(e.target.value)}
+                        className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    >
+                        <option value="all">All courts</option>
+                        {courtOptions.map((k) => (
+                            <option key={k} value={k}>
+                                {courtLabelForKey(k)}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={timeFilter}
+                        onChange={(e) => setTimeFilter(e.target.value)}
+                        className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    >
+                        <option value="all">All times</option>
+                        {timeOptions.map((k) => (
+                            <option key={k} value={k}>
+                                {timeLabelForKey(k)}
+                            </option>
+                        ))}
+                    </select>
+                    {hasActiveFilters ? (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSearchQuery("");
+                                setDayFilter("all");
+                                setStatusFilter("all");
+                                setCourtFilter("all");
+                                setTimeFilter("all");
+                            }}
+                            className="w-full sm:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                            Clear filters
+                        </button>
+                    ) : null}
+                    <p className="text-xs text-gray-600 sm:ml-auto">
+                        Showing {filteredMatches.length} of {matches.length}
+                    </p>
+                </div>
+            </div>
             <div className="space-y-2">
-                {matches.map((match) => {
+                {filteredMatches.map((match) => {
                     const m = match as TournamentMatch;
                     const isEditing = editingId === match.id;
                     const matchTeams = [m.team_a, m.team_b].filter(Boolean);
@@ -5037,7 +5219,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                                         <option key={t.id} value={t.id}>{displayTeamCardTitle(t.name)}</option>
                                                     ))}
                                                 </select>
-                                                <button type="button" onClick={() => handleSaveResult(match.id)} className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium">Save</button>
+                                                <button type="button" onClick={() => handleSaveResult(m)} className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium">Save</button>
                                                 <button type="button" onClick={() => { setEditingId(null); setWinnerId(""); setSetScores(Array(numSets).fill("")); }} className="text-gray-700 hover:text-gray-900 text-sm font-medium">Cancel</button>
                                             </div>
                                             <div className="flex flex-wrap items-center gap-3">
@@ -5084,6 +5266,9 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                 })}
             </div>
             {matches.length === 0 && <p className="text-gray-600 text-sm">No matches. Add matches in the Schedule tab first.</p>}
+            {matches.length > 0 && filteredMatches.length === 0 && (
+                <p className="text-gray-600 text-sm">No matches found for the selected filters.</p>
+            )}
         </div>
     );
 }
