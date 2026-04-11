@@ -155,12 +155,21 @@ export function downloadScheduleXlsx(
     XLSX.writeFile(wb, fname);
 }
 
+/** `combined`: up to 3 court columns per page (default). `by_court`: one full-width court column per section, new page per court. */
+export type SchedulePdfLayout = "combined" | "by_court";
+
+export type DownloadSchedulePdfOptions = {
+    layout?: SchedulePdfLayout;
+};
+
 export async function downloadSchedulePdf(
     tournamentName: string,
     rows: ScheduleExportRow[],
     filterLabel?: string,
     resolveCourtHeader?: (rawCourtKey: string) => string,
+    options?: DownloadSchedulePdfOptions,
 ): Promise<void> {
+    const layoutByCourt = options?.layout === "by_court";
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -191,6 +200,7 @@ export async function downloadSchedulePdf(
     doc.setFont("helvetica", "normal");
     const sub =
         (filterLabel ? `${filterLabel} • ` : "") +
+        (layoutByCourt ? "One section per court • " : "") +
         `${rows.length} match${rows.length === 1 ? "" : "es"} • ${new Date().toLocaleString()}`;
     const subLines = doc.splitTextToSize(sub, maxW);
     doc.text(subLines, margin, y);
@@ -383,7 +393,7 @@ export async function downloadSchedulePdf(
         return cardH;
     };
 
-    const courtsPerRow = Math.min(3, Math.max(1, orderedCourtKeys.length));
+    const courtsPerRow = layoutByCourt ? 1 : Math.min(3, Math.max(1, orderedCourtKeys.length));
     const courtBatches: string[][] = [];
     for (let i = 0; i < orderedCourtKeys.length; i += courtsPerRow) {
         courtBatches.push(orderedCourtKeys.slice(i, i + courtsPerRow));
@@ -391,6 +401,37 @@ export async function downloadSchedulePdf(
 
     let isFirstSchedulePdfPage = true;
     for (let b = 0; b < courtBatches.length; b++) {
+        if (layoutByCourt) {
+            isFirstSchedulePdfPage = true;
+        }
+        if (layoutByCourt && b > 0) {
+            y = margin;
+            doc.setFontSize(14);
+            doc.setFont("helvetica", "bold");
+            doc.text(tournamentName, margin, y);
+            y += 6;
+            const ckOnly = courtBatches[b][0] ?? "—";
+            const courtTitle =
+                ckOnly === "—"
+                    ? "Unassigned"
+                    : resolveCourtHeader
+                      ? resolveCourtHeader(ckOnly)
+                      : `Court ${ckOnly}`;
+            doc.setFontSize(11);
+            doc.text(courtTitle, margin, y);
+            y += 5;
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(9);
+            const subCourt =
+                (filterLabel ? `${filterLabel} • ` : "") +
+                `${(groups.get(ckOnly) || []).length} match${(groups.get(ckOnly) || []).length === 1 ? "" : "es"} on this court`;
+            const subCourtLines = doc.splitTextToSize(subCourt, maxW);
+            doc.text(subCourtLines, margin, y);
+            y += subCourtLines.length * 4 + 3;
+            doc.setDrawColor(200);
+            doc.line(margin, y, pageW - margin, y);
+            y += 6;
+        }
         const batch = courtBatches[b];
         const colW = (maxW - colGap * (batch.length - 1)) / batch.length;
         const idxByCourt: Record<string, number> = {};
@@ -482,6 +523,13 @@ export async function downloadSchedulePdf(
             doc.addImage(logoForFooter.normal, "JPEG", footerLogoX, footerY, footerLogoW, footerLogoH);
         }
     }
-    const fname = safeFileBase(tournamentName, filterLabel ? "schedule_filtered" : "schedule") + ".pdf";
+    const stem = filterLabel
+        ? layoutByCourt
+            ? "schedule_filtered_by_court"
+            : "schedule_filtered"
+        : layoutByCourt
+          ? "schedule_by_court"
+          : "schedule";
+    const fname = safeFileBase(tournamentName, stem) + ".pdf";
     doc.save(fname);
 }

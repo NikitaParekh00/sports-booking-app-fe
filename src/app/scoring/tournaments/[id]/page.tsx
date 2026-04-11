@@ -2037,6 +2037,17 @@ function IndividualScheduleTab({
         await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
+    const handleScheduleDownloadPdfByCourt = useCallback(async () => {
+        if (filteredMatches.length === 0) {
+            alert("No matches to export.");
+            return;
+        }
+        const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport, {
+            layout: "by_court",
+        });
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
+
     const handleAssignTimesToExistingMatches = async () => {
         if (!assignSessionStart.trim()) {
             alert("Choose session start (e.g. Apr 11, 6:00 PM).");
@@ -2243,6 +2254,15 @@ function IndividualScheduleTab({
                                 className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
                             >
                                 Download .pdf
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleScheduleDownloadPdfByCourt()}
+                                disabled={filteredMatches.length === 0}
+                                title="One full-width column per court, new page per court"
+                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-600 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                PDF by court
                             </button>
                         </div>
                     </div>
@@ -3602,6 +3622,17 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
+    const handleScheduleDownloadPdfByCourt = useCallback(async () => {
+        if (filteredMatches.length === 0) {
+            alert("No matches to export.");
+            return;
+        }
+        const rows = buildScheduleExportRows(filteredMatches);
+        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport, {
+            layout: "by_court",
+        });
+    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
+
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
     }, [tournament.id, supabase]);
@@ -4473,6 +4504,15 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                 className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
                             >
                                 Download .pdf
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleScheduleDownloadPdfByCourt()}
+                                disabled={filteredMatches.length === 0}
+                                title="One full-width column per court, new page per court"
+                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-600 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
+                            >
+                                PDF by court
                             </button>
                         </div>
                         <p className="text-xs text-gray-600">
