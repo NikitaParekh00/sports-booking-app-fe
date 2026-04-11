@@ -1148,7 +1148,8 @@ export function generateDoublesScheduleForTeamOnly(
     return { matches, counts, unmetPlayerIds, targetPerPlayer: target, coverageNotes };
 }
 
-const NOTES_JSON_MARK = "__JSON__";
+/** Prefix for JSON lineup payload in `matches.notes` (exported for knockout / admin tools). */
+export const NOTES_JSON_MARK = "__JSON__";
 
 /** Stored in `matches.notes` for balanced-doubles rows; parsed by the schedule/results UI. */
 export type DoublesLinePayload = {
@@ -1177,8 +1178,8 @@ export function parseDoublesMatchNotes(notes: string | null | undefined): Double
             data?.type === "doubles_line" &&
             Array.isArray(data.sideA) &&
             Array.isArray(data.sideB) &&
-            data.sideA.length >= 2 &&
-            data.sideB.length >= 2
+            data.sideA.length >= 1 &&
+            data.sideB.length >= 1
         ) {
             return data;
         }
@@ -1201,7 +1202,9 @@ export function formatDoublesPlayersLineCompact(
     };
     const [a1, a2] = payload.sideA;
     const [b1, b2] = payload.sideB;
-    return `${lab(a1.name, a1.category)} & ${lab(a2.name, a2.category)} vs ${lab(b1.name, b1.category)} & ${lab(b2.name, b2.category)}`;
+    const left = [a1, a2].filter(Boolean).map((p) => lab(p!.name, p!.category)).join(" & ");
+    const right = [b1, b2].filter(Boolean).map((p) => lab(p!.name, p!.category)).join(" & ");
+    return `${left} vs ${right}`;
 }
 
 export function formatDoublesMatchNotes(m: GeneratedDoublesMatch): string {

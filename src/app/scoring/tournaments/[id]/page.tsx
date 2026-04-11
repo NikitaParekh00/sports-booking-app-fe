@@ -16,6 +16,7 @@ import {
     generateBalancedDoublesSchedule,
     formatDoublesMatchNotes,
     normalizeCategoryLabel,
+    NOTES_JSON_MARK,
     parseDoublesMatchNotes,
     theoreticalDoublesMatchCountIfFullyMet,
 } from "@/lib/generateBalancedDoublesSchedule";
@@ -102,7 +103,6 @@ function formatStoredCourtForDisplay(t: Tournament, court_number: string | null 
 const ASSIGN_SLOT_MINUTES_MIN = 1;
 const ASSIGN_SLOT_MINUTES_MAX = 180;
 const DEFAULT_ASSIGN_SLOT_MINUTES = 15;
-const NOTES_JSON_MARK = "__JSON__";
 const UMPIRE_PREFIX = "UMP:";
 
 function clampAssignSlotMinutes(n: number): number {
@@ -6132,6 +6132,908 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
     );
 }
 
+/** Trailing number in knockout match_number for stable ordering (e.g. KO_T_QF_3 → 3). */
+function knockoutMatchSortKey(matchNumber: string | null | undefined): number {
+    if (!matchNumber) return 0;
+    const m = matchNumber.match(/(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : 0;
+}
+
+/** Parse "1-5,2-6" into 0-based index pairs; ranks are 1-based in the qualifier pool. */
+function parseKnockoutRankPairs(input: string, poolLen: number): [number, number][] {
+    const raw = input.trim();
+    if (!raw) throw new Error("Enter at least one rank pairing (e.g. 1-5,2-6).");
+    const chunks = raw.split(/[,;]+/).map((s) => s.trim()).filter(Boolean);
+    const out: [number, number][] = [];
+    for (const ch of chunks) {
+        const m = ch.match(/^(\d+)\s*[-–]\s*(\d+)$/);
+        if (!m) throw new Error(`Invalid pairing "${ch}". Use format like 1-5 or 2-6.`);
+        const a = parseInt(m[1], 10);
+        const b = parseInt(m[2], 10);
+        if (a < 1 || a > poolLen || b < 1 || b > poolLen) {
+            throw new Error(`Ranks must be between 1 and ${poolLen} (got ${a}-${b}).`);
+        }
+        if (a === b) throw new Error(`A team cannot play itself (${a}-${b}).`);
+        out.push([a - 1, b - 1]);
+    }
+    return out;
+}
+
+function teamStandingsOrderForKnockout(
+    teams: TournamentTeam[],
+    completedTeamMatches: TournamentMatch[],
+): TournamentTeam[] {
+    const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> = {};
+    teams.forEach((t) => {
+        stats[t.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+    });
+    completedTeamMatches.forEach((m) => {
+        const ma = m.team_a_id;
+        const mb = m.team_b_id;
+        const winner = m.winner_team_id;
+        if (ma && stats[ma]) {
+            stats[ma].played += 1;
+            if (winner === ma) stats[ma].won += 1;
+            else stats[ma].lost += 1;
+        }
+        if (mb && stats[mb]) {
+            stats[mb].played += 1;
+            if (winner === mb) stats[mb].won += 1;
+            else stats[mb].lost += 1;
+        }
+        const score = m.final_score;
+        if (score && typeof score === "string") {
+            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+            let pfA = 0;
+            let pfB = 0;
+            sets.forEach((setStr) => {
+                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    pfA += parts[0];
+                    pfB += parts[1];
+                }
+            });
+            if (ma && stats[ma]) {
+                stats[ma].pointsFor += pfA;
+                stats[ma].pointsAgainst += pfB;
+            }
+            if (mb && stats[mb]) {
+                stats[mb].pointsFor += pfB;
+                stats[mb].pointsAgainst += pfA;
+            }
+        }
+    });
+    const withPts = teams.map((t) => ({
+        team: t,
+        ...stats[t.id],
+        pts: stats[t.id].won * 20,
+        pointsDifference: stats[t.id].pointsFor - stats[t.id].pointsAgainst,
+    }));
+    return [...withPts]
+        .sort((a, b) => {
+            if (a.pts !== b.pts) return b.pts - a.pts;
+            return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
+        })
+        .map((r) => r.team);
+}
+
+type PlayerKoRow = {
+    member: TournamentTeamMember & { participant?: Participant; team?: TournamentTeam };
+    played: number;
+    won: number;
+    lost: number;
+    pts: number;
+    pointsDifference: number;
+};
+
+function playerStandingsRowsForKnockout(
+    members: (TournamentTeamMember & { participant?: Participant; team?: TournamentTeam })[],
+    completedMatches: TournamentMatch[],
+): PlayerKoRow[] {
+    const rowsWithStats: PlayerKoRow[] = [];
+    const participantStats: Record<
+        string,
+        { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }
+    > = {};
+    members.forEach((m) => {
+        const pid = m.participant_id;
+        if (pid) participantStats[pid] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+    });
+    completedMatches.forEach((match) => {
+        const tm = match as TournamentMatch;
+        const winnerId = tm.winner_team_id;
+        const teamA = tm.team_a_id;
+        const teamB = tm.team_b_id;
+        const score = tm.final_score;
+        let pfA = 0;
+        let pfB = 0;
+        if (score && typeof score === "string") {
+            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+            sets.forEach((setStr) => {
+                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    pfA += parts[0];
+                    pfB += parts[1];
+                }
+            });
+        }
+        const doubles = parseDoublesMatchNotes(tm.notes);
+        const doublesAligned =
+            doubles &&
+            teamA &&
+            teamB &&
+            ((doubles.teamAId === teamA && doubles.teamBId === teamB) ||
+                (doubles.teamAId === teamB && doubles.teamBId === teamA));
+        if (doublesAligned && doubles) {
+            const pidsOnA = new Set(doubles.sideA.map((s) => s.id));
+            const pidsOnB = new Set(doubles.sideB.map((s) => s.id));
+            members.forEach((mem) => {
+                const tid = mem.team_id;
+                const pid = mem.participant_id;
+                if (!pid || !participantStats[pid]) return;
+                const onLineupA = tid === doubles.teamAId && pidsOnA.has(pid);
+                const onLineupB = tid === doubles.teamBId && pidsOnB.has(pid);
+                if (!onLineupA && !onLineupB) return;
+                participantStats[pid].played += 1;
+                if ((onLineupA && winnerId === doubles.teamAId) || (onLineupB && winnerId === doubles.teamBId)) {
+                    participantStats[pid].won += 1;
+                } else {
+                    participantStats[pid].lost += 1;
+                }
+                if (onLineupA) {
+                    participantStats[pid].pointsFor += pfA;
+                    participantStats[pid].pointsAgainst += pfB;
+                }
+                if (onLineupB) {
+                    participantStats[pid].pointsFor += pfB;
+                    participantStats[pid].pointsAgainst += pfA;
+                }
+            });
+            return;
+        }
+        members.forEach((mem) => {
+            const tid = mem.team_id;
+            const pid = mem.participant_id;
+            if (!pid || !participantStats[pid]) return;
+            if (tid === teamA || tid === teamB) {
+                participantStats[pid].played += 1;
+                if (tid === winnerId) participantStats[pid].won += 1;
+                else participantStats[pid].lost += 1;
+                if (tid === teamA) {
+                    participantStats[pid].pointsFor += pfA;
+                    participantStats[pid].pointsAgainst += pfB;
+                } else if (tid === teamB) {
+                    participantStats[pid].pointsFor += pfB;
+                    participantStats[pid].pointsAgainst += pfA;
+                }
+            }
+        });
+    });
+    members.forEach((m) => {
+        const pid = m.participant_id;
+        const s = participantStats[pid] || { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+        const pointsDifference = s.pointsFor - s.pointsAgainst;
+        if (m.participant) {
+            rowsWithStats.push({
+                member: m,
+                played: s.played,
+                won: s.won,
+                lost: s.lost,
+                pts: s.won * 10,
+                pointsDifference,
+            });
+        }
+    });
+    return rowsWithStats;
+}
+
+function winnersFromCompletedPrefix(
+    allMatches: TournamentMatch[],
+    prefix: string,
+    teamsById: Map<string, TournamentTeam>,
+): TournamentTeam[] {
+    const rows = (allMatches || []).filter(
+        (m) =>
+            m.status === "completed" &&
+            m.winner_team_id &&
+            m.match_number &&
+            String(m.match_number).startsWith(prefix),
+    ) as TournamentMatch[];
+    rows.sort((a, b) => knockoutMatchSortKey(a.match_number) - knockoutMatchSortKey(b.match_number));
+    const out: TournamentTeam[] = [];
+    for (const r of rows) {
+        const t = teamsById.get(r.winner_team_id!);
+        if (t) out.push(t);
+    }
+    return out;
+}
+
+/** Winning player row from each completed KO_P_* match (uses lineup in notes). */
+function winnersPlayerRowsFromCompletedKoPrefix(
+    allMatches: TournamentMatch[],
+    prefix: string,
+    sortedPlayerRows: PlayerKoRow[],
+): PlayerKoRow[] {
+    const byPid = new Map(sortedPlayerRows.map((r) => [r.member.participant_id, r]));
+    const rows = (allMatches || []).filter(
+        (m) =>
+            m.status === "completed" &&
+            m.winner_team_id &&
+            m.match_number &&
+            String(m.match_number).startsWith(prefix),
+    ) as TournamentMatch[];
+    rows.sort((a, b) => knockoutMatchSortKey(a.match_number) - knockoutMatchSortKey(b.match_number));
+    const out: PlayerKoRow[] = [];
+    for (const m of rows) {
+        const d = parseDoublesMatchNotes(m.notes);
+        if (!d) continue;
+        const w = m.winner_team_id;
+        const side = w === d.teamAId ? d.sideA : w === d.teamBId ? d.sideB : null;
+        const pid = side?.[0]?.id;
+        if (pid) {
+            const row = byPid.get(pid);
+            if (row) out.push(row);
+        }
+    }
+    return out;
+}
+
+function KnockoutSchedulerBlock({
+    tournament,
+    canEdit,
+    onScheduled,
+}: {
+    tournament: Tournament;
+    canEdit: boolean;
+    onScheduled: () => void;
+}) {
+    const supabase = createClient();
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState<string | null>(null);
+    const [teams, setTeams] = useState<TournamentTeam[]>([]);
+    const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant; team?: TournamentTeam })[]>([]);
+    const [matches, setMatches] = useState<TournamentMatch[]>([]);
+
+    const [tQfQual, setTQfQual] = useState(8);
+    const [tQfPairs, setTQfPairs] = useState("1-5,2-6,3-7,4-8");
+    const [tSfSource, setTSfSource] = useState<"qf_winners" | "standings">("qf_winners");
+    const [tSfStandingsN, setTSfStandingsN] = useState(4);
+    const [tSfPairs, setTSfPairs] = useState("1-3,2-4");
+
+    const [pQfQual, setPQfQual] = useState(8);
+    const [pQfPairs, setPQfPairs] = useState("1-5,2-6,3-7,4-8");
+    const [pSfSource, setPSfSource] = useState<"qf_winners" | "standings">("qf_winners");
+    const [pSfStandingsN, setPSfStandingsN] = useState(4);
+    const [pSfPairs, setPSfPairs] = useState("1-3,2-4");
+
+    const refresh = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [{ data: tData }, { data: mData }, { data: matchData }] = await Promise.all([
+                supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name"),
+                supabase
+                    .from("tournament_team_members")
+                    .select("*, participant:tournament_participants(*), team:tournament_teams(*)")
+                    .then(({ data }) => ({
+                        data: (data || []).filter(
+                            (row: TournamentTeamMember & { team?: TournamentTeam }) => row.team?.tournament_id === tournament.id,
+                        ),
+                    })),
+                supabase
+                    .from("matches")
+                    .select(
+                        "id, tournament_id, status, notes, final_score, match_number, team_a_id, team_b_id, winner_team_id, winner_id, match_date, court_number, match_type",
+                    )
+                    .eq("tournament_id", tournament.id),
+            ]);
+            setTeams(tData || []);
+            setMembers(mData || []);
+            setMatches((matchData || []) as TournamentMatch[]);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    }, [supabase, tournament.id]);
+
+    useEffect(() => {
+        void refresh();
+    }, [refresh]);
+
+    const teamsById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
+    const completed = useMemo(
+        () => matches.filter((m) => m.status === "completed" && m.team_a_id && m.team_b_id),
+        [matches],
+    );
+
+    const teamOrder = useMemo(() => teamStandingsOrderForKnockout(teams, completed), [teams, completed]);
+
+    const playerRowsSorted = useMemo(() => {
+        const rows = playerStandingsRowsForKnockout(members, completed);
+        const copy = [...rows];
+        copy.sort((a, b) => comparePlayerStatRows(a, b, "pts"));
+        return copy;
+    }, [members, completed]);
+
+    const nc = getCourtCount(tournament);
+
+    const deleteMatchesWithPrefix = async (prefix: string) => {
+        const { data, error } = await supabase.from("matches").select("id, match_number").eq("tournament_id", tournament.id);
+        if (error) throw error;
+        const ids = (data || [])
+            .filter((m) => m.match_number && String(m.match_number).startsWith(prefix))
+            .map((m) => m.id);
+        if (ids.length === 0) return;
+        const { error: delErr } = await supabase.from("matches").delete().in("id", ids);
+        if (delErr) throw delErr;
+    };
+
+    const insertTeamPair = async (
+        teamA: TournamentTeam,
+        teamB: TournamentTeam,
+        matchNumber: string,
+        courtIdx: number,
+        created_by: string | null,
+    ) => {
+        const { error } = await supabase.from("matches").insert({
+            tournament_id: tournament.id,
+            sport: tournament.sport,
+            match_type: "tournament",
+            status: "upcoming",
+            team_a_id: teamA.id,
+            team_b_id: teamB.id,
+            match_number: matchNumber,
+            court_number: String((courtIdx % nc) + 1),
+            created_by,
+        });
+        if (error) throw error;
+    };
+
+    const insertPlayerPair = async (
+        rowA: PlayerKoRow,
+        rowB: PlayerKoRow,
+        matchNumber: string,
+        courtIdx: number,
+        created_by: string | null,
+    ) => {
+        const teamA = rowA.member.team_id;
+        const teamB = rowB.member.team_id;
+        if (!teamA || !teamB) throw new Error("Missing team for player row.");
+        if (teamA === teamB) {
+            throw new Error(
+                `Players "${rowA.member.participant?.player_name}" and "${rowB.member.participant?.player_name}" are on the same team — use Schedule to add a singles-style match, or pair different players.`,
+            );
+        }
+        const p1 = rowA.member.participant;
+        const p2 = rowB.member.participant;
+        if (!p1 || !p2) throw new Error("Missing participant record.");
+        const payload = {
+            type: "doubles_line" as const,
+            categoryKey: "player_knockout",
+            teamAId: teamA,
+            teamBId: teamB,
+            sideA: [{ id: p1.id, name: p1.player_name || "—", category: (p1.category && String(p1.category).trim()) || "—" }],
+            sideB: [{ id: p2.id, name: p2.player_name || "—", category: (p2.category && String(p2.category).trim()) || "—" }],
+        };
+        const notes = `${NOTES_JSON_MARK}${JSON.stringify(payload)}`;
+        const { error } = await supabase.from("matches").insert({
+            tournament_id: tournament.id,
+            sport: tournament.sport,
+            match_type: "tournament",
+            status: "upcoming",
+            team_a_id: teamA,
+            team_b_id: teamB,
+            match_number: matchNumber,
+            court_number: String((courtIdx % nc) + 1),
+            notes,
+            created_by,
+        });
+        if (error) throw error;
+    };
+
+    const runTeamQf = async () => {
+        if (!canEdit) return;
+        const pool = teamOrder.slice(0, tQfQual);
+        if (pool.length < tQfQual) {
+            alert(`Need at least ${tQfQual} teams in standings; only ${pool.length} teams exist.`);
+            return;
+        }
+        let pairs: [number, number][];
+        try {
+            pairs = parseKnockoutRankPairs(tQfPairs, tQfQual);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        if (
+            !confirm(
+                `Create ${pairs.length} team quarter-final match(es) (prefix KO_T_QF_)? Existing matches with that prefix will be removed first.`,
+            )
+        ) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("team-qf");
+        try {
+            await deleteMatchesWithPrefix("KO_T_QF_");
+            for (let i = 0; i < pairs.length; i++) {
+                const [ia, ib] = pairs[i];
+                await insertTeamPair(pool[ia], pool[ib], `KO_T_QF_${i + 1}`, i, created_by);
+            }
+            alert(`Scheduled ${pairs.length} team QF match(es).`);
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule team QF.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const runTeamSf = async () => {
+        if (!canEdit) return;
+        let pool: TournamentTeam[];
+        if (tSfSource === "standings") {
+            pool = teamOrder.slice(0, tSfStandingsN);
+            if (pool.length < tSfStandingsN) {
+                alert(`Need at least ${tSfStandingsN} teams; only ${pool.length} in standings.`);
+                return;
+            }
+        } else {
+            pool = winnersFromCompletedPrefix(matches, "KO_T_QF_", teamsById);
+            if (pool.length === 0) {
+                alert("No completed team QF winners found (KO_T_QF_* matches). Enter QF results first, or use “From league standings”.");
+                return;
+            }
+        }
+        let pairs: [number, number][];
+        try {
+            pairs = parseKnockoutRankPairs(tSfPairs, pool.length);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        const maxRank = Math.max(...pairs.flatMap((p) => [p[0] + 1, p[1] + 1]));
+        if (maxRank > pool.length) {
+            alert(`A pairing references rank ${maxRank} but the pool only has ${pool.length} team(s).`);
+            return;
+        }
+        if (!confirm(`Create ${pairs.length} team semi-final match(es) (KO_T_SF_)? Existing KO_T_SF_ matches will be removed first.`)) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("team-sf");
+        try {
+            await deleteMatchesWithPrefix("KO_T_SF_");
+            for (let i = 0; i < pairs.length; i++) {
+                const [ia, ib] = pairs[i];
+                await insertTeamPair(pool[ia], pool[ib], `KO_T_SF_${i + 1}`, i, created_by);
+            }
+            alert(`Scheduled ${pairs.length} team semi-final match(es).`);
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule team SF.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const runTeamFinal = async () => {
+        if (!canEdit) return;
+        const pool = winnersFromCompletedPrefix(matches, "KO_T_SF_", teamsById);
+        if (pool.length < 2) {
+            alert("Need 2 completed team semi-final winners (KO_T_SF_*). Enter semi results first.");
+            return;
+        }
+        if (pool.length > 2) {
+            if (!confirm(`Found ${pool.length} SF winners; final will use the first two in bracket order (KO_T_SF_1 winner, KO_T_SF_2 winner). Continue?`)) {
+                return;
+            }
+        }
+        const a = pool[0];
+        const b = pool[1];
+        if (!confirm(`Schedule team final: ${stripTrailingBracketLabel(a.name)} vs ${stripTrailingBracketLabel(b.name)} (KO_T_F_1)? Removes any existing KO_T_F_ match.`)) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("team-f");
+        try {
+            await deleteMatchesWithPrefix("KO_T_F_");
+            await insertTeamPair(a, b, "KO_T_F_1", 0, created_by);
+            alert("Team final scheduled.");
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule team final.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const runPlayerQf = async () => {
+        if (!canEdit) return;
+        const pool = playerRowsSorted.slice(0, pQfQual);
+        if (pool.length < pQfQual) {
+            alert(`Need at least ${pQfQual} players in the player leaderboard; only ${pool.length} listed.`);
+            return;
+        }
+        let pairs: [number, number][];
+        try {
+            pairs = parseKnockoutRankPairs(pQfPairs, pQfQual);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        try {
+            for (const [ia, ib] of pairs) {
+                if (pool[ia].member.team_id === pool[ib].member.team_id) {
+                    throw new Error(
+                        `Pair ${ia + 1}-${ib + 1}: both players are on the same team; player KO needs different teams (or add a custom match in Schedule).`,
+                    );
+                }
+            }
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        if (!confirm(`Create ${pairs.length} player quarter-final match(es) (prefix KO_P_QF_)? Existing KO_P_QF_ matches will be removed first.`)) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("player-qf");
+        try {
+            await deleteMatchesWithPrefix("KO_P_QF_");
+            for (let i = 0; i < pairs.length; i++) {
+                const [ia, ib] = pairs[i];
+                await insertPlayerPair(pool[ia], pool[ib], `KO_P_QF_${i + 1}`, i, created_by);
+            }
+            alert(`Scheduled ${pairs.length} player QF match(es).`);
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule player QF.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const runPlayerSf = async () => {
+        if (!canEdit) return;
+        let pool: PlayerKoRow[];
+        if (pSfSource === "standings") {
+            pool = playerRowsSorted.slice(0, pSfStandingsN);
+            if (pool.length < pSfStandingsN) {
+                alert(`Need at least ${pSfStandingsN} players; only ${pool.length} in leaderboard.`);
+                return;
+            }
+        } else {
+            pool = winnersPlayerRowsFromCompletedKoPrefix(matches, "KO_P_QF_", playerRowsSorted);
+            if (pool.length === 0) {
+                alert("No completed player QF winners (KO_P_QF_* with lineup in notes). Enter QF results first, or use “From player leaderboard”.");
+                return;
+            }
+        }
+        let pairs: [number, number][];
+        try {
+            pairs = parseKnockoutRankPairs(pSfPairs, pool.length);
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        try {
+            for (const [ia, ib] of pairs) {
+                if (pool[ia].member.team_id === pool[ib].member.team_id) {
+                    throw new Error(`Pair references two players on the same team — choose different ranks or use Schedule.`);
+                }
+            }
+        } catch (e) {
+            alert(e instanceof Error ? e.message : String(e));
+            return;
+        }
+        if (!confirm(`Create ${pairs.length} player semi-final match(es) (KO_P_SF_)? Existing KO_P_SF_ matches will be removed first.`)) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("player-sf");
+        try {
+            await deleteMatchesWithPrefix("KO_P_SF_");
+            for (let i = 0; i < pairs.length; i++) {
+                const [ia, ib] = pairs[i];
+                await insertPlayerPair(pool[ia], pool[ib], `KO_P_SF_${i + 1}`, i, created_by);
+            }
+            alert(`Scheduled ${pairs.length} player semi-final match(es).`);
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule player SF.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    const runPlayerFinal = async () => {
+        if (!canEdit) return;
+        const winRows = winnersPlayerRowsFromCompletedKoPrefix(matches, "KO_P_SF_", playerRowsSorted);
+        if (winRows.length < 2) {
+            alert("Need 2 completed player semi-finals (KO_P_SF_*) with winners recorded.");
+            return;
+        }
+        const ra = winRows[0];
+        const rb = winRows[1];
+        if (winRows.length > 2 && !confirm(`Found ${winRows.length} SF results; final uses winners from KO_P_SF_1 and KO_P_SF_2 in order. Continue?`)) {
+            return;
+        }
+        if (ra.member.team_id === rb.member.team_id) {
+            alert("Both SF winners map to the same team — add the final manually in Schedule.");
+            return;
+        }
+        if (
+            !confirm(
+                `Schedule player final: ${ra.member.participant?.player_name} vs ${rb.member.participant?.player_name} (KO_P_F_1)?`,
+            )
+        ) {
+            return;
+        }
+        const storedUser = localStorage.getItem("sf:user");
+        const created_by = storedUser ? (JSON.parse(storedUser) as { user_id?: string }).user_id ?? null : null;
+        setBusy("player-f");
+        try {
+            await deleteMatchesWithPrefix("KO_P_F_");
+            await insertPlayerPair(ra, rb, "KO_P_F_1", 0, created_by);
+            alert("Player final scheduled.");
+            await refresh();
+            onScheduled();
+        } catch (e) {
+            console.error(e);
+            alert(e instanceof Error ? e.message : "Failed to schedule player final.");
+        } finally {
+            setBusy(null);
+        }
+    };
+
+    if ((tournament.tournament_mode ?? "individual") !== "team") {
+        return null;
+    }
+
+    return (
+        <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 space-y-6 shadow-sm">
+            <div>
+                <h3 className="text-lg font-semibold text-gray-900">Knockout scheduler (after league)</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                    Team and player paths are separate: team brackets use{" "}
+                    <span className="font-mono text-xs">KO_T_*</span> match numbers; player brackets use{" "}
+                    <span className="font-mono text-xs">KO_P_*</span>. Ranks refer to the current{" "}
+                    <strong>Team stats</strong> or <strong>Player stats</strong> order (PTS, then PD). Semi-finals can use winners
+                    from the previous KO round or a slice of the league table.
+                </p>
+            </div>
+
+            {loading ? (
+                <p className="text-sm text-gray-500">Loading standings…</p>
+            ) : (
+                <>
+                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 space-y-1">
+                        <div>
+                            <span className="font-semibold">Team table preview (top {Math.min(8, teamOrder.length)}):</span>{" "}
+                            {teamOrder.slice(0, 8).map((t) => stripTrailingBracketLabel(t.name)).join(" · ") || "—"}
+                        </div>
+                        <div>
+                            <span className="font-semibold">Player leaderboard preview (top {Math.min(8, playerRowsSorted.length)}):</span>{" "}
+                            {playerRowsSorted
+                                .slice(0, 8)
+                                .map((r) => r.member.participant?.player_name ?? "—")
+                                .join(" · ") || "—"}
+                        </div>
+                    </div>
+
+                    <div className="space-y-4 border-t border-gray-100 pt-4">
+                        <h4 className="font-medium text-gray-900">Team knockout</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">QF — how many qualify from league</label>
+                                <input
+                                    type="number"
+                                    min={2}
+                                    max={64}
+                                    value={tQfQual}
+                                    onChange={(e) => setTQfQual(Math.max(2, parseInt(e.target.value, 10) || 8))}
+                                    disabled={!canEdit}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">QF — rank pairings (1 = best in pool)</label>
+                                <input
+                                    type="text"
+                                    value={tQfPairs}
+                                    onChange={(e) => setTQfPairs(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="1-5,2-6,3-7,4-8"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
+                                />
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runTeamQf()}
+                            className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "team-qf" ? "Scheduling…" : "Schedule team quarter-finals"}
+                        </button>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">SF — pool source</label>
+                                <select
+                                    value={tSfSource}
+                                    onChange={(e) => setTSfSource(e.target.value as "qf_winners" | "standings")}
+                                    disabled={!canEdit}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                >
+                                    <option value="qf_winners">Winners of team QF (KO_T_QF_*)</option>
+                                    <option value="standings">League standings (top N)</option>
+                                </select>
+                            </div>
+                            {tSfSource === "standings" ? (
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Top N from league</label>
+                                    <input
+                                        type="number"
+                                        min={2}
+                                        max={32}
+                                        value={tSfStandingsN}
+                                        onChange={(e) => setTSfStandingsN(Math.max(2, parseInt(e.target.value, 10) || 4))}
+                                        disabled={!canEdit}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                    />
+                                </div>
+                            ) : null}
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">SF — rank pairings</label>
+                                <input
+                                    type="text"
+                                    value={tSfPairs}
+                                    onChange={(e) => setTSfPairs(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="1-3,2-4"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
+                                />
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runTeamSf()}
+                            className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "team-sf" ? "Scheduling…" : "Schedule team semi-finals"}
+                        </button>
+
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runTeamFinal()}
+                            className="block px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "team-f" ? "Scheduling…" : "Schedule team final (SF winners 1 vs 2)"}
+                        </button>
+                    </div>
+
+                    <div className="space-y-4 border-t border-gray-100 pt-4">
+                        <h4 className="font-medium text-gray-900">Player knockout (separate bracket)</h4>
+                        <p className="text-xs text-gray-500">
+                            Uses the same PTS/PD logic as the Player stats tab. Each match is stored as team vs team with a one-player
+                            lineup per side; both players must be on <strong>different</strong> teams.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">QF — how many qualify</label>
+                                <input
+                                    type="number"
+                                    min={2}
+                                    max={64}
+                                    value={pQfQual}
+                                    onChange={(e) => setPQfQual(Math.max(2, parseInt(e.target.value, 10) || 8))}
+                                    disabled={!canEdit}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">QF — rank pairings</label>
+                                <input
+                                    type="text"
+                                    value={pQfPairs}
+                                    onChange={(e) => setPQfPairs(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="1-5,2-6,3-7,4-8"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
+                                />
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runPlayerQf()}
+                            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "player-qf" ? "Scheduling…" : "Schedule player quarter-finals"}
+                        </button>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">SF — pool source</label>
+                                <select
+                                    value={pSfSource}
+                                    onChange={(e) => setPSfSource(e.target.value as "qf_winners" | "standings")}
+                                    disabled={!canEdit}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                >
+                                    <option value="qf_winners">Winners of player QF (by team)</option>
+                                    <option value="standings">Player leaderboard (top N)</option>
+                                </select>
+                            </div>
+                            {pSfSource === "standings" ? (
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-600 mb-1">Top N players</label>
+                                    <input
+                                        type="number"
+                                        min={2}
+                                        max={32}
+                                        value={pSfStandingsN}
+                                        onChange={(e) => setPSfStandingsN(Math.max(2, parseInt(e.target.value, 10) || 4))}
+                                        disabled={!canEdit}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                    />
+                                </div>
+                            ) : null}
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-gray-600 mb-1">SF — rank pairings</label>
+                                <input
+                                    type="text"
+                                    value={pSfPairs}
+                                    onChange={(e) => setPSfPairs(e.target.value)}
+                                    disabled={!canEdit}
+                                    placeholder="1-3,2-4"
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
+                                />
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runPlayerSf()}
+                            className="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "player-sf" ? "Scheduling…" : "Schedule player semi-finals"}
+                        </button>
+
+                        <button
+                            type="button"
+                            disabled={!canEdit || !!busy}
+                            onClick={() => void runPlayerFinal()}
+                            className="block px-3 py-2 rounded-lg bg-red-600 text-white text-sm font-medium disabled:opacity-50"
+                        >
+                            {busy === "player-f" ? "Scheduling…" : "Schedule player final (SF winners 1 vs 2)"}
+                        </button>
+                    </div>
+                </>
+            )}
+        </div>
+    );
+}
+
 // Settings Tab Component
 function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tournament: Tournament; onTournamentUpdate: () => void; canEdit?: boolean }) {
     const [settings, setSettings] = useState({
@@ -6421,6 +7323,8 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
                 </button>
                 )}
             </div>
+
+            <KnockoutSchedulerBlock tournament={tournament} canEdit={canEdit} onScheduled={onTournamentUpdate} />
         </div>
     );
 }
