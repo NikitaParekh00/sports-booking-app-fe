@@ -4993,28 +4993,13 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
         setSetScores(parseFinalScoreToSets(m.final_score, numSets));
     };
 
-    const dayKeyForMatch = useCallback((m: TournamentMatch): string => {
-        if (!m.match_date) return "unscheduled";
-        const d = new Date(m.match_date);
-        if (Number.isNaN(d.getTime())) return "unscheduled";
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        return `${yyyy}-${mm}-${dd}`;
-    }, []);
-
-    const dayLabelForKey = useCallback((k: string): string => {
-        if (k === "unscheduled") return "No date";
-        const d = new Date(`${k}T00:00:00`);
-        if (Number.isNaN(d.getTime())) return k;
-        return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-    }, []);
-
-    const dayOptions = useMemo(() => {
-        const uniq = Array.from(new Set(matches.map((m) => dayKeyForMatch(m))));
-        const dated = uniq.filter((k) => k !== "unscheduled").sort();
-        return uniq.includes("unscheduled") ? [...dated, "unscheduled"] : dated;
-    }, [matches, dayKeyForMatch]);
+    /** Same session-day grouping as Schedule (matches after midnight until 1:00 AM count as previous calendar day). */
+    const resultsSessionDayOptions = useMemo(() => {
+        const dayKeys = sortScheduleDayKeys(
+            [...new Set(matches.map((m) => scheduleMatchDayKey(m as TournamentMatch)))].filter((k) => k !== "unscheduled"),
+        );
+        return dayKeys.map((key, idx) => ({ key, label: `Day ${idx + 1}` }));
+    }, [matches]);
 
     const courtKeyForMatch = useCallback((m: TournamentMatch): string => {
         const raw = String(m.court_number ?? "").trim();
@@ -5063,7 +5048,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
     const filteredMatches = useMemo(() => {
         return matches.filter((m) => {
             if (statusFilter !== "all" && m.status !== statusFilter) return false;
-            if (dayFilter !== "all" && dayKeyForMatch(m) !== dayFilter) return false;
+            if (dayFilter !== "all" && scheduleMatchDayKey(m as TournamentMatch) !== dayFilter) return false;
             if (courtFilter !== "all" && courtKeyForMatch(m) !== courtFilter) return false;
             if (timeFilter !== "all" && timeKeyForMatch(m) !== timeFilter) return false;
             if (!normalizedSearch) return true;
@@ -5079,7 +5064,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
             const haystack = `${teamAName} ${teamBName} ${winnerName} ${doublesPlayerNames} ${memberNames} ${m.match_number ?? ""} ${m.court_number ?? ""}`.toLowerCase();
             return haystack.includes(normalizedSearch);
         });
-    }, [matches, statusFilter, dayFilter, dayKeyForMatch, courtFilter, courtKeyForMatch, timeFilter, timeKeyForMatch, normalizedSearch, teams, memberNamesByTeam]);
+    }, [matches, statusFilter, dayFilter, courtFilter, courtKeyForMatch, timeFilter, timeKeyForMatch, normalizedSearch, teams, memberNamesByTeam]);
 
     const hasActiveFilters = Boolean(normalizedSearch) || statusFilter !== "all" || dayFilter !== "all" || courtFilter !== "all" || timeFilter !== "all";
 
@@ -5102,12 +5087,13 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                     <select
                         value={dayFilter}
                         onChange={(e) => setDayFilter(e.target.value)}
+                        aria-label="Day (session runs until 1:00 AM next calendar day)"
                         className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                     >
                         <option value="all">All days</option>
-                        {dayOptions.map((k) => (
-                            <option key={k} value={k}>
-                                {dayLabelForKey(k)}
+                        {resultsSessionDayOptions.map((d) => (
+                            <option key={d.key} value={d.key}>
+                                {d.label}
                             </option>
                         ))}
                     </select>
