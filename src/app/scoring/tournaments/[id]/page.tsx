@@ -2411,6 +2411,8 @@ function TeamsTab({
     const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
     const [position, setPosition] = useState(1);
     const [isCreatingFromClubs, setIsCreatingFromClubs] = useState(false);
+    const [renamingTeamId, setRenamingTeamId] = useState<string | null>(null);
+    const [renameTeamDraft, setRenameTeamDraft] = useState("");
     const supabase = createClient();
 
     const loadTeams = useCallback(async () => {
@@ -2499,6 +2501,32 @@ function TeamsTab({
         } catch (e) {
             console.error(e);
             alert("Failed to remove member");
+        }
+    };
+
+    const handleSaveRenameTeam = async () => {
+        if (!renamingTeamId) return;
+        const trimmed = renameTeamDraft.trim();
+        if (!trimmed) {
+            alert("Team name cannot be empty.");
+            return;
+        }
+        try {
+            const { error } = await supabase.from("tournament_teams").update({ name: trimmed }).eq("id", renamingTeamId);
+            if (error) {
+                if ((error as { code?: string }).code === "23505") {
+                    alert("Another team in this tournament already uses that name.");
+                    return;
+                }
+                throw error;
+            }
+            setRenamingTeamId(null);
+            setRenameTeamDraft("");
+            await loadTeams();
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to rename team");
         }
     };
 
@@ -2725,11 +2753,57 @@ function TeamsTab({
                     if (tabTheme) {
                         return (
                             <div key={team.id} className={`rounded-xl border-2 overflow-hidden ${tabTheme.shell}`}>
-                                <div className={`px-4 py-3 ${tabTheme.headerBar}`}>
-                                    <h3 className={`font-semibold text-base ${tabTheme.title}`}>
-                                        {displayTeamCardTitle(team.name)}
-                                    </h3>
-                    </div>
+                                <div className={`px-4 py-3 ${tabTheme.headerBar} flex flex-wrap items-center gap-2`}>
+                                    {canEdit && renamingTeamId === team.id ? (
+                                        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 w-full">
+                                            <input
+                                                value={renameTeamDraft}
+                                                onChange={(e) => setRenameTeamDraft(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") void handleSaveRenameTeam();
+                                                }}
+                                                className="flex-1 min-w-[6rem] max-w-full px-2 py-1.5 rounded-md border border-white/40 bg-white text-gray-900 text-sm"
+                                                autoFocus
+                                                aria-label="Team name"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleSaveRenameTeam()}
+                                                className="shrink-0 rounded-md bg-white/20 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/30"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setRenamingTeamId(null);
+                                                    setRenameTeamDraft("");
+                                                }}
+                                                className="shrink-0 text-xs font-medium text-white/90 hover:underline"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-wrap items-center justify-between gap-2 min-w-0 w-full">
+                                            <h3 className={`font-semibold text-base min-w-0 truncate ${tabTheme.title}`}>
+                                                {displayTeamCardTitle(team.name)}
+                                            </h3>
+                                            {canEdit ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setRenamingTeamId(team.id);
+                                                        setRenameTeamDraft(team.name);
+                                                    }}
+                                                    className="shrink-0 text-xs font-medium text-white/90 hover:underline"
+                                                >
+                                                    Edit name
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                </div>
                                 <div className={`p-4 ${tabTheme.contentBg}`}>{memberBlock}</div>
                             </div>
                         );
@@ -2741,10 +2815,56 @@ function TeamsTab({
                             className="rounded-xl border border-gray-200 p-4"
                             style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
                         >
-                            <div className="flex items-center justify-between mb-3">
-                                <h3 className="font-semibold text-gray-900 text-base">
-                                    {displayTeamCardTitle(team.name)}
-                                </h3>
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 min-w-0">
+                                {canEdit && renamingTeamId === team.id ? (
+                                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0 w-full">
+                                        <input
+                                            value={renameTeamDraft}
+                                            onChange={(e) => setRenameTeamDraft(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") void handleSaveRenameTeam();
+                                            }}
+                                            className="flex-1 min-w-[6rem] max-w-full px-2 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-900 text-sm"
+                                            autoFocus
+                                            aria-label="Team name"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleSaveRenameTeam()}
+                                            className="shrink-0 rounded-lg bg-red-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-700"
+                                        >
+                                            Save
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setRenamingTeamId(null);
+                                                setRenameTeamDraft("");
+                                            }}
+                                            className="shrink-0 text-xs font-medium text-gray-600 hover:text-gray-900"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <h3 className="font-semibold text-gray-900 text-base min-w-0 truncate">
+                                            {displayTeamCardTitle(team.name)}
+                                        </h3>
+                                        {canEdit ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setRenamingTeamId(team.id);
+                                                    setRenameTeamDraft(team.name);
+                                                }}
+                                                className="shrink-0 text-xs font-medium text-red-600 hover:underline"
+                                            >
+                                                Edit name
+                                            </button>
+                                        ) : null}
+                                    </>
+                                )}
                             </div>
                             {memberBlock}
                         </div>
@@ -3530,7 +3650,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         match_date: "",
         match_number: "",
         umpire_name: "",
+        /** Optional doubles lineup — participant ids; all four or none. */
+        lineup_a1: "",
+        lineup_a2: "",
+        lineup_b1: "",
+        lineup_b2: "",
     });
+    type AddMatchRosterPlayer = { id: string; player_name: string; category: string | null; position: number };
+    const [addMatchRosters, setAddMatchRosters] = useState<Record<string, AddMatchRosterPlayer[]>>({});
     const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(12);
     const [scheduleFilterTeamId, setScheduleFilterTeamId] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
@@ -3880,6 +4007,45 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         }
     };
 
+    useEffect(() => {
+        const teamIds = [...new Set([newMatch.team_a_id, newMatch.team_b_id].filter(Boolean))];
+        if (teamIds.length === 0) {
+            setAddMatchRosters({});
+            return;
+        }
+        let cancelled = false;
+        void (async () => {
+            const { data, error } = await supabase
+                .from("tournament_team_members")
+                .select("team_id, position, participant:tournament_participants(id, player_name, category)")
+                .in("team_id", teamIds);
+            if (cancelled || error) return;
+            const next: Record<string, AddMatchRosterPlayer[]> = {};
+            teamIds.forEach((id) => {
+                next[id] = [];
+            });
+            for (const row of data || []) {
+                const raw = row.participant;
+                const p = Array.isArray(raw) ? raw[0] : raw;
+                if (!p || typeof p !== "object" || !next[row.team_id]) continue;
+                const part = p as { id: string; player_name?: string; category?: string | null };
+                next[row.team_id].push({
+                    id: part.id,
+                    player_name: part.player_name || "—",
+                    category: part.category ?? null,
+                    position: typeof row.position === "number" ? row.position : 999,
+                });
+            }
+            for (const id of teamIds) {
+                (next[id] || []).sort((a, b) => a.position - b.position || a.player_name.localeCompare(b.player_name));
+            }
+            if (!cancelled) setAddMatchRosters(next);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [newMatch.team_a_id, newMatch.team_b_id, supabase]);
+
     const handleAddMatch = async () => {
         if (!newMatch.team_a_id || !newMatch.team_b_id) {
             alert("Select both teams");
@@ -3888,6 +4054,56 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         if (newMatch.team_a_id === newMatch.team_b_id) {
             alert("Select two different teams");
             return;
+        }
+        const lineupIds = [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2].filter(Boolean);
+        const lineupCount = lineupIds.length;
+        if (lineupCount !== 0 && lineupCount !== 4) {
+            alert("For doubles lineups, pick all four players (two per team), or leave all four player fields empty.");
+            return;
+        }
+        if (lineupCount === 4) {
+            if (new Set(lineupIds).size !== 4) {
+                alert("Each of the four players must be different.");
+                return;
+            }
+            const ra = addMatchRosters[newMatch.team_a_id] || [];
+            const rb = addMatchRosters[newMatch.team_b_id] || [];
+            const okA = (pid: string) => ra.some((x) => x.id === pid);
+            const okB = (pid: string) => rb.some((x) => x.id === pid);
+            if (!okA(newMatch.lineup_a1) || !okA(newMatch.lineup_a2) || !okB(newMatch.lineup_b1) || !okB(newMatch.lineup_b2)) {
+                alert("Each player must belong to the team you selected for that side.");
+                return;
+            }
+        }
+        const rosterRowToSide = (teamId: string, participantId: string) => {
+            const list = addMatchRosters[teamId] || [];
+            const r = list.find((x) => x.id === participantId);
+            if (!r) throw new Error("missing roster");
+            const cat = (r.category && String(r.category).trim()) || "—";
+            return { id: r.id, name: r.player_name, category: cat };
+        };
+        let notesOut: string | null = null;
+        if (lineupCount === 4) {
+            const sideA = [
+                rosterRowToSide(newMatch.team_a_id, newMatch.lineup_a1),
+                rosterRowToSide(newMatch.team_a_id, newMatch.lineup_a2),
+            ];
+            const sideB = [
+                rosterRowToSide(newMatch.team_b_id, newMatch.lineup_b1),
+                rosterRowToSide(newMatch.team_b_id, newMatch.lineup_b2),
+            ];
+            const categoryKey = normalizeCategoryLabel(sideA[0].category) || "mixed";
+            const payload: DoublesLinePayload = {
+                type: "doubles_line",
+                categoryKey,
+                teamAId: newMatch.team_a_id,
+                teamBId: newMatch.team_b_id,
+                sideA,
+                sideB,
+            };
+            notesOut = setUmpireInNotes(`${NOTES_JSON_MARK}${JSON.stringify(payload)}`, newMatch.umpire_name);
+        } else {
+            notesOut = setUmpireInNotes(null, newMatch.umpire_name);
         }
         try {
             const storedUser = localStorage.getItem("sf:user");
@@ -3902,11 +4118,22 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 court_number: newMatch.court_number || null,
                 match_date: newMatch.match_date ? new Date(newMatch.match_date).toISOString() : null,
                 match_number: newMatch.match_number || null,
-                notes: setUmpireInNotes(null, newMatch.umpire_name),
+                notes: notesOut,
                 created_by,
             });
             if (error) throw error;
-            setNewMatch({ team_a_id: "", team_b_id: "", court_number: "", match_date: "", match_number: "", umpire_name: "" });
+            setNewMatch({
+                team_a_id: "",
+                team_b_id: "",
+                court_number: "",
+                match_date: "",
+                match_number: "",
+                umpire_name: "",
+                lineup_a1: "",
+                lineup_a2: "",
+                lineup_b1: "",
+                lineup_b2: "",
+            });
             setShowAdd(false);
             onRefresh();
             supabase
@@ -4354,7 +4581,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team A</label>
                             <select
                                 value={newMatch.team_a_id}
-                                onChange={(e) => setNewMatch((m) => ({ ...m, team_a_id: e.target.value }))}
+                                onChange={(e) =>
+                                    setNewMatch((m) => ({
+                                        ...m,
+                                        team_a_id: e.target.value,
+                                        lineup_a1: "",
+                                        lineup_a2: "",
+                                    }))
+                                }
                                 className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                             >
                                 <option value="">Select</option>
@@ -4367,7 +4601,14 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             <label className="block text-sm font-medium text-gray-700 mb-1">Team B</label>
                             <select
                                 value={newMatch.team_b_id}
-                                onChange={(e) => setNewMatch((m) => ({ ...m, team_b_id: e.target.value }))}
+                                onChange={(e) =>
+                                    setNewMatch((m) => ({
+                                        ...m,
+                                        team_b_id: e.target.value,
+                                        lineup_b1: "",
+                                        lineup_b2: "",
+                                    }))
+                                }
                                 className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-md text-sm"
                             >
                                 <option value="">Select</option>
@@ -4377,6 +4618,92 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             </select>
                                     </div>
                                 </div>
+                    {(newMatch.team_a_id || newMatch.team_b_id) && (
+                        <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 space-y-2">
+                            <p className="text-xs text-gray-700">
+                                <strong>Doubles lineup</strong> (optional): pick two players per team so the schedule and exports show who is playing.
+                                Leave all empty if you only know the team matchup for now.
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Team A players</p>
+                                    {(addMatchRosters[newMatch.team_a_id] || []).length === 0 && newMatch.team_a_id ? (
+                                        <p className="text-xs text-amber-800">No players on this team yet — add them on the Teams tab.</p>
+                                    ) : null}
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-1">Player 1</label>
+                                        <select
+                                            value={newMatch.lineup_a1}
+                                            onChange={(e) => setNewMatch((m) => ({ ...m, lineup_a1: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                            disabled={!newMatch.team_a_id}
+                                        >
+                                            <option value="">—</option>
+                                            {(addMatchRosters[newMatch.team_a_id] || []).map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.player_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-1">Player 2</label>
+                                        <select
+                                            value={newMatch.lineup_a2}
+                                            onChange={(e) => setNewMatch((m) => ({ ...m, lineup_a2: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                            disabled={!newMatch.team_a_id}
+                                        >
+                                            <option value="">—</option>
+                                            {(addMatchRosters[newMatch.team_a_id] || []).map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.player_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Team B players</p>
+                                    {(addMatchRosters[newMatch.team_b_id] || []).length === 0 && newMatch.team_b_id ? (
+                                        <p className="text-xs text-amber-800">No players on this team yet — add them on the Teams tab.</p>
+                                    ) : null}
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-1">Player 1</label>
+                                        <select
+                                            value={newMatch.lineup_b1}
+                                            onChange={(e) => setNewMatch((m) => ({ ...m, lineup_b1: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                            disabled={!newMatch.team_b_id}
+                                        >
+                                            <option value="">—</option>
+                                            {(addMatchRosters[newMatch.team_b_id] || []).map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.player_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-gray-600 mb-1">Player 2</label>
+                                        <select
+                                            value={newMatch.lineup_b2}
+                                            onChange={(e) => setNewMatch((m) => ({ ...m, lineup_b2: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                            disabled={!newMatch.team_b_id}
+                                        >
+                                            <option value="">—</option>
+                                            {(addMatchRosters[newMatch.team_b_id] || []).map((p) => (
+                                                <option key={p.id} value={p.id}>
+                                                    {p.player_name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
