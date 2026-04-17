@@ -433,19 +433,6 @@ export default function TournamentDetailPage() {
         );
     }
 
-    const sportIcons: { [key: string]: string } = {
-        cricket: "🏏",
-        football: "⚽",
-        badminton: "🏸",
-        tennis: "🎾",
-        "table-tennis": "🏓",
-        pickleball: "🏓",
-        padel: "🎾",
-        squash: "🏓",
-        billiards: "🎱",
-        basketball: "🏀",
-    };
-
     const getStatusColor = (status: string) => {
         switch (status) {
             case 'live': return 'text-green-600 bg-green-100';
@@ -476,10 +463,25 @@ export default function TournamentDetailPage() {
                     <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4 min-w-0">
                         <div className="flex-1 min-w-0 w-full">
                             <div className="flex items-start gap-3 mb-2 min-w-0">
-                                <span className="text-2xl sm:text-3xl md:text-4xl flex-shrink-0">{sportIcons[tournament.sport]}</span>
+                                <Image
+                                    src="/logoSponser1.png"
+                                    alt="Sponsor"
+                                    width={180}
+                                    height={180}
+                                    className="h-24 w-24 sm:h-28 sm:w-28 object-contain rounded-md flex-shrink-0 self-start -mt-2"
+                                />
                                 <div className="min-w-0 flex-1 overflow-hidden">
                                     <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 break-words line-clamp-2">{tournament.name}</h1>
-                                    <p className="text-gray-600 text-xs md:text-sm mt-1 line-clamp-2">{tournament.description || 'No description'}</p>
+                                    <div className="mt-1 flex items-center gap-2 min-w-0">
+                                        <p className="text-gray-600 text-xs md:text-sm line-clamp-2">{tournament.description || 'No description'}</p>
+                                        <Image
+                                            src="/logoSponser2.jpeg"
+                                            alt="Sponsor 2"
+                                            width={420}
+                                            height={100}
+                                            className="h-14 sm:h-[4.5rem] w-auto object-contain flex-shrink-0"
+                                        />
+                                    </div>
                                 </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-3 text-xs md:text-sm text-gray-600">
@@ -513,10 +515,8 @@ export default function TournamentDetailPage() {
                                 ? [
                                       { id: "overview", label: "Overview" },
                                       { id: "participants", label: `Participants (${participants.length})` },
-                                      { id: "teams", label: "Teams" },
                                       { id: "schedule", label: "Schedule" },
                                       { id: "results", label: "Results" },
-                                      { id: "team_stats", label: "Team Stats" },
                                       { id: "player_stats", label: "Player Stats" },
                                       ...(showSettingsTab ? [{ id: "settings" as const, label: "Settings" }] : []),
                                   ]
@@ -883,13 +883,84 @@ function ParticipantsTab({
             return;
         }
 
+        const target = participants.find((p) => p.id === participantId);
+        const oldName = (target?.player_name || '').trim();
+        const nextName = editName.trim();
+        if (!oldName) {
+            alert('Could not find participant to edit.');
+            return;
+        }
+        if (oldName === nextName) {
+            setEditingId(null);
+            setEditName('');
+            return;
+        }
+
+        const rewriteDoublesNotesName = (notes: string | null | undefined): string | null | undefined => {
+            const parsed = parseDoublesMatchNotes(notes);
+            if (!parsed) return notes;
+
+            let changed = false;
+            const sideA = parsed.sideA.map((s) => {
+                if (s.id !== participantId || s.name === nextName) return s;
+                changed = true;
+                return { ...s, name: nextName };
+            });
+            const sideB = parsed.sideB.map((s) => {
+                if (s.id !== participantId || s.name === nextName) return s;
+                changed = true;
+                return { ...s, name: nextName };
+            });
+            if (!changed) return notes;
+
+            const raw = (notes || '').trim();
+            const idx = raw.indexOf(NOTES_JSON_MARK);
+            const textPart = idx >= 0 ? raw.slice(0, idx).trim() : '';
+            const jsonPart = `${NOTES_JSON_MARK}${JSON.stringify({ ...parsed, sideA, sideB })}`;
+            const assembled = [textPart, jsonPart].filter(Boolean).join('\n').trim();
+            return assembled || null;
+        };
+
         try {
             const { error } = await supabase
                 .from('tournament_participants')
-                .update({ player_name: editName })
+                .update({ player_name: nextName })
                 .eq('id', participantId);
 
             if (error) throw error;
+
+            const { data: matchRows, error: matchErr } = await supabase
+                .from('matches')
+                .select('id, notes')
+                .eq('tournament_id', tournament.id);
+            if (matchErr) throw matchErr;
+
+            const matchIds = (matchRows || []).map((m) => m.id);
+            if (matchIds.length > 0) {
+                // Keep names in sync for score-entry rows that read from match_players.
+                if (target?.user_id) {
+                    const { error: eByUser } = await supabase
+                        .from('match_players')
+                        .update({ player_name: nextName })
+                        .eq('user_id', target.user_id)
+                        .in('match_id', matchIds);
+                    if (eByUser) throw eByUser;
+                }
+                const { error: eByName } = await supabase
+                    .from('match_players')
+                    .update({ player_name: nextName })
+                    .eq('player_name', oldName)
+                    .in('match_id', matchIds);
+                if (eByName) throw eByName;
+
+                // Keep doubles lineup JSON in notes aligned for schedule/results/export.
+                for (const m of matchRows || []) {
+                    const nextNotes = rewriteDoublesNotesName(m.notes);
+                    if (nextNotes === m.notes) continue;
+                    const { error: noteErr } = await supabase.from('matches').update({ notes: nextNotes }).eq('id', m.id);
+                    if (noteErr) throw noteErr;
+                }
+            }
 
             setEditingId(null);
             setEditName("");
@@ -1062,10 +1133,12 @@ function ParticipantsTab({
                                                         setEditName(participant.player_name);
                                                     }}
                                                 >
-                                                    {participant.player_name}
+                                                    {formatPlayerNameWithCategory(participant.player_name, participant.category)}
                                                 </span>
                                             ) : (
-                                                <span className="text-gray-900 font-semibold">{participant.player_name}</span>
+                                                <span className="text-gray-900 font-semibold">
+                                                    {formatPlayerNameWithCategory(participant.player_name, participant.category)}
+                                                </span>
                                             )}
                                         </td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-700 hidden sm:table-cell">{participant.phone || '-'}</td>
@@ -1305,7 +1378,9 @@ function GroupsTab({
                             <ul className="divide-y divide-gray-100">
                                 {g.members.map((p) => (
                                     <li key={p.id} className="px-4 py-2 flex flex-wrap items-baseline justify-between gap-2 text-sm">
-                                        <span className="font-medium text-gray-900">{p.player_name}</span>
+                                        <span className="font-medium text-gray-900">
+                                            {formatPlayerNameWithCategory(p.player_name, p.category)}
+                                        </span>
                                         <span className="text-gray-500 text-xs">
                                             Club: {p.club?.trim() ? p.club : "—"}
                                         </span>
@@ -2678,7 +2753,7 @@ function TeamsTab({
                                                 className="flex items-center justify-between text-sm text-gray-700 rounded-md border border-gray-200 bg-white px-2.5 py-1.5"
                                             >
                                     <span className="text-gray-900">
-                                        P{m.position}: {part?.player_name ?? "—"}
+                                        P{m.position}: {formatPlayerNameWithCategory(part?.player_name ?? "—", part?.category)}
                                     </span>
                                     {canEdit && (
                                     <button
@@ -2704,7 +2779,7 @@ function TeamsTab({
                                     <option value="">Select participant</option>
                                     {availableParticipants.map((p) => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.player_name}
+                                                    {formatPlayerNameWithCategory(p.player_name, p.category)}
                                                 </option>
                                     ))}
                                 </select>
@@ -2919,14 +2994,16 @@ function stripTrailingBracketLabel(teamName: string): string {
     return teamName.replace(/\s*\([^()]*\)\s*$/, "").trim();
 }
 
+function formatPlayerNameWithCategory(name: string, category?: string | null): string {
+    const nm = (name || "").trim() || "—";
+    const cat = (category || "").trim();
+    return cat ? `${nm} (${cat})` : nm;
+}
+
 function DoublesLineupBlocks({
-    titleA,
-    titleB,
     payload,
     winnerTeamId = null,
 }: {
-    titleA: string;
-    titleB: string;
     payload: DoublesLinePayload;
     /** When set, highlights the winning side (trophy, ring, badge). */
     winnerTeamId?: string | null;
@@ -2955,14 +3032,11 @@ function DoublesLineupBlocks({
                         : "rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-2"
                 }
             >
-                <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <div className="text-[10px] font-bold text-blue-900/80 uppercase tracking-wider">{titleA}</div>
-                    {winnerExtras(winA)}
-                </div>
+                {winA ? <div className="flex justify-end mb-1">{winnerExtras(true)}</div> : null}
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideA.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>
+                            <span className="font-semibold">{formatPlayerNameWithCategory(p.name, p.category)}</span>
                         </li>
                     ))}
                 </ul>
@@ -2977,14 +3051,11 @@ function DoublesLineupBlocks({
                         : "rounded-lg border border-amber-100 bg-amber-50/80 px-2.5 py-2"
                 }
             >
-                <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                    <div className="text-[10px] font-bold text-amber-900/80 uppercase tracking-wider">{titleB}</div>
-                    {winnerExtras(winB)}
-                </div>
+                {winB ? <div className="flex justify-end mb-1">{winnerExtras(true)}</div> : null}
                 <ul className="text-sm text-gray-900 space-y-1">
                     {payload.sideB.slice(0, 2).map((p) => (
                         <li key={p.id} className="leading-snug">
-                            <span className="font-semibold">{p.name}</span>
+                            <span className="font-semibold">{formatPlayerNameWithCategory(p.name, p.category)}</span>
                         </li>
                     ))}
                 </ul>
@@ -3563,12 +3634,7 @@ function ScheduleMatchCard({
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span className="text-base font-bold text-gray-900 leading-snug">{titleA}</span>
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">vs</span>
-                    <span className="text-base font-bold text-gray-900 leading-snug">{titleB}</span>
-                </div>
-                {doublesPayload ? <DoublesLineupBlocks titleA={titleA} titleB={titleB} payload={doublesPayload} /> : null}
+                {doublesPayload ? <DoublesLineupBlocks payload={doublesPayload} /> : null}
                 <div className="pt-2 border-t border-gray-100 space-y-0.5">
                     <div className="text-sm font-semibold text-gray-800">
                         {match.match_date
@@ -4641,7 +4707,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                             <option value="">—</option>
                                             {(addMatchRosters[newMatch.team_a_id] || []).map((p) => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.player_name}
+                                                    {formatPlayerNameWithCategory(p.player_name, p.category)}
                                                 </option>
                                             ))}
                                         </select>
@@ -4657,7 +4723,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                             <option value="">—</option>
                                             {(addMatchRosters[newMatch.team_a_id] || []).map((p) => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.player_name}
+                                                    {formatPlayerNameWithCategory(p.player_name, p.category)}
                                                 </option>
                                             ))}
                                         </select>
@@ -4679,7 +4745,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                             <option value="">—</option>
                                             {(addMatchRosters[newMatch.team_b_id] || []).map((p) => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.player_name}
+                                                    {formatPlayerNameWithCategory(p.player_name, p.category)}
                                                 </option>
                                             ))}
                                         </select>
@@ -4695,7 +4761,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                                             <option value="">—</option>
                                             {(addMatchRosters[newMatch.team_b_id] || []).map((p) => (
                                                 <option key={p.id} value={p.id}>
-                                                    {p.player_name}
+                                                    {formatPlayerNameWithCategory(p.player_name, p.category)}
                                                 </option>
                                             ))}
                                         </select>
@@ -5496,16 +5562,8 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                         <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0 flex-1">
-                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                        {doublesPayload ? (
-                                            <>
-                                        <span className="text-base font-bold text-gray-900 leading-snug">{na}</span>
-                                                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-1">
-                                                    vs
-                                                </span>
-                                        <span className="text-base font-bold text-gray-900 leading-snug">{nb}</span>
-                                            </>
-                                        ) : (
+                                    {!doublesPayload ? (
+                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                                             <>
                                                 <span
                                                     className={`text-base font-bold leading-snug inline-flex items-center gap-1.5 flex-wrap ${aWon ? "text-emerald-900" : "text-gray-900"}`}
@@ -5541,12 +5599,10 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                                     ) : null}
                                                 </span>
                                             </>
-                                        )}
-                                    </div>
+                                        </div>
+                                    ) : null}
                                     {doublesPayload ? (
                                         <DoublesLineupBlocks
-                                            titleA={na}
-                                            titleB={nb}
                                             payload={doublesPayload}
                                             winnerTeamId={isDone ? wId ?? null : null}
                                         />
@@ -6197,11 +6253,12 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                         {sorted.map((row, idx) => {
                             const rank = idx + 1;
                             const participantName =
-                                    (row.member as TournamentTeamMember & { participant?: Participant }).participant
-                                        ?.player_name ?? "—";
-                            const teamNameRaw =
-                                (row.member as TournamentTeamMember & { team?: TournamentTeam }).team?.name ?? "—";
-                            const teamName = stripTrailingBracketLabel(teamNameRaw);
+                                    formatPlayerNameWithCategory(
+                                        (row.member as TournamentTeamMember & { participant?: Participant }).participant
+                                            ?.player_name ?? "—",
+                                        (row.member as TournamentTeamMember & { participant?: Participant }).participant
+                                            ?.category ?? null,
+                                    );
                                 const pd = row.pointsDifference;
                                 const rankDisplay =
                                     rank === 1 ? (
@@ -6227,7 +6284,6 @@ function PlayerStatsTab({ tournament }: { tournament: Tournament }) {
                                 >
                                         <td className="py-2.5 px-4 text-sm sm:text-base">
                                             <div className="font-semibold text-gray-900">{participantName}</div>
-                                            <div className="text-xs text-gray-600 mt-0.5">{teamName}</div>
                                         </td>
                                         <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.played}</td>
                                         <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.won}</td>
@@ -6429,7 +6485,10 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                         <tbody>
                         {sorted.map((row, idx) => {
                             const rank = idx + 1;
-                            const participantName = row.participant.player_name || "—";
+                            const participantName = formatPlayerNameWithCategory(
+                                row.participant.player_name || "—",
+                                row.participant.category ?? null,
+                            );
                                 const club =
                                     row.participant.club != null && String(row.participant.club).trim() !== ""
                                 ? stripTrailingBracketLabel(String(row.participant.club).trim())

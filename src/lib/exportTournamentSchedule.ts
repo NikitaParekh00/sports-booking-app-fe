@@ -20,25 +20,31 @@ function getUmpireFromScheduleNotes(notes: string | null | undefined): string {
     return line.replace(/^ump(ire)?\s*:\s*/i, "").trim();
 }
 
-type LogoAssets = { normal: string };
+type LogoAssets = { normal: string; sponsor1: string; sponsor2: string };
 let logoDataUrlPromise: Promise<LogoAssets | null> | null = null;
 
 async function getSimplifitLogoDataUrl(): Promise<LogoAssets | null> {
     if (typeof window === "undefined") return null;
     if (!logoDataUrlPromise) {
-        logoDataUrlPromise = fetch("/logo.jpeg")
-            .then(async (res) => {
-                if (!res.ok) return null;
-                const blob = await res.blob();
-                const normal = await new Promise<string | null>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
-                    reader.onerror = () => resolve(null);
-                    reader.readAsDataURL(blob);
-                });
-                if (!normal) return null;
-
-                return { normal };
+        const toDataUrl = async (path: string): Promise<string | null> => {
+            const res = await fetch(path);
+            if (!res.ok) return null;
+            const blob = await res.blob();
+            return new Promise<string | null>((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : null);
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(blob);
+            });
+        };
+        logoDataUrlPromise = Promise.all([
+            toDataUrl("/logo.jpeg"),
+            toDataUrl("/logoSponser1.png"),
+            toDataUrl("/logoSponser2.jpeg"),
+        ])
+            .then(([normal, sponsor1, sponsor2]) => {
+                if (!normal || !sponsor1 || !sponsor2) return null;
+                return { normal, sponsor1, sponsor2 };
             })
             .catch(() => null);
     }
@@ -94,7 +100,7 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
     return sorted.map((m) => {
         const d = parseDoublesMatchNotes(m.notes ?? null);
         const lineups = d
-            ? formatDoublesPlayersLineCompact(d, { includeCategories: false })
+            ? formatDoublesPlayersLineCompact(d, { includeCategories: true })
             : (m.notes?.trim() || "—");
         const dateStr = m.match_date
             ? new Date(m.match_date).toLocaleString(undefined, {
@@ -192,17 +198,34 @@ export async function downloadSchedulePdf(
         return { fill: [219, 234, 254] as const, text: [30, 64, 175] as const };
     };
 
+    const topLogos = await getSimplifitLogoDataUrl();
+    const topLogoGap = 3;
+    const topSponsor1W = 13;
+    const topSponsor1H = 13;
+    const topSponsor2W = 34;
+    const topSponsor2H = 11;
+    const topLogosTotalW = topLogos ? topSponsor1W + topLogoGap + topSponsor2W : 0;
+    const titleMaxW = Math.max(40, maxW - (topLogosTotalW > 0 ? topLogosTotalW + 4 : 0));
+
+    if (topLogos) {
+        const logosY = margin - 0.5;
+        const rightStartX = pageW - margin - topLogosTotalW;
+        doc.addImage(topLogos.sponsor1, "PNG", rightStartX, logosY, topSponsor1W, topSponsor1H);
+        doc.addImage(topLogos.sponsor2, "JPEG", rightStartX + topSponsor1W + topLogoGap, logosY + 1, topSponsor2W, topSponsor2H);
+    }
+
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
-    doc.text(tournamentName, margin, y);
-    y += 7.5;
+    const titleLines = doc.splitTextToSize(tournamentName, titleMaxW);
+    doc.text(titleLines, margin, y);
+    y += titleLines.length * 5 + 2;
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     const sub =
         (filterLabel ? `${filterLabel} • ` : "") +
         (layoutByCourt ? "One section per court • " : "") +
         `${rows.length} match${rows.length === 1 ? "" : "es"} • ${new Date().toLocaleString()}`;
-    const subLines = doc.splitTextToSize(sub, maxW);
+    const subLines = doc.splitTextToSize(sub, titleMaxW);
     doc.text(subLines, margin, y);
     y += subLines.length * 4 + 4;
 
@@ -285,8 +308,7 @@ export async function downloadSchedulePdf(
 
     const drawMatchCard = (r: ScheduleExportRow, x: number, top: number, w: number, compact: boolean): number => {
         const pad = compact ? 2.2 : cardPad;
-        const meta = `${r.matchNumber} • ${r.dateStr}`;
-        const duel = `${r.teamA} vs ${r.teamB}`;
+        const meta = r.dateStr || "—";
         const statusLabel = (r.status || "upcoming").toLowerCase();
         const badge = badgeColors(statusLabel);
         const lineupSource = r.lineups === "—" ? "" : r.lineups;
@@ -321,11 +343,6 @@ export async function downloadSchedulePdf(
         doc.line(x + pad, top + 6.8, x + w - pad, top + 6.8);
 
         let lineY = top + 10.5;
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(compact ? 8.2 : 8.5);
-        doc.setTextColor(17, 24, 39);
-        doc.text(duel, x + pad, lineY);
-
         if (sideALines.length > 0 || sideBLines.length > 0) {
             lineY += compact ? 2.4 : 2.7;
 
