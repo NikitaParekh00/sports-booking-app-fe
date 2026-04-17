@@ -200,18 +200,21 @@ export async function downloadSchedulePdf(
 
     const topLogos = await getSimplifitLogoDataUrl();
     const topLogoGap = 3;
-    const topSponsor1W = 13;
-    const topSponsor1H = 13;
-    const topSponsor2W = 34;
-    const topSponsor2H = 11;
+    const topSponsor1W = 24;
+    const topSponsor1H = 24;
+    const topSponsor2W = 36;
+    const topSponsor2H = 13;
     const topLogosTotalW = topLogos ? topSponsor1W + topLogoGap + topSponsor2W : 0;
     const titleMaxW = Math.max(40, maxW - (topLogosTotalW > 0 ? topLogosTotalW + 4 : 0));
+    let topLogosBottomY = margin;
 
     if (topLogos) {
         const logosY = margin - 0.5;
         const rightStartX = pageW - margin - topLogosTotalW;
+        const sponsor2Y = logosY + (topSponsor1H - topSponsor2H) / 2;
         doc.addImage(topLogos.sponsor1, "PNG", rightStartX, logosY, topSponsor1W, topSponsor1H);
-        doc.addImage(topLogos.sponsor2, "JPEG", rightStartX + topSponsor1W + topLogoGap, logosY + 1, topSponsor2W, topSponsor2H);
+        doc.addImage(topLogos.sponsor2, "JPEG", rightStartX + topSponsor1W + topLogoGap, sponsor2Y, topSponsor2W, topSponsor2H);
+        topLogosBottomY = Math.max(logosY + topSponsor1H, sponsor2Y + topSponsor2H);
     }
 
     doc.setFontSize(16);
@@ -228,6 +231,7 @@ export async function downloadSchedulePdf(
     const subLines = doc.splitTextToSize(sub, titleMaxW);
     doc.text(subLines, margin, y);
     y += subLines.length * 4 + 4;
+    y = Math.max(y, topLogosBottomY + 3);
 
     doc.setDrawColor(200);
     doc.line(margin, y, pageW - margin, y);

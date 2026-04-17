@@ -3000,6 +3000,14 @@ function formatPlayerNameWithCategory(name: string, category?: string | null): s
     return cat ? `${nm} (${cat})` : nm;
 }
 
+function normalizeSetScoreToWinner(setScore: string, winnerOnSecondSide: boolean): string {
+    const parts = setScore.split("-").map((n) => parseInt(n.trim(), 10));
+    if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return setScore.trim();
+    const high = Math.max(parts[0], parts[1]);
+    const low = Math.min(parts[0], parts[1]);
+    return winnerOnSecondSide ? `${low}-${high}` : `${high}-${low}`;
+}
+
 function DoublesLineupBlocks({
     payload,
     winnerTeamId = null,
@@ -5065,7 +5073,14 @@ function BracketResultsTab({
     }, [resultMatchId, loading, bracketMatches, tournament.id, router, numSets]);
 
     const handleSaveResult = async (matchId: string) => {
-        const finalScoreStr = setScores.filter(Boolean).join(", ");
+        const match = matches.find((m) => m.id === matchId);
+        const winnerPlayer = match?.match_players?.find((p) => p.id === winnerPlayerId);
+        const winnerOnSecondSide = winnerPlayer?.team === "player_2";
+        const finalScoreStr = setScores
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .map((s) => normalizeSetScoreToWinner(s, winnerOnSecondSide))
+            .join(", ");
         try {
             const { error } = await supabase
                 .from("matches")
@@ -5307,19 +5322,12 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
             .then(({ data }) => setMatches(data || []));
     }, [tournament.id, supabase]);
 
-    const mapWinnerFirstSetToTeamOrder = useCallback((setScore: string, winnerOnTeamB: boolean): string => {
-        const parts = setScore.split("-").map((n) => parseInt(n.trim(), 10));
-        if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return setScore.trim();
-        if (!winnerOnTeamB) return `${parts[0]}-${parts[1]}`;
-        return `${parts[1]}-${parts[0]}`;
-    }, []);
-
     const handleSaveResult = async (m: TournamentMatch) => {
         const winnerOnTeamB = Boolean(winnerId && m.team_b_id && winnerId === m.team_b_id);
         const normalizedScores = setScores
             .map((s) => s.trim())
             .filter(Boolean)
-            .map((s) => mapWinnerFirstSetToTeamOrder(s, winnerOnTeamB));
+            .map((s) => normalizeSetScoreToWinner(s, winnerOnTeamB));
         const finalScoreStr = normalizedScores.join(", ");
         try {
             const { error } = await supabase
@@ -5553,7 +5561,28 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                     const na = displayTeamCardTitle(m.team_a?.name ?? teams.find((t) => t.id === m.team_a_id)?.name ?? "TBD");
                     const nb = displayTeamCardTitle(m.team_b?.name ?? teams.find((t) => t.id === m.team_b_id)?.name ?? "TBD");
                     const doublesPayload = parseDoublesMatchNotes(m.notes);
-                    const winnerRaw = (m.winner_team as { name?: string })?.name ?? teams.find((t) => t.id === m.winner_team_id)?.name ?? "—";
+                    const getSideLabelForTeam = (teamId?: string | null) => {
+                        if (!teamId) return "—";
+                        if (doublesPayload) {
+                            const side =
+                                teamId === doublesPayload.teamAId
+                                    ? doublesPayload.sideA
+                                    : teamId === doublesPayload.teamBId
+                                        ? doublesPayload.sideB
+                                        : [];
+                            if (side.length > 0) {
+                                return side
+                                    .slice(0, 2)
+                                    .map((p) => formatPlayerNameWithCategory(p.name, p.category))
+                                    .join(" & ");
+                            }
+                        }
+                        const teamName = (teamId === m.team_a_id ? m.team_a?.name : teamId === m.team_b_id ? m.team_b?.name : undefined)
+                            ?? teams.find((t) => t.id === teamId)?.name
+                            ?? "—";
+                        return displayTeamCardTitle(teamName);
+                    };
+                    const winnerRaw = getSideLabelForTeam(m.winner_team_id);
                     const isDone = match.status === "completed";
                     const wId = m.winner_team_id;
                     const aWon = Boolean(isDone && wId && wId === m.team_a_id);
@@ -5625,7 +5654,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                                 >
                                                     <option value="">Select winner</option>
                                                     {winnerOptions.filter((t): t is NonNullable<typeof t> => t != null).map((t) => (
-                                                        <option key={t.id} value={t.id}>{displayTeamCardTitle(t.name)}</option>
+                                                        <option key={t.id} value={t.id}>{getSideLabelForTeam(t.id)}</option>
                                                     ))}
                                                 </select>
                                                 <button type="button" onClick={() => handleSaveResult(m)} className="bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium">Save</button>
