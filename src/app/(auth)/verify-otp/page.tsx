@@ -113,8 +113,8 @@ function VerifyOtpContent() {
                 email: ''
             }));
 
-            // Success! Land on tournaments (not home / dashboard)
-            router.push("/scoring/tournaments");
+            // Success! Land on homepage (dashboard)
+            router.push("/dashboard");
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');
