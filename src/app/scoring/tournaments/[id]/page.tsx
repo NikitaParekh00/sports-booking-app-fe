@@ -2858,7 +2858,7 @@ function TeamsTab({
                                             >
                                                 Cancel
                                             </button>
-                                        </div>
+                    </div>
                                     ) : (
                                         <div className="flex flex-wrap items-center justify-between gap-2 min-w-0 w-full">
                                             <h3 className={`font-semibold text-base min-w-0 truncate ${tabTheme.title}`}>
@@ -4881,7 +4881,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         />
                     </div>
                 </div>
-                <p className="text-xs text-gray-600">
+                    <p className="text-xs text-gray-600">
                     Total matches: <span className="font-medium text-gray-800">{filteredMatches.length}</span>
                     {filteredMatches.length !== matches.length ? (
                         <span className="text-gray-500"> (filtered from {matches.length})</span>
@@ -5592,7 +5592,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                             <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="min-w-0 flex-1">
                                     {!doublesPayload ? (
-                                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                                             <>
                                                 <span
                                                     className={`text-base font-bold leading-snug inline-flex items-center gap-1.5 flex-wrap ${aWon ? "text-emerald-900" : "text-gray-900"}`}
@@ -5628,7 +5628,7 @@ function TeamResultsTab({ tournament, onRefresh, canEdit = false }: { tournament
                                                     ) : null}
                                                 </span>
                                             </>
-                                        </div>
+                                    </div>
                                     ) : null}
                                     {doublesPayload ? (
                                         <DoublesLineupBlocks
@@ -6562,8 +6562,8 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
                         })}
                         </tbody>
                     </table>
-                )}
-            </div>
+                                            )}
+                                        </div>
             <p className="text-xs text-gray-500">
                 PL = Played, W = Won, L = Lost, PTS = Points ({PLAYER_STANDINGS_POINTS_PER_WIN} per win), PD = Point difference
                 (for–against in completed sets). Tiebreaker: PTS then PD. Stats use completed singles matches; link match players to
@@ -7258,7 +7258,7 @@ function KnockoutSchedulerBlock({
                     <strong>Team stats</strong> or <strong>Player stats</strong> order (PTS, then PD). Semi-finals can use winners
                     from the previous KO round or a slice of the league table.
                 </p>
-            </div>
+                                                </div>
 
             {loading ? (
                 <p className="text-sm text-gray-500">Loading standings…</p>
@@ -7268,7 +7268,7 @@ function KnockoutSchedulerBlock({
                         <div>
                             <span className="font-semibold">Team table preview (top {Math.min(8, teamOrder.length)}):</span>{" "}
                             {teamOrder.slice(0, 8).map((t) => stripTrailingBracketLabel(t.name)).join(" · ") || "—"}
-                        </div>
+                                            </div>
                         <div>
                             <span className="font-semibold">Player leaderboard preview (top {Math.min(8, playerRowsSorted.length)}):</span>{" "}
                             {playerRowsSorted
@@ -7326,9 +7326,9 @@ function KnockoutSchedulerBlock({
                                     <option value="qf_winners">Winners of team QF (KO_T_QF_*)</option>
                                     <option value="standings">League standings (top N)</option>
                                 </select>
-                            </div>
+                                            </div>
                             {tSfSource === "standings" ? (
-                                <div>
+                                                        <div>
                                     <label className="block text-xs font-medium text-gray-600 mb-1">Top N from league</label>
                                     <input
                                         type="number"
@@ -7339,8 +7339,8 @@ function KnockoutSchedulerBlock({
                                         disabled={!canEdit}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
                                     />
-                                </div>
-                            ) : null}
+                                                        </div>
+                                                    ) : null}
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">SF — rank pairings</label>
                                 <input
@@ -7351,8 +7351,8 @@ function KnockoutSchedulerBlock({
                                     placeholder="1-3,2-4"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
                                 />
-                            </div>
-                        </div>
+                                                        </div>
+                                                        </div>
                         <button
                             type="button"
                             disabled={!canEdit || !!busy}
@@ -7370,7 +7370,7 @@ function KnockoutSchedulerBlock({
                         >
                             {busy === "team-f" ? "Scheduling…" : "Schedule team final (SF winners 1 vs 2)"}
                         </button>
-                    </div>
+                                                        </div>
 
                     <div className="space-y-4 border-t border-gray-100 pt-4">
                         <h4 className="font-medium text-gray-900">Player knockout (separate bracket)</h4>
@@ -7390,7 +7390,7 @@ function KnockoutSchedulerBlock({
                                     disabled={!canEdit}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
                                 />
-                            </div>
+                                                        </div>
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">QF — rank pairings</label>
                                 <input
@@ -7401,8 +7401,8 @@ function KnockoutSchedulerBlock({
                                     placeholder="1-5,2-6,3-7,4-8"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
                                 />
-                            </div>
-                        </div>
+                                                    </div>
+                                                </div>
                         <button
                             type="button"
                             disabled={!canEdit || !!busy}
@@ -7424,7 +7424,7 @@ function KnockoutSchedulerBlock({
                                     <option value="qf_winners">Winners of player QF (by team)</option>
                                     <option value="standings">Player leaderboard (top N)</option>
                                 </select>
-                            </div>
+                                        </div>
                             {pSfSource === "standings" ? (
                                 <div>
                                     <label className="block text-xs font-medium text-gray-600 mb-1">Top N players</label>
@@ -7437,7 +7437,7 @@ function KnockoutSchedulerBlock({
                                         disabled={!canEdit}
                                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
                                     />
-                                </div>
+                                    </div>
                             ) : null}
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-medium text-gray-600 mb-1">SF — rank pairings</label>
@@ -7449,8 +7449,8 @@ function KnockoutSchedulerBlock({
                                     placeholder="1-3,2-4"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono disabled:bg-gray-100"
                                 />
-                            </div>
-                        </div>
+                                    </div>
+                                </div>
                         <button
                             type="button"
                             disabled={!canEdit || !!busy}
@@ -7470,7 +7470,7 @@ function KnockoutSchedulerBlock({
                         </button>
                     </div>
                 </>
-            )}
+                )}
         </div>
     );
 }

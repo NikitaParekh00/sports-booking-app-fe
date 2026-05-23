@@ -18,7 +18,7 @@ interface Player {
     skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
     batting_hand?: string; // Right/Left
     bowling_hand?: string; // Right/Left
-    wing?: string; // Player wing/position
+    wing?: string; // Wicketkeeper (Yes/No)
     flat_no?: string; // Flat number
     phone?: string; // Player phone number
     category?: string; // Player category
@@ -5119,13 +5119,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     >
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
+                            <div className="flex justify-between text-base md:text-lg font-medium mb-2" style={{ color: '#9CA3AF' }}>
                                 <span>Player {originalIndex} of {totalPlayers}</span>
                                 <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
-                            <div className="w-full rounded-full h-3" style={{ backgroundColor: '#1F2937' }}>
+                            <div className="w-full rounded-full h-4" style={{ backgroundColor: '#1F2937' }}>
                                 <div
-                                    className="h-3 rounded-full transition-all duration-300"
+                                    className="h-4 rounded-full transition-all duration-300"
                                     style={{ backgroundColor: '#22C55E', width: `${(originalIndex / totalPlayers) * 100}%` }}
                                 ></div>
                             </div>
@@ -5204,18 +5204,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
+                                            {/* Age */}
                                             <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                                {currentPlayer.age && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Age: {currentPlayer.age}
-                                                    </span>
-                                                )}
-                                                {currentPlayer.category && currentPlayer.category !== 'Normal' && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Category: {currentPlayer.category}
-                                                    </span>
-                                                )}
+                                                <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                    Age: {currentPlayer.age ?? '—'}
+                                                </span>
                                                 {currentPlayer.skill && (
                                                     <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         {currentPlayer.skill}
@@ -5223,30 +5216,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                             </div>
 
-                                            {/* Basic Info Badges - Row 2: Bat */}
-                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                                {currentPlayer.batting_hand && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Bat: {currentPlayer.batting_hand}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Player Stats - Matches, Runs, Wickets Table */}
+                                            {/* Batting, bowling, wicketkeeper */}
                                             <div className="mb-3 overflow-x-auto">
                                                 <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Matches</th>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Runs</th>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wickets</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Batting</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Bowling</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wicketkeeper</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '0'}</td>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.wing || '0'}</td>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.flat_no || '0'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.batting_hand || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
@@ -5414,7 +5398,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </div>
                                     </div>
 
-                                    <div className="text-sm text-center mb-2" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-base md:text-lg text-center font-medium mb-2" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                 </div>
@@ -5468,13 +5452,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     <div className="space-y-4 pb-4">
                         {/* Progress */}
                         <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex justify-between text-sm mb-2" style={{ color: '#9CA3AF' }}>
+                            <div className="flex justify-between text-base md:text-lg font-medium mb-2" style={{ color: '#9CA3AF' }}>
                                 <span>Player {originalIndex} of {totalPlayers}</span>
                                 <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
-                            <div className="w-full rounded-full h-3" style={{ backgroundColor: '#1F2937' }}>
+                            <div className="w-full rounded-full h-4" style={{ backgroundColor: '#1F2937' }}>
                                 <div
-                                    className="h-3 rounded-full transition-all duration-300"
+                                    className="h-4 rounded-full transition-all duration-300"
                                     style={{ backgroundColor: '#22C55E', width: `${(originalIndex / totalPlayers) * 100}%` }}
                                 ></div>
                             </div>
@@ -5545,18 +5529,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Basic Info Badges - Row 1: Age, Category, and Skill */}
+                                            {/* Age */}
                                             <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                                {currentPlayer.age && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Age: {currentPlayer.age}
-                                                    </span>
-                                                )}
-                                                {currentPlayer.category && currentPlayer.category !== 'Normal' && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Category: {currentPlayer.category}
-                                                    </span>
-                                                )}
+                                                <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
+                                                    Age: {currentPlayer.age ?? '—'}
+                                                </span>
                                                 {currentPlayer.skill && (
                                                     <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                         {currentPlayer.skill}
@@ -5564,30 +5541,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 )}
                                             </div>
 
-                                            {/* Basic Info Badges - Row 2: Bat */}
-                                            <div className="flex flex-wrap gap-2 md:gap-3 justify-center md:justify-start mb-3">
-                                                {currentPlayer.batting_hand && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        Bat: {currentPlayer.batting_hand}
-                                                    </span>
-                                                )}
-                                            </div>
-
-                                            {/* Player Stats - Matches, Runs, Wickets Table */}
+                                            {/* Batting, bowling, wicketkeeper */}
                                             <div className="mb-3 overflow-x-auto">
-                                                <table className="w-full border-collapse" style={{ backgroundColor: '#1F2937', border: '2px solid #374151' }}>
+                                                <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Matches</th>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Runs</th>
-                                                            <th className="p-2 md:p-2.5 text-xs font-semibold uppercase tracking-wide text-left" style={{ color: '#9CA3AF', borderBottom: '1px solid #374151' }}>Wickets</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Batting</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Bowling</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wicketkeeper</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '0'}</td>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.wing || '0'}</td>
-                                                            <td className="p-2 md:p-2.5 text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.flat_no || '0'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.batting_hand || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
@@ -5722,7 +5690,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             +
                                         </button>
                                     </div>
-                                    <div className="text-center text-sm mb-4" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-center text-base md:text-lg font-medium mb-4" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                     {/* Custom Bid Input - Hidden on mobile */}
