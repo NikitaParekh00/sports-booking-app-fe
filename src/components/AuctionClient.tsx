@@ -5042,10 +5042,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     })()}
                                                     <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {/* Display category limits below Players */}
@@ -5302,7 +5302,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             −
                                         </button>
                                         <div className="flex flex-col items-center gap-2">
-                                            <div className="text-5xl font-bold" style={{ color: '#22C55E' }}>₹{formatIndianNumber(currentBid)}</div>
+                                            <div className="text-6xl md:text-7xl font-bold tracking-tight" style={{ color: '#22C55E' }}>₹{formatIndianNumber(currentBid)}</div>
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
@@ -5398,7 +5398,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </div>
                                     </div>
 
-                                    <div className="text-base md:text-lg text-center font-medium mb-2" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-lg md:text-xl text-center font-semibold mb-2" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                 </div>
@@ -5622,7 +5622,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             −
                                         </button>
                                         <div className="flex flex-col items-center gap-2">
-                                            <div className="text-4xl md:text-5xl font-bold" style={{ color: '#22C55E' }}>
+                                            <div className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight" style={{ color: '#22C55E' }}>
                                                 ₹{formatIndianNumber(currentBid)}
                                             </div>
                                             {(() => {
@@ -5690,7 +5690,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             +
                                         </button>
                                     </div>
-                                    <div className="text-center text-base md:text-lg font-medium mb-4" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-center text-lg md:text-xl font-semibold mb-4" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                     {/* Custom Bid Input - Hidden on mobile */}
@@ -5866,10 +5866,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     })()}
                                                     <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
@@ -6243,10 +6243,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             })()}
                                             <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                         </div>
-                                        <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                        <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                             Budget: ₹{formatIndianNumber(team.budget)}
                                         </div>
-                                        <div className={`${teams.length > 10 ? 'text-sm' : 'text-sm'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                        <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
                                             Players: {team.players.length}/{getPlayersPerTeam()}
                                         </div>
                                         {/* Display category limits below Players */}
