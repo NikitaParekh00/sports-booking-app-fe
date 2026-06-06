@@ -5209,28 +5209,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                     Age: {currentPlayer.age ?? '—'}
                                                 </span>
-                                                {currentPlayer.skill && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        {currentPlayer.skill}
-                                                    </span>
-                                                )}
                                             </div>
 
-                                            {/* Batting, bowling, wicketkeeper */}
+                                            {/* Gender, category, group */}
                                             <div className="mb-3 overflow-x-auto">
                                                 <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Batting</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Bowling</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wicketkeeper</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Gender</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Category</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Group</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.batting_hand || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.category || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.batting_hand || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
@@ -5534,28 +5529,23 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
                                                     Age: {currentPlayer.age ?? '—'}
                                                 </span>
-                                                {currentPlayer.skill && (
-                                                    <span className="px-4 py-2.5 rounded-lg text-sm md:text-base font-semibold" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #1F2937' }}>
-                                                        {currentPlayer.skill}
-                                                    </span>
-                                                )}
                                             </div>
 
-                                            {/* Batting, bowling, wicketkeeper */}
+                                            {/* Gender, category, group */}
                                             <div className="mb-3 overflow-x-auto">
                                                 <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Batting</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Bowling</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Wicketkeeper</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Gender</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Category</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Group</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.batting_hand || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.bowling_hand || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.wing || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.category || '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.batting_hand || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
