@@ -1159,6 +1159,8 @@ export type DoublesLinePayload = {
     teamBId: string;
     sideA: { id: string; name: string; category: string }[];
     sideB: { id: string; name: string; category: string }[];
+    /** Individual-tournament doubles: winning side id (e.g. side_a) when winner_team_id FK is unused. */
+    winnerSideTeamId?: string;
 };
 
 export function parseDoublesMatchNotes(notes: string | null | undefined): DoublesLinePayload | null {
@@ -1217,4 +1219,30 @@ export function formatDoublesMatchNotes(m: GeneratedDoublesMatch): string {
         sideB: m.sideB.map((p) => ({ id: p.participantId, name: p.name, category: p.category })),
     };
     return `${NOTES_JSON_MARK}${JSON.stringify(payload)}`;
+}
+
+/** Winning side for doubles: DB team FK when set, else notes payload (individual tournaments). */
+export function doublesWinnerTeamId(
+    notes: string | null | undefined,
+    winnerTeamId: string | null | undefined,
+): string | null {
+    const d = parseDoublesMatchNotes(notes);
+    if (d?.winnerSideTeamId) return d.winnerSideTeamId;
+    return winnerTeamId ?? null;
+}
+
+/** Persist winning side on individual doubles matches (avoids invalid winner_team_id UUID). */
+export function mergeDoublesWinnerIntoNotes(
+    notes: string | null | undefined,
+    winnerSideTeamId: string | null,
+): string | null {
+    const parsed = parseDoublesMatchNotes(notes);
+    if (!parsed) return notes?.trim() || null;
+    const idx = notes?.indexOf(NOTES_JSON_MARK) ?? -1;
+    const textPart = idx >= 0 ? notes!.slice(0, idx).trim() : (notes || "").trim();
+    const payload: DoublesLinePayload = { ...parsed };
+    if (winnerSideTeamId) payload.winnerSideTeamId = winnerSideTeamId;
+    else delete payload.winnerSideTeamId;
+    const jsonPart = `${NOTES_JSON_MARK}${JSON.stringify(payload)}`;
+    return [textPart, jsonPart].filter(Boolean).join("\n").trim() || null;
 }

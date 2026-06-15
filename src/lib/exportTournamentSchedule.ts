@@ -6,8 +6,8 @@ import {
     parseDoublesMatchNotes,
 } from "@/lib/generateBalancedDoublesSchedule";
 
-/** Text lines before `__JSON__` may include `Umpire: Name` or `UMP: Name` (matches schedule cards). */
-function getUmpireFromScheduleNotes(notes: string | null | undefined): string {
+/** Text lines before `__JSON__` may include `Umpire:`, `Resting:`, etc. */
+function getTextLineFromScheduleNotes(notes: string | null | undefined, prefix: RegExp): string {
     if (!notes) return "";
     const idx = notes.indexOf(NOTES_JSON_MARK);
     const textPart = (idx >= 0 ? notes.slice(0, idx) : notes).trim();
@@ -15,12 +15,20 @@ function getUmpireFromScheduleNotes(notes: string | null | undefined): string {
     const line = textPart
         .split("\n")
         .map((s) => s.trim())
-        .find((s) => /^ump(ire)?\s*:/i.test(s));
+        .find((s) => prefix.test(s));
     if (!line) return "";
-    return line.replace(/^ump(ire)?\s*:\s*/i, "").trim();
+    return line.replace(prefix, "").trim();
 }
 
-type LogoAssets = { normal: string; sponsor1: string; sponsor2: string };
+function getUmpireFromScheduleNotes(notes: string | null | undefined): string {
+    return getTextLineFromScheduleNotes(notes, /^ump(ire)?\s*:\s*/i);
+}
+
+function getRestingFromScheduleNotes(notes: string | null | undefined): string {
+    return getTextLineFromScheduleNotes(notes, /^resting\s*:\s*/i);
+}
+
+type LogoAssets = { normal: string };
 let logoDataUrlPromise: Promise<LogoAssets | null> | null = null;
 
 async function getSimplifitLogoDataUrl(): Promise<LogoAssets | null> {
@@ -37,15 +45,8 @@ async function getSimplifitLogoDataUrl(): Promise<LogoAssets | null> {
                 reader.readAsDataURL(blob);
             });
         };
-        logoDataUrlPromise = Promise.all([
-            toDataUrl("/logo.jpeg"),
-            toDataUrl("/logoSponser1.png"),
-            toDataUrl("/logoSponser2.jpeg"),
-        ])
-            .then(([normal, sponsor1, sponsor2]) => {
-                if (!normal || !sponsor1 || !sponsor2) return null;
-                return { normal, sponsor1, sponsor2 };
-            })
+        logoDataUrlPromise = toDataUrl("/logo.jpeg")
+            .then((normal) => (normal ? { normal } : null))
             .catch(() => null);
     }
     return logoDataUrlPromise;
@@ -66,6 +67,7 @@ export type MatchForScheduleExport = {
     court_number?: string | null;
     status?: string | null;
     notes?: string | null;
+    final_score?: string | null;
     team_a?: { name: string } | null;
     team_b?: { name: string } | null;
 };
@@ -78,6 +80,8 @@ export type ScheduleExportRow = {
     teamB: string;
     lineups: string;
     umpire: string;
+    resting: string;
+    finalScore: string;
     status: string;
 };
 
@@ -100,7 +104,7 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
     return sorted.map((m) => {
         const d = parseDoublesMatchNotes(m.notes ?? null);
         const lineups = d
-            ? formatDoublesPlayersLineCompact(d, { includeCategories: true })
+            ? formatDoublesPlayersLineCompact(d, { includeCategories: false })
             : (m.notes?.trim() || "—");
         const dateStr = m.match_date
             ? new Date(m.match_date).toLocaleString(undefined, {
@@ -114,6 +118,8 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
         const nameA = m.team_a?.name ?? "—";
         const nameB = m.team_b?.name ?? "—";
         const umpire = getUmpireFromScheduleNotes(m.notes ?? null);
+        const resting = getRestingFromScheduleNotes(m.notes ?? null);
+        const finalScore = (m.final_score && String(m.final_score).trim()) || "";
         return {
             matchNumber: m.match_number?.trim() || "—",
             dateStr,
@@ -122,6 +128,8 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
             teamB: formatTeamDisplayName(nameB),
             lineups,
             umpire,
+            resting,
+            finalScore,
             status: m.status?.trim() || "—",
         };
     });
@@ -142,17 +150,16 @@ export function downloadScheduleXlsx(
     resolveCourtDisplay?: (rawCourt: string) => string,
 ): void {
     const sheetRows = rows.map((r) => ({
-        "Match #": r.matchNumber,
         "Date & time": r.dateStr,
         Court: r.court === "—" ? "—" : resolveCourtDisplay ? resolveCourtDisplay(r.court) : r.court,
-        "Team A": r.teamA,
-        "Team B": r.teamB,
         Lineups: r.lineups,
         Umpire: r.umpire?.trim() || "—",
+        Resting: r.resting?.trim() || "—",
+        Score: r.finalScore?.trim() || "—",
         Status: r.status,
     }));
     const ws = XLSX.utils.json_to_sheet(sheetRows);
-    const colW = [{ wch: 10 }, { wch: 22 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 55 }, { wch: 22 }, { wch: 12 }];
+    const colW = [{ wch: 22 }, { wch: 10 }, { wch: 55 }, { wch: 22 }, { wch: 28 }, { wch: 12 }, { wch: 12 }];
     ws["!cols"] = colW;
     const wb = XLSX.utils.book_new();
     const sheetName = (filterLabel ? "Schedule filtered" : "Schedule").replace(/[:\\/?*[\]]/g, "-").slice(0, 31);
@@ -161,7 +168,7 @@ export function downloadScheduleXlsx(
     XLSX.writeFile(wb, fname);
 }
 
-/** `combined`: up to 3 court columns per page (default). `by_court`: one full-width court column per section, new page per court. */
+/** `combined` and `by_court` both render up to 3 court columns side by side per page. */
 export type SchedulePdfLayout = "combined" | "by_court";
 
 export type DownloadSchedulePdfOptions = {
@@ -186,10 +193,19 @@ export async function downloadSchedulePdf(
 
     /** Reserve bottom strip so match cards never overlap the “Created by” + logo footer. */
     const logoForFooter = await getSimplifitLogoDataUrl();
-    const footerLogoH = 20;
+    const footerLogoH = 12;
+    const footerLogoW = 34;
     /** First schedule page (title + grid): extra gap above footer. Continuation pages: minimal gap so 3 cards can fit per column. */
-    const footerClearanceFirstPageMm = 8;
-    const footerClearanceContinuationMm = 3;
+    const footerClearanceFirstPageMm = 5;
+    const footerClearanceContinuationMm = 2;
+
+    /** Match card typography (pt) — keep estimateCardHeight in sync with drawMatchCard. */
+    const fontDate = 9.5;
+    const fontLineup = 8.5;
+    const fontVs = 8;
+    const fontCardFooter = (compact: boolean) => (compact ? 7.5 : 8.5);
+    const fontCourtHeader = 10;
+    const lineStepMm = (compact: boolean) => (compact ? 3.5 : 3.9);
 
     const badgeColors = (status: string): { fill: [number, number, number]; text: [number, number, number] } => {
         const s = status.toLowerCase();
@@ -198,59 +214,14 @@ export async function downloadSchedulePdf(
         return { fill: [219, 234, 254] as const, text: [30, 64, 175] as const };
     };
 
-    const topLogos = await getSimplifitLogoDataUrl();
-    const topLogoGap = 3;
-    const topSponsor1W = 24;
-    const topSponsor1H = 24;
-    const topSponsor2W = 36;
-    const topSponsor2H = 13;
-    const topLogosTotalW = topLogos ? topSponsor1W + topLogoGap + topSponsor2W : 0;
-    const titleMaxW = Math.max(40, maxW - (topLogosTotalW > 0 ? topLogosTotalW + 4 : 0));
-    let topLogosBottomY = margin;
-
-    if (topLogos) {
-        const logosY = margin - 0.5;
-        const rightStartX = pageW - margin - topLogosTotalW;
-        const sponsor2Y = logosY + (topSponsor1H - topSponsor2H) / 2;
-        doc.addImage(topLogos.sponsor1, "PNG", rightStartX, logosY, topSponsor1W, topSponsor1H);
-        doc.addImage(topLogos.sponsor2, "JPEG", rightStartX + topSponsor1W + topLogoGap, sponsor2Y, topSponsor2W, topSponsor2H);
-        topLogosBottomY = Math.max(logosY + topSponsor1H, sponsor2Y + topSponsor2H);
-    }
+    const topLogosBottomY = margin;
 
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
+    const titleMaxW = maxW;
     const titleLines = doc.splitTextToSize(tournamentName, titleMaxW);
     doc.text(titleLines, margin, y);
     y += titleLines.length * 5 + 2;
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    const sub =
-        (filterLabel ? `${filterLabel} • ` : "") +
-        (layoutByCourt ? "One section per court • " : "") +
-        `${rows.length} match${rows.length === 1 ? "" : "es"} • ${new Date().toLocaleString()}`;
-    const subLines = doc.splitTextToSize(sub, titleMaxW);
-    doc.text(subLines, margin, y);
-    y += subLines.length * 4 + 4;
-    y = Math.max(y, topLogosBottomY + 3);
-
-    doc.setDrawColor(200);
-    doc.line(margin, y, pageW - margin, y);
-    y += 6;
-
-    const cardGap = 3;
-    const cardPad = 2.8;
-    const courtHeaderH = 7;
-    /** Narrower gutter → wider cards per court (helps lineup text fit on fewer lines). */
-    const colGap = 2.5;
-    /** Vertical space between blue and yellow lineup boxes (baseline for “vs” sits in this band). */
-    const vsBandCompactMm = 6.6;
-    const vsBandNormalMm = 8.2;
-    /** Y from card top to top of first lineup box (= duel baseline + gap under team names). Must match drawMatchCard. */
-    const lineupAreaTopFromCardTopMm = (compact: boolean) => 10.5 + (compact ? 2.4 : 2.7);
-    /** Space between bottom of last lineup box and umpire text. */
-    const umpireGapBelowLineupsMm = (compact: boolean) => (compact ? 2.8 : 3.4);
-    /** First schedule page (title + grid): 2 cards per column; later pages: 3 (room for footer / header). */
-    const maxCardsPerCourtAfterFirstPage = 3;
 
     const courtNum = (court: string) => {
         const n = parseInt(String(court || "").replace(/\D/g, ""), 10);
@@ -270,6 +241,37 @@ export async function downloadSchedulePdf(
         return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     });
 
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    const multiCourt = orderedCourtKeys.length > 1;
+    const sub =
+        (filterLabel ? `${filterLabel} • ` : "") +
+        (layoutByCourt && !multiCourt ? "One section per court • " : multiCourt ? "Courts side by side • " : "") +
+        `${rows.length} match${rows.length === 1 ? "" : "es"} • ${new Date().toLocaleString()}`;
+    const subLines = doc.splitTextToSize(sub, titleMaxW);
+    doc.text(subLines, margin, y);
+    y += subLines.length * 4 + 4;
+    y = Math.max(y, topLogosBottomY + 3);
+
+    doc.setDrawColor(200);
+    doc.line(margin, y, pageW - margin, y);
+    y += 6;
+
+    const cardGap = 3;
+    const cardPad = 2.8;
+    const courtHeaderH = 8;
+    /** Narrower gutter → wider cards per court (helps lineup text fit on fewer lines). */
+    const colGap = 2.5;
+    /** Vertical space between blue and yellow lineup boxes (baseline for “vs” sits in this band). */
+    const vsBandCompactMm = 6.6;
+    const vsBandNormalMm = 8.2;
+    /** Y from card top to top of first lineup box (= duel baseline + gap under team names). Must match drawMatchCard. */
+    const lineupAreaTopFromCardTopMm = (compact: boolean) => 11.2 + (compact ? 2.5 : 2.8);
+    /** Space between bottom of last lineup box and umpire text. */
+    const umpireGapBelowLineupsMm = (compact: boolean) => (compact ? 2.8 : 3.4);
+    /** First schedule page (title + grid): 2 cards per column; later pages: 3 (room for footer / header). */
+    const maxCardsPerCourtAfterFirstPage = 3;
+
     const splitLineupSides = (lineups: string): { sideA: string; sideB: string } => {
         const raw = (lineups || "").trim();
         if (!raw || raw === "—") return { sideA: "", sideB: "" };
@@ -284,8 +286,34 @@ export async function downloadSchedulePdf(
         const u = (r.umpire || "").trim();
         if (!u) return 0;
         const lines = doc.splitTextToSize(`Umpire: ${u}`, sideW);
-        const lineH = compact ? 3.15 : 3.45;
+        const lineH = compact ? 3.35 : 3.65;
         return (compact ? 1.6 : 2.1) + lines.length * lineH + (compact ? 1.4 : 2.2);
+    };
+
+    const restingBlockHeight = (r: ScheduleExportRow, sideW: number, compact: boolean): number => {
+        const rest = (r.resting || "").trim();
+        if (!rest) return 0;
+        const lines = doc.splitTextToSize(`Resting: ${rest}`, sideW);
+        const lineH = compact ? 3.3 : 3.55;
+        return (compact ? 1.4 : 1.8) + lines.length * lineH + (compact ? 1.2 : 1.6);
+    };
+
+    const scoreBlockHeight = (r: ScheduleExportRow, sideW: number, compact: boolean): number => {
+        const sc = (r.finalScore || "").trim();
+        if (!sc) return 0;
+        const lines = doc.splitTextToSize(`Score: ${sc}`, sideW);
+        const lineH = compact ? 3.3 : 3.55;
+        return (compact ? 1.4 : 1.8) + lines.length * lineH + (compact ? 1.2 : 1.6);
+    };
+
+    const extraFooterBlockHeight = (r: ScheduleExportRow, sideW: number, compact: boolean): number => {
+        const umpH = umpireBlockHeight(r, sideW, compact);
+        const restH = restingBlockHeight(r, sideW, compact);
+        const scoreH = scoreBlockHeight(r, sideW, compact);
+        const parts = [umpH, restH, scoreH].filter((h) => h > 0);
+        if (parts.length === 0) return 0;
+        const gap = compact ? 1.2 : 1.6;
+        return parts.reduce((a, b) => a + b, 0) + gap * (parts.length - 1);
     };
 
     const estimateCardHeight = (r: ScheduleExportRow, w: number, compact: boolean): number => {
@@ -295,18 +323,18 @@ export async function downloadSchedulePdf(
         const sideW = w - pad * 2 - 2;
         const sideALines = sideA ? doc.splitTextToSize(sideA, sideW).slice(0, 2) : [];
         const sideBLines = sideB ? doc.splitTextToSize(sideB, sideW).slice(0, 2) : [];
-        const lineStep = compact ? 3.15 : 3.4;
-        const boxPad = compact ? 2.85 : 3.35;
-        const sideAH = sideALines.length > 0 ? 3.2 + sideALines.length * lineStep + boxPad : 0;
-        const sideBH = sideBLines.length > 0 ? 3.2 + sideBLines.length * lineStep + boxPad : 0;
+        const lineStep = lineStepMm(compact);
+        const boxPad = compact ? 3.0 : 3.5;
+        const sideAH = sideALines.length > 0 ? 3.4 + sideALines.length * lineStep + boxPad : 0;
+        const sideBH = sideBLines.length > 0 ? 3.4 + sideBLines.length * lineStep + boxPad : 0;
         const vsGap =
             sideAH > 0 && sideBH > 0 ? (compact ? vsBandCompactMm : vsBandNormalMm) : 0;
-        const umpH = umpireBlockHeight(r, sideW, compact);
+        const extraH = extraFooterBlockHeight(r, sideW, compact);
         const hasLineups = sideALines.length > 0 || sideBLines.length > 0;
         const lineupTop = lineupAreaTopFromCardTopMm(compact);
         const bodyBelowTop =
             (hasLineups ? lineupTop + sideAH + vsGap + sideBH : 10.5 + 3.6) +
-            (umpH > 0 ? umpireGapBelowLineupsMm(compact) + umpH : 0);
+            (extraH > 0 ? umpireGapBelowLineupsMm(compact) + extraH : 0);
         return bodyBelowTop + pad;
     };
 
@@ -321,100 +349,115 @@ export async function downloadSchedulePdf(
         const sideALines = sideA ? doc.splitTextToSize(sideA, sideW).slice(0, 2) : [];
         const sideBLines = sideB ? doc.splitTextToSize(sideB, sideW).slice(0, 2) : [];
         const cardH = estimateCardHeight(r, w, compact);
-        const lineStep = compact ? 3.15 : 3.4;
-        const boxPad = compact ? 2.85 : 3.35;
+        const lineStep = lineStepMm(compact);
+        const boxPad = compact ? 3.0 : 3.5;
 
         doc.setDrawColor(229, 231, 235);
         doc.setFillColor(255, 255, 255);
         doc.roundedRect(x, top, w, cardH, 1.5, 1.5, "FD");
 
         doc.setFont("helvetica", "bold");
-        doc.setFontSize(8);
+        doc.setFontSize(fontDate);
         doc.setTextColor(17, 24, 39);
-        doc.text(meta, x + pad, top + 4.6);
+        doc.text(meta, x + pad, top + 5);
+
+        const headerBottom = top + 7.4;
 
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(7.5);
-        const badgeW = Math.max(16, doc.getTextWidth(statusLabel) + 5);
+        doc.setFontSize(fontLineup);
+        const badgeW = Math.max(18, doc.getTextWidth(statusLabel) + 5);
         const bx = x + w - pad - badgeW;
         const by = top + 1.8;
         doc.setFillColor(badge.fill[0], badge.fill[1], badge.fill[2]);
-        doc.roundedRect(bx, by, badgeW, 4.4, 1.2, 1.2, "F");
+        doc.roundedRect(bx, by, badgeW, 4.8, 1.2, 1.2, "F");
         doc.setTextColor(badge.text[0], badge.text[1], badge.text[2]);
-        doc.text(statusLabel, bx + badgeW / 2, by + 3, { align: "center" });
+        doc.text(statusLabel, bx + badgeW / 2, by + 3.2, { align: "center" });
 
         doc.setDrawColor(243, 244, 246);
-        doc.line(x + pad, top + 6.8, x + w - pad, top + 6.8);
+        doc.line(x + pad, headerBottom, x + w - pad, headerBottom);
 
-        let lineY = top + 10.5;
+        let lineY = top + 11.2;
         if (sideALines.length > 0 || sideBLines.length > 0) {
-            lineY += compact ? 2.4 : 2.7;
+            lineY += compact ? 2.5 : 2.8;
 
             const hasA = sideALines.length > 0;
             if (hasA) {
-                const aH = 3.2 + sideALines.length * lineStep + boxPad;
+                const aH = 3.4 + sideALines.length * lineStep + boxPad;
                 doc.setFillColor(239, 246, 255);
                 doc.setDrawColor(191, 219, 254);
                 doc.roundedRect(x + pad, lineY, sideW + 2, aH, 1.5, 1.5, "FD");
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(7.5);
+                doc.setFontSize(fontLineup);
                 doc.setTextColor(30, 58, 138);
-                doc.text(sideALines, x + pad + 1.2, lineY + 4);
+                doc.text(sideALines, x + pad + 1.2, lineY + 4.4);
                 lineY += aH;
             }
 
             if (hasA && sideBLines.length > 0) {
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(7);
+                doc.setFontSize(fontVs);
                 doc.setTextColor(156, 163, 175);
-                doc.text("vs", x + w / 2, lineY + (compact ? 3.1 : 3.6), { align: "center" });
+                doc.text("vs", x + w / 2, lineY + (compact ? 3.3 : 3.8), { align: "center" });
                 lineY += compact ? vsBandCompactMm : vsBandNormalMm;
             }
 
             if (sideBLines.length > 0) {
-                const bH = 3.2 + sideBLines.length * lineStep + boxPad;
+                const bH = 3.4 + sideBLines.length * lineStep + boxPad;
                 doc.setFillColor(255, 251, 235);
                 doc.setDrawColor(253, 230, 138);
                 doc.roundedRect(x + pad, lineY, sideW + 2, bH, 1.5, 1.5, "FD");
                 doc.setFont("helvetica", "normal");
-                doc.setFontSize(7.5);
+                doc.setFontSize(fontLineup);
                 doc.setTextColor(146, 64, 14);
-                doc.text(sideBLines, x + pad + 1.2, lineY + 4);
+                doc.text(sideBLines, x + pad + 1.2, lineY + 4.4);
             }
         }
 
         const ump = (r.umpire || "").trim();
-        if (ump) {
-            const umpLines = doc.splitTextToSize(`Umpire: ${ump}`, sideW);
-            const lineH = compact ? 3.15 : 3.45;
-            const blockH = (compact ? 1.6 : 2.1) + umpLines.length * lineH;
-            const hasLineups = sideALines.length > 0 || sideBLines.length > 0;
-            let uy0: number;
-            if (hasLineups) {
-                const l0 = lineupAreaTopFromCardTopMm(compact);
-                const aH =
-                    sideALines.length > 0 ? 3.2 + sideALines.length * lineStep + boxPad : 0;
-                const vsH =
-                    sideALines.length > 0 && sideBLines.length > 0
-                        ? compact
-                            ? vsBandCompactMm
-                            : vsBandNormalMm
-                        : 0;
-                const bH =
-                    sideBLines.length > 0 ? 3.2 + sideBLines.length * lineStep + boxPad : 0;
-                uy0 = top + l0 + aH + vsH + bH + umpireGapBelowLineupsMm(compact);
-            } else {
-                uy0 = top + cardH - pad - blockH + (compact ? 2.2 : 2.8);
-            }
+        const resting = (r.resting || "").trim();
+        const finalScore = (r.finalScore || "").trim();
+        const hasLineups = sideALines.length > 0 || sideBLines.length > 0;
+        let footerY: number;
+        if (hasLineups) {
+            const l0 = lineupAreaTopFromCardTopMm(compact);
+            const aH =
+                sideALines.length > 0 ? 3.4 + sideALines.length * lineStep + boxPad : 0;
+            const vsH =
+                sideALines.length > 0 && sideBLines.length > 0
+                    ? compact
+                        ? vsBandCompactMm
+                        : vsBandNormalMm
+                    : 0;
+            const bH =
+                sideBLines.length > 0 ? 3.4 + sideBLines.length * lineStep + boxPad : 0;
+            footerY = top + l0 + aH + vsH + bH + umpireGapBelowLineupsMm(compact);
+        } else {
+            footerY = top + cardH - pad - 8;
+        }
+
+        const drawFooterLine = (text: string, color: [number, number, number]) => {
+            const lines = doc.splitTextToSize(text, sideW);
+            const lineH = compact ? 3.3 : 3.55;
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(compact ? 6.8 : 7);
-            doc.setTextColor(75, 85, 99);
-            doc.text(umpLines, x + pad, uy0);
+            doc.setFontSize(fontCardFooter(compact));
+            doc.setTextColor(color[0], color[1], color[2]);
+            doc.text(lines, x + pad, footerY);
+            footerY += lines.length * lineH + (compact ? 1.2 : 1.6);
+        };
+
+        if (finalScore) {
+            drawFooterLine(`Score: ${finalScore}`, [22, 101, 52]);
+        }
+        if (resting) {
+            drawFooterLine(`Resting: ${resting}`, [107, 114, 128]);
+        }
+        if (ump) {
+            drawFooterLine(`Umpire: ${ump}`, [75, 85, 99]);
         }
         return cardH;
     };
 
-    const courtsPerRow = layoutByCourt ? 1 : Math.min(3, Math.max(1, orderedCourtKeys.length));
+    const courtsPerRow = Math.min(3, Math.max(1, orderedCourtKeys.length));
     const courtBatches: string[][] = [];
     for (let i = 0; i < orderedCourtKeys.length; i += courtsPerRow) {
         courtBatches.push(orderedCourtKeys.slice(i, i + courtsPerRow));
@@ -422,37 +465,6 @@ export async function downloadSchedulePdf(
 
     let isFirstSchedulePdfPage = true;
     for (let b = 0; b < courtBatches.length; b++) {
-        if (layoutByCourt) {
-            isFirstSchedulePdfPage = true;
-        }
-        if (layoutByCourt && b > 0) {
-            y = margin;
-            doc.setFontSize(14);
-            doc.setFont("helvetica", "bold");
-            doc.text(tournamentName, margin, y);
-            y += 6;
-            const ckOnly = courtBatches[b][0] ?? "—";
-            const courtTitle =
-                ckOnly === "—"
-                    ? "Unassigned"
-                    : resolveCourtHeader
-                      ? resolveCourtHeader(ckOnly)
-                      : `Court ${ckOnly}`;
-            doc.setFontSize(11);
-            doc.text(courtTitle, margin, y);
-            y += 5;
-            doc.setFont("helvetica", "normal");
-            doc.setFontSize(9);
-            const subCourt =
-                (filterLabel ? `${filterLabel} • ` : "") +
-                `${(groups.get(ckOnly) || []).length} match${(groups.get(ckOnly) || []).length === 1 ? "" : "es"} on this court`;
-            const subCourtLines = doc.splitTextToSize(subCourt, maxW);
-            doc.text(subCourtLines, margin, y);
-            y += subCourtLines.length * 4 + 3;
-            doc.setDrawColor(200);
-            doc.line(margin, y, pageW - margin, y);
-            y += 6;
-        }
         const batch = courtBatches[b];
         const colW = (maxW - colGap * (batch.length - 1)) / batch.length;
         const idxByCourt: Record<string, number> = {};
@@ -486,7 +498,7 @@ export async function downloadSchedulePdf(
                 doc.setDrawColor(229, 231, 235);
                 doc.roundedRect(x, topY, colW, courtHeaderH, 1.8, 1.8, "FD");
                 doc.setFont("helvetica", "bold");
-                doc.setFontSize(9);
+                doc.setFontSize(fontCourtHeader);
                 doc.setTextColor(31, 41, 55);
                 const headerLabel =
                     courtKey === "—"
@@ -531,16 +543,15 @@ export async function downloadSchedulePdf(
 
     if (logoForFooter) {
         const pages = doc.getNumberOfPages();
-        const footerLogoW = 57;
         for (let p = 1; p <= pages; p++) {
             doc.setPage(p);
             const footerY = pageH - margin - footerLogoH;
             const footerLogoX = pageW - margin - footerLogoW;
             doc.setFont("helvetica", "normal");
-            doc.setFontSize(16);
+            doc.setFontSize(8);
             doc.setTextColor(107, 114, 128);
-            const createdByY = footerY + footerLogoH / 2 + 2;
-            doc.text("Created by", footerLogoX - 36, createdByY);
+            const createdByY = footerY + footerLogoH / 2 + 1.5;
+            doc.text("Created by", footerLogoX - 22, createdByY);
             doc.addImage(logoForFooter.normal, "JPEG", footerLogoX, footerY, footerLogoW, footerLogoH);
         }
     }

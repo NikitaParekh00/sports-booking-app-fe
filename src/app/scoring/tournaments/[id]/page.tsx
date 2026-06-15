@@ -18,6 +18,8 @@ import {
     normalizeCategoryLabel,
     NOTES_JSON_MARK,
     parseDoublesMatchNotes,
+    doublesWinnerTeamId,
+    mergeDoublesWinnerIntoNotes,
     theoreticalDoublesMatchCountIfFullyMet,
 } from "@/lib/generateBalancedDoublesSchedule";
 import {
@@ -351,6 +353,7 @@ export default function TournamentDetailPage() {
         if (t === "results") setActiveTab("results");
         if (t === "schedule") setActiveTab("schedule");
         if (t === "player_stats") setActiveTab("player_stats");
+        if (t === "team_stats") setActiveTab("team_stats");
         if (t === "settings" && showSettingsTab) setActiveTab("settings");
     }, [searchParams, showSettingsTab]);
 
@@ -358,7 +361,10 @@ export default function TournamentDetailPage() {
         if (!showSettingsTab && activeTab === "settings") {
             setActiveTab("overview");
         }
-    }, [showSettingsTab, activeTab]);
+        if (!isTeamTournament && activeTab === "brackets") {
+            setActiveTab("overview");
+        }
+    }, [showSettingsTab, activeTab, isTeamTournament]);
 
     const handleStartTournament = async () => {
         if (!tournament) return;
@@ -460,47 +466,29 @@ export default function TournamentDetailPage() {
                     </button>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row items-start sm:items-start justify-between gap-4 min-w-0">
-                        <div className="flex-1 min-w-0 w-full">
-                            <div className="flex items-start gap-3 mb-2 min-w-0">
-                                <Image
-                                    src="/logoSponser1.png"
-                                    alt="Sponsor"
-                                    width={180}
-                                    height={180}
-                                    className="h-24 w-24 sm:h-28 sm:w-28 object-contain rounded-md flex-shrink-0 self-start -mt-2"
-                                />
-                                <div className="min-w-0 flex-1 overflow-hidden">
-                                    <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 break-words line-clamp-2">{tournament.name}</h1>
-                                    <div className="mt-1 flex items-center gap-2 min-w-0">
-                                        <p className="text-gray-600 text-xs md:text-sm line-clamp-2">{tournament.description || 'No description'}</p>
-                                        <Image
-                                            src="/logoSponser2.jpeg"
-                                            alt="Sponsor 2"
-                                            width={420}
-                                            height={100}
-                                            className="h-14 sm:h-[4.5rem] w-auto object-contain flex-shrink-0"
-                                        />
-                                    </div>
-                                </div>
+                    <div className="min-w-0">
+                        <div className="flex items-start justify-between gap-3 mb-2 min-w-0">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                                <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-gray-900 break-words line-clamp-2">{tournament.name}</h1>
+                                <p className="text-gray-600 text-xs md:text-sm mt-1 line-clamp-2">{tournament.description || 'No description'}</p>
                             </div>
-                            <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-3 text-xs md:text-sm text-gray-600">
-                                <div className="flex items-center gap-1">
-                                    <span>📍</span>
-                                    <span className="truncate">{tournament.location || 'No location'}</span>
-                            </div>
-                                <div className="flex items-center gap-1">
-                                    <span>📅</span>
-                                    <span>{new Date(tournament.start_date).toLocaleDateString()}</span>
-                        </div>
-                                <div className="flex items-center gap-1">
-                                    <span>👥</span>
-                                    <span>{participants.length} / {tournament.max_participants} participants</span>
-                            </div>
+                            <div className="flex items-center flex-shrink-0 pt-0.5">
+                                <Image src="/logo.jpeg" alt="Simplifit" width={260} height={72} className="h-10 sm:h-14 md:h-16 w-auto object-contain max-w-[120px] sm:max-w-[200px] md:max-w-[240px]" />
                             </div>
                         </div>
-                        <div className="flex items-center flex-shrink-0">
-                            <Image src="/logo.jpeg" alt="Simplifit" width={260} height={72} className="h-14 sm:h-16 w-auto object-contain max-w-[200px] sm:max-w-[240px]" />
+                        <div className="flex flex-wrap items-center gap-2 md:gap-4 mt-3 text-xs md:text-sm text-gray-600">
+                            <div className="flex items-center gap-1">
+                                <span>📍</span>
+                                <span className="truncate">{tournament.location || 'No location'}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span>📅</span>
+                                <span>{new Date(tournament.start_date).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <span>👥</span>
+                                <span>{participants.length} / {tournament.max_participants} participants</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -517,16 +505,16 @@ export default function TournamentDetailPage() {
                                       { id: "participants", label: `Participants (${participants.length})` },
                                       { id: "schedule", label: "Schedule" },
                                       { id: "results", label: "Results" },
+                                      { id: "team_stats", label: "Team Stats" },
                                       { id: "player_stats", label: "Player Stats" },
                                       ...(showSettingsTab ? [{ id: "settings" as const, label: "Settings" }] : []),
                                   ]
                                 : [
                                       { id: "overview", label: "Overview" },
                                       { id: "participants", label: `Participants (${participants.length})` },
-                                      { id: "groups", label: "Groups" },
-                                      { id: "brackets", label: "Brackets" },
                                       { id: "schedule", label: "Schedule" },
                                       { id: "results", label: "Results" },
+                                      { id: "team_stats", label: "Team Stats" },
                                       { id: "player_stats", label: "Player Stats" },
                                       ...(showSettingsTab ? [{ id: "settings" as const, label: "Settings" }] : []),
                                   ]
@@ -578,14 +566,6 @@ export default function TournamentDetailPage() {
                     />
                 )}
 
-                {activeTab === 'groups' && (
-                    <GroupsTab tournament={tournament} participants={participants} canEdit={canEdit} onRefresh={fetchTournamentData} />
-                )}
-
-                {activeTab === 'brackets' && (
-                    <BracketsTab tournament={tournament} participants={participants} canEdit={canEdit} onRefresh={fetchTournamentData} />
-                )}
-
                 {activeTab === "schedule" && !isTeamTournament && (
                     <IndividualScheduleTab
                         tournament={tournament}
@@ -613,8 +593,13 @@ export default function TournamentDetailPage() {
                         resultMatchId={searchParams.get("resultMatch")}
                     />
                 )}
-                {activeTab === 'team_stats' && isTeamTournament && (
-                    <TeamStatsTab tournament={tournament} canEdit={canEdit} />
+                {activeTab === 'team_stats' && (
+                    <TeamStatsTab
+                        tournament={tournament}
+                        participants={participants}
+                        isIndividualPoolMode={!isTeamTournament}
+                        canEdit={canEdit}
+                    />
                 )}
                 {activeTab === 'player_stats' && isTeamTournament && (
                     <PlayerStatsTab tournament={tournament} />
@@ -2028,6 +2013,7 @@ function individualMatchForExport(m: TournamentMatch) {
         court_number: m.court_number,
         status: m.status,
         notes: m.notes,
+        final_score: m.final_score,
         team_a: { name: p1?.player_name || "TBD" },
         team_b: { name: p2?.player_name || "TBD" },
     };
@@ -2070,6 +2056,12 @@ function IndividualScheduleTab({
         return drawMatches.filter((m) => {
             const tm = m as TournamentMatch;
             const names = (tm.match_players || []).map((x) => (x.player_name || "").toLowerCase());
+            const doubles = parseDoublesMatchNotes(tm.notes);
+            if (doubles) {
+                names.push(
+                    ...[...doubles.sideA, ...doubles.sideB].map((p) => (p.name || "").toLowerCase()),
+                );
+            }
             return names.some((n) => n.includes(q));
         });
     }, [drawMatches, scheduleFilterPlayer]);
@@ -2110,17 +2102,6 @@ function IndividualScheduleTab({
         }
         const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
         await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
-
-    const handleScheduleDownloadPdfByCourt = useCallback(async () => {
-        if (filteredMatches.length === 0) {
-            alert("No matches to export.");
-            return;
-        }
-        const rows = buildScheduleExportRows(filteredMatches.map((m) => individualMatchForExport(m as TournamentMatch)));
-        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport, {
-            layout: "by_court",
-        });
     }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     const handleAssignTimesToExistingMatches = async () => {
@@ -2231,7 +2212,7 @@ function IndividualScheduleTab({
             </div>
             )}
             {canEdit && drawMatches.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
+                <div className="hidden md:block rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                         <div className="min-w-0">
                             <label htmlFor="indiv-assign-session-start" className="block text-xs font-medium text-gray-600 mb-1">
@@ -2329,15 +2310,6 @@ function IndividualScheduleTab({
                                 className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
                             >
                                 Download .pdf
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => void handleScheduleDownloadPdfByCourt()}
-                                disabled={filteredMatches.length === 0}
-                                title="One full-width column per court, new page per court"
-                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-600 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                                PDF by court
                             </button>
                         </div>
                     </div>
@@ -3104,6 +3076,11 @@ function BracketSinglesLineupBlocks({
 }
 
 function participantIdsFromBracketMatch(m: TournamentMatch, participants: Participant[]): string[] {
+    const doubles = parseDoublesMatchNotes(m.notes);
+    if (doubles) {
+        const ids = [...doubles.sideA, ...doubles.sideB].map((p) => p.id).filter(Boolean);
+        return [...new Set(ids)];
+    }
     const ps = m.match_players || [];
     const ids: string[] = [];
     for (const mp of ps) {
@@ -3141,15 +3118,25 @@ function IndividualScheduleMatchCard({
     tournament: Tournament;
 }) {
     const m = match;
+    const doublesPayload = parseDoublesMatchNotes(m.notes);
     const p1 = m.match_players?.find((x) => x.team === "player_1");
     const p2 = m.match_players?.find((x) => x.team === "player_2");
     const n1 = p1?.player_name ?? "TBD";
     const n2 = p2?.player_name ?? "TBD";
     const umpireName = getUmpireFromNotes(m.notes);
+    const restingLine = (m.notes || "")
+        .split("\n")
+        .map((s) => s.trim())
+        .find((s) => /^resting\s*:/i.test(s));
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
-                <BracketSinglesLineupBlocks nameA={n1} nameB={n2} />
+                {doublesPayload ? (
+                    <DoublesLineupBlocks payload={doublesPayload} />
+                ) : (
+                    <BracketSinglesLineupBlocks nameA={n1} nameB={n2} />
+                )}
+                {restingLine ? <div className="text-xs text-gray-500 italic">{restingLine}</div> : null}
                 <div className="pt-2 border-t border-gray-100 space-y-1">
                     <div className="text-sm font-semibold text-gray-800">
                         {m.match_date
@@ -3821,17 +3808,6 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         }
         const rows = buildScheduleExportRows(filteredMatches);
         await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
-    }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
-
-    const handleScheduleDownloadPdfByCourt = useCallback(async () => {
-        if (filteredMatches.length === 0) {
-            alert("No matches to export.");
-            return;
-        }
-        const rows = buildScheduleExportRows(filteredMatches);
-        await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport, {
-            layout: "by_court",
-        });
     }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
     useEffect(() => {
@@ -4556,7 +4532,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 ) : <p className="text-sm text-gray-600">View only</p>}
                 </div>
             {canEdit && matches.length > 0 && (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
+                <div className="hidden md:block rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                         <div className="min-w-0">
                             <label htmlFor="assign-session-start" className="block text-xs font-medium text-gray-600 mb-1">
@@ -4906,15 +4882,6 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             >
                                 Download .pdf
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => void handleScheduleDownloadPdfByCourt()}
-                                disabled={filteredMatches.length === 0}
-                                title="One full-width column per court, new page per court"
-                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium border border-slate-600 text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                                PDF by court
-                            </button>
                         </div>
                         <p className="text-xs text-gray-600">
                             Total matches: <span className="font-medium text-gray-800">{filteredMatches.length}</span>
@@ -5065,7 +5032,12 @@ function BracketResultsTab({
 
         if (m && m.status !== "completed") {
             setEditingId(m.id);
-            setWinnerPlayerId(m.winner_id || "");
+            const doubles = parseDoublesMatchNotes(m.notes);
+            setWinnerPlayerId(
+                doubles
+                    ? doublesWinnerTeamId(m.notes, m.winner_team_id) || ""
+                    : m.winner_id || "",
+            );
             setSetScores(parseFinalScoreToSets(m.final_score, numSets));
         }
 
@@ -5074,8 +5046,11 @@ function BracketResultsTab({
 
     const handleSaveResult = async (matchId: string) => {
         const match = matches.find((m) => m.id === matchId);
-        const winnerPlayer = match?.match_players?.find((p) => p.id === winnerPlayerId);
-        const winnerOnSecondSide = winnerPlayer?.team === "player_2";
+        const doubles = parseDoublesMatchNotes(match?.notes);
+        const isIndividualDoubles = Boolean(doubles && !match?.team_a_id && !match?.team_b_id);
+        const winnerOnSecondSide = doubles
+            ? winnerPlayerId === doubles.teamBId
+            : match?.match_players?.find((p) => p.id === winnerPlayerId)?.team === "player_2";
         const finalScoreStr = setScores
             .map((s) => s.trim())
             .filter(Boolean)
@@ -5086,7 +5061,11 @@ function BracketResultsTab({
                 .from("matches")
                 .update({
                     status: "completed",
-                    winner_id: winnerPlayerId || null,
+                    winner_id: doubles ? null : winnerPlayerId || null,
+                    winner_team_id: isIndividualDoubles ? null : doubles ? winnerPlayerId || null : null,
+                    notes: isIndividualDoubles
+                        ? mergeDoublesWinnerIntoNotes(match?.notes, winnerPlayerId || null)
+                        : match?.notes ?? null,
                     final_score: finalScoreStr || null,
                     completed_at: new Date().toISOString(),
                 })
@@ -5105,6 +5084,9 @@ function BracketResultsTab({
 
     const handleResetMatch = async (matchId: string) => {
         if (!confirm("Clear this result and set the match back to upcoming?")) return;
+        const match = matches.find((m) => m.id === matchId);
+        const doubles = parseDoublesMatchNotes(match?.notes);
+        const isIndividualDoubles = Boolean(doubles && !match?.team_a_id && !match?.team_b_id);
         try {
             const { error } = await supabase
                 .from("matches")
@@ -5112,6 +5094,7 @@ function BracketResultsTab({
                     status: "upcoming",
                     winner_id: null,
                     winner_team_id: null,
+                    notes: isIndividualDoubles ? mergeDoublesWinnerIntoNotes(match?.notes, null) : match?.notes ?? null,
                     final_score: null,
                     completed_at: null,
                 })
@@ -5132,12 +5115,107 @@ function BracketResultsTab({
 
     const startEdit = (m: TournamentMatch) => {
         setEditingId(m.id);
-        setWinnerPlayerId(m.winner_id || "");
+        const doubles = parseDoublesMatchNotes(m.notes);
+        setWinnerPlayerId(
+            doubles ? doublesWinnerTeamId(m.notes, m.winner_team_id) || "" : m.winner_id || "",
+        );
         setSetScores(parseFinalScoreToSets(m.final_score, numSets));
     };
 
+    const doublesSideLabel = (payload: DoublesLinePayload, teamId: string) =>
+        (teamId === payload.teamAId ? payload.sideA : payload.sideB)
+            .slice(0, 2)
+            .map((p) => formatPlayerNameWithCategory(p.name, p.category))
+            .join(" & ");
+
     const sidePlayer = (m: TournamentMatch, side: "player_1" | "player_2") =>
         m.match_players?.find((x) => x.team === side);
+
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState<"all" | "upcoming" | "live" | "completed">("all");
+    const [dayFilter, setDayFilter] = useState("all");
+    const [courtFilter, setCourtFilter] = useState("all");
+    const [timeFilter, setTimeFilter] = useState("all");
+
+    const resultsSessionDayOptions = useMemo(() => {
+        const dayKeys = sortScheduleDayKeys(
+            [...new Set(bracketMatches.map((m) => scheduleMatchDayKey(m as TournamentMatch)))].filter((k) => k !== "unscheduled"),
+        );
+        return dayKeys.map((key, idx) => ({ key, label: `Day ${idx + 1}` }));
+    }, [bracketMatches]);
+
+    const courtKeyForMatch = useCallback((m: TournamentMatch): string => {
+        const raw = String(m.court_number ?? "").trim();
+        if (!raw) return "none";
+        const digits = raw.replace(/\D/g, "");
+        return digits || raw;
+    }, []);
+
+    const courtLabelForKey = useCallback(
+        (k: string): string => {
+            if (k === "none") return "No court";
+            return courtDisplayLabelForKey(tournament, k);
+        },
+        [tournament],
+    );
+
+    const courtOptions = useMemo(() => {
+        const uniq = Array.from(new Set(bracketMatches.map((m) => courtKeyForMatch(m))));
+        const withCourt = uniq.filter((k) => k !== "none").sort((a, b) => {
+            const an = parseInt(a, 10);
+            const bn = parseInt(b, 10);
+            if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+            return a.localeCompare(b, undefined, { sensitivity: "base" });
+        });
+        return uniq.includes("none") ? [...withCourt, "none"] : withCourt;
+    }, [bracketMatches, courtKeyForMatch]);
+
+    const timeKeyForMatch = useCallback((m: TournamentMatch): string => {
+        if (!m.match_date) return "unscheduled";
+        const d = new Date(m.match_date);
+        if (Number.isNaN(d.getTime())) return "unscheduled";
+        return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    }, []);
+
+    const timeLabelForKey = useCallback((k: string): string => {
+        if (k === "unscheduled") return "No time";
+        const [hh, mm] = k.split(":").map((v) => parseInt(v, 10));
+        const d = new Date(2000, 0, 1, Number.isFinite(hh) ? hh : 0, Number.isFinite(mm) ? mm : 0);
+        return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    }, []);
+
+    const timeOptions = useMemo(() => {
+        const uniq = Array.from(new Set(bracketMatches.map((m) => timeKeyForMatch(m))));
+        const withTime = uniq.filter((k) => k !== "unscheduled").sort();
+        return uniq.includes("unscheduled") ? [...withTime, "unscheduled"] : withTime;
+    }, [bracketMatches, timeKeyForMatch]);
+
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const filteredMatches = useMemo(() => {
+        return bracketMatches.filter((m) => {
+            if (statusFilter !== "all" && m.status !== statusFilter) return false;
+            if (dayFilter !== "all" && scheduleMatchDayKey(m as TournamentMatch) !== dayFilter) return false;
+            if (courtFilter !== "all" && courtKeyForMatch(m) !== courtFilter) return false;
+            if (timeFilter !== "all" && timeKeyForMatch(m) !== timeFilter) return false;
+            if (!normalizedSearch) return true;
+
+            const tm = m as TournamentMatch;
+            const singlesNames = (tm.match_players || []).map((x) => x.player_name || "").join(" ");
+            const doublesPayload = parseDoublesMatchNotes(tm.notes);
+            const doublesNames = doublesPayload
+                ? [...doublesPayload.sideA, ...doublesPayload.sideB].map((p) => p.name).join(" ")
+                : "";
+            const haystack = `${singlesNames} ${doublesNames} ${tm.court_number ?? ""}`.toLowerCase();
+            return haystack.includes(normalizedSearch);
+        });
+    }, [bracketMatches, statusFilter, dayFilter, courtFilter, courtKeyForMatch, timeFilter, timeKeyForMatch, normalizedSearch]);
+
+    const hasActiveFilters =
+        Boolean(normalizedSearch) ||
+        statusFilter !== "all" ||
+        dayFilter !== "all" ||
+        courtFilter !== "all" ||
+        timeFilter !== "all";
 
     return (
         <div className="space-y-4">
@@ -5146,10 +5224,88 @@ function BracketResultsTab({
                 {!canEdit && <p className="text-sm text-gray-600">View only</p>}
             </div>
             {canEdit && (
-                <p className="text-sm text-gray-600">
+                <p className="hidden md:block text-sm text-gray-600">
                     Record winner and set scores. Best of {numSets} sets — enter each set score (e.g. 21-10). Leave a set
                     blank if the match ended early (e.g. 2-0).
                 </p>
+            )}
+            {!loading && (
+                <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Search player name"
+                            className="w-full sm:max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        />
+                        <select
+                            value={dayFilter}
+                            onChange={(e) => setDayFilter(e.target.value)}
+                            aria-label="Day (session runs until 1:00 AM next calendar day)"
+                            className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="all">All days</option>
+                            {resultsSessionDayOptions.map((d) => (
+                                <option key={d.key} value={d.key}>
+                                    {d.label}
+                                </option>
+                            ))}
+                        </select>
+                        <select
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value as "all" | "upcoming" | "live" | "completed")}
+                            className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="all">All status</option>
+                            <option value="upcoming">Upcoming</option>
+                            <option value="live">Live</option>
+                            <option value="completed">Completed</option>
+                        </select>
+                        <select
+                            value={courtFilter}
+                            onChange={(e) => setCourtFilter(e.target.value)}
+                            className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="all">All courts</option>
+                            {courtOptions.map((k) => (
+                                <option key={k} value={k}>
+                                    {courtLabelForKey(k)}
+                                </option>
+                            ))}
+                        </select>
+                        <select
+                            value={timeFilter}
+                            onChange={(e) => setTimeFilter(e.target.value)}
+                            className="w-full sm:w-auto px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="all">All times</option>
+                            {timeOptions.map((k) => (
+                                <option key={k} value={k}>
+                                    {timeLabelForKey(k)}
+                                </option>
+                            ))}
+                        </select>
+                        {hasActiveFilters ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSearchQuery("");
+                                    setDayFilter("all");
+                                    setStatusFilter("all");
+                                    setCourtFilter("all");
+                                    setTimeFilter("all");
+                                }}
+                                className="w-full sm:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                Clear filters
+                            </button>
+                        ) : null}
+                        <p className="text-xs text-gray-600 sm:ml-auto">
+                            Showing {filteredMatches.length} of {bracketMatches.length}
+                        </p>
+                    </div>
+                </div>
             )}
             {loading ? (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 text-center text-gray-600 text-sm">
@@ -5157,25 +5313,39 @@ function BracketResultsTab({
                 </div>
             ) : (
                 <div className="space-y-2">
-                    {bracketMatches.map((match) => {
+                    {filteredMatches.map((match) => {
                         const m = match as TournamentMatch;
                         const isEditing = editingId === match.id;
+                        const doublesPayload = parseDoublesMatchNotes(m.notes);
                         const p1 = sidePlayer(m, "player_1");
                         const p2 = sidePlayer(m, "player_2");
                         const n1 = p1?.player_name ?? "TBD";
                         const n2 = p2?.player_name ?? "TBD";
                         const winnerP = m.match_players?.find((x) => x.id === m.winner_id);
-                        const winnerLine = winnerP?.player_name ?? "—";
+                        const winnerLine = doublesPayload
+                            ? (() => {
+                                  const w = doublesWinnerTeamId(m.notes, m.winner_team_id);
+                                  return w ? doublesSideLabel(doublesPayload, w) : "—";
+                              })()
+                            : winnerP?.player_name ?? "—";
                         const winnerOptions = [p1, p2].filter(Boolean) as MatchPlayer[];
 
                         return (
                             <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div className="min-w-0 flex-1">
-                                        <BracketSinglesLineupBlocks
-                                            nameA={n1}
-                                            nameB={n2}
-                                        />
+                                        {doublesPayload ? (
+                                            <DoublesLineupBlocks
+                                                payload={doublesPayload}
+                                                winnerTeamId={
+                                                    match.status === "completed"
+                                                        ? doublesWinnerTeamId(m.notes, m.winner_team_id)
+                                                        : null
+                                                }
+                                            />
+                                        ) : (
+                                            <BracketSinglesLineupBlocks nameA={n1} nameB={n2} />
+                                        )}
                                         {m.match_date || (m.court_number != null && String(m.court_number).trim() !== "") ? (
                                             <div className="text-sm font-semibold text-gray-800 mt-2">
                                                 {m.match_date
@@ -5191,9 +5361,6 @@ function BracketResultsTab({
                                                     ? ` · ${formatStoredCourtForDisplay(tournament, m.court_number)}`
                                                     : ""}
                                             </div>
-                                        ) : null}
-                                        {m.match_number ? (
-                                            <div className="text-xs text-gray-500 font-mono mt-1">{m.match_number}</div>
                                         ) : null}
                                         {match.status === "completed" && (
                                             <span className="text-gray-600 text-sm block sm:inline mt-2">
@@ -5212,11 +5379,22 @@ function BracketResultsTab({
                                                         className="px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                                                     >
                                                         <option value="">Select winner</option>
-                                                        {winnerOptions.map((p) => (
-                                                            <option key={p.id} value={p.id}>
-                                                                {p.player_name}
-                                                            </option>
-                                                        ))}
+                                                        {doublesPayload ? (
+                                                            <>
+                                                                <option value={doublesPayload.teamAId}>
+                                                                    {doublesSideLabel(doublesPayload, doublesPayload.teamAId)}
+                                                                </option>
+                                                                <option value={doublesPayload.teamBId}>
+                                                                    {doublesSideLabel(doublesPayload, doublesPayload.teamBId)}
+                                                                </option>
+                                                            </>
+                                                        ) : (
+                                                            winnerOptions.map((p) => (
+                                                                <option key={p.id} value={p.id}>
+                                                                    {p.player_name}
+                                                                </option>
+                                                            ))
+                                                        )}
                                                     </select>
                                                     <button
                                                         type="button"
@@ -5291,6 +5469,9 @@ function BracketResultsTab({
             )}
             {!loading && bracketMatches.length === 0 && (
                 <p className="text-gray-600 text-sm">No bracket matches yet. Generate brackets to create matches.</p>
+            )}
+            {!loading && bracketMatches.length > 0 && filteredMatches.length === 0 && (
+                <p className="text-gray-600 text-sm">No matches found for the selected filters.</p>
             )}
         </div>
     );
@@ -5793,6 +5974,18 @@ function GeneratePlayoffsBlock({
 const TEAM_STANDINGS_POINTS_PER_WIN = 20;
 const PLAYER_STANDINGS_POINTS_PER_WIN = 10;
 
+type IndividualDoublesPairStatsRow = {
+    team: TournamentTeam;
+    doublesPlayers: { id: string; name: string; category: string }[];
+    played: number;
+    won: number;
+    lost: number;
+    pointsFor: number;
+    pointsAgainst: number;
+    pts: number;
+    pointsDifference: number;
+};
+
 /** Participant IDs on the winning side from doubles lineup notes; empty if not attributable. */
 function winningParticipantIdsFromTeamDoublesMatch(m: TournamentMatch): string[] {
     const winner = m.winner_team_id;
@@ -5804,7 +5997,17 @@ function winningParticipantIdsFromTeamDoublesMatch(m: TournamentMatch): string[]
     return [];
 }
 
-function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament; canEdit?: boolean }) {
+function TeamStatsTab({
+    tournament,
+    participants = [],
+    isIndividualPoolMode = false,
+    canEdit = false,
+}: {
+    tournament: Tournament;
+    participants?: Participant[];
+    isIndividualPoolMode?: boolean;
+    canEdit?: boolean;
+}) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant })[]>([]);
@@ -5812,6 +6015,14 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
     const supabase = createClient();
 
     useEffect(() => {
+        if (isIndividualPoolMode) {
+            supabase
+                .from("matches")
+                .select("*, match_players(*)")
+                .eq("tournament_id", tournament.id)
+                .then(({ data }) => setMatches((data || []) as TournamentMatch[]));
+            return;
+        }
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
         supabase
             .from("tournament_team_members")
@@ -5829,47 +6040,84 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
             .eq("tournament_id", tournament.id)
             .eq("status", "completed")
             .then(({ data }) => setMatches(data || []));
-    }, [tournament.id, supabase]);
+    }, [tournament.id, supabase, isIndividualPoolMode]);
+
+    const individualPoolView = useMemo(() => {
+        if (!isIndividualPoolMode) return null;
+        const pairStats = computeIndividualDoublesPairStats(matches);
+        const withPts: IndividualDoublesPairStatsRow[] = [...pairStats.values()].map((s) => ({
+            team: {
+                id: s.pairKey,
+                tournament_id: tournament.id,
+                name: s.players.map((p) => (p.name || "—").trim()).join(" & "),
+                category: (s.players[0]?.category && String(s.players[0].category).trim()) || null,
+                short_name: null,
+                created_at: "",
+            } satisfies TournamentTeam,
+            doublesPlayers: s.players,
+            played: s.played,
+            won: s.won,
+            lost: s.lost,
+            pointsFor: s.pointsFor,
+            pointsAgainst: s.pointsAgainst,
+            pts: s.won * TEAM_STANDINGS_POINTS_PER_WIN,
+            pointsDifference: s.pointsFor - s.pointsAgainst,
+        }));
+        const sorted = [...withPts].sort((a, b) => {
+            if (a.pts !== b.pts) return b.pts - a.pts;
+            if ((b.pointsDifference ?? 0) !== (a.pointsDifference ?? 0)) {
+                return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
+            }
+            return a.team.name.localeCompare(b.team.name, undefined, { sensitivity: "base" });
+        });
+        return { sorted, memberRowsByTeam: {} as Record<string, { id: string; name: string; points: number }[]>, qualifiedForQF: [] as typeof withPts };
+    }, [isIndividualPoolMode, matches, tournament.id]);
 
     const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> = {};
-    teams.forEach((t) => { stats[t.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 }; });
-    matches.forEach((m) => {
-        const ma = (m as TournamentMatch).team_a_id;
-        const mb = (m as TournamentMatch).team_b_id;
-        const winner = (m as TournamentMatch).winner_team_id;
-        if (ma && stats[ma]) {
-            stats[ma].played += 1;
-            if (winner === ma) stats[ma].won += 1; else stats[ma].lost += 1;
-        }
-        if (mb && stats[mb]) {
-            stats[mb].played += 1;
-            if (winner === mb) stats[mb].won += 1; else stats[mb].lost += 1;
-        }
-        const score = (m as TournamentMatch).final_score;
-        if (score && typeof score === "string") {
-            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
-            let pfA = 0, pfB = 0;
-            sets.forEach((setStr) => {
-                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
-                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                    pfA += parts[0];
-                    pfB += parts[1];
-                }
-            });
-            if (ma && stats[ma]) { stats[ma].pointsFor += pfA; stats[ma].pointsAgainst += pfB; }
-            if (mb && stats[mb]) { stats[mb].pointsFor += pfB; stats[mb].pointsAgainst += pfA; }
-        }
-    });
-    const withPts = teams.map((t) => ({
-        team: t,
-        ...stats[t.id],
-        pts: stats[t.id].won * TEAM_STANDINGS_POINTS_PER_WIN,
-        pointsDifference: stats[t.id].pointsFor - stats[t.id].pointsAgainst,
-    }));
-    const sorted = withPts.sort((a, b) => {
-        if (a.pts !== b.pts) return b.pts - a.pts;
-        return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
-    });
+    if (!isIndividualPoolMode) {
+        teams.forEach((t) => { stats[t.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 }; });
+        matches.forEach((m) => {
+            const ma = (m as TournamentMatch).team_a_id;
+            const mb = (m as TournamentMatch).team_b_id;
+            const winner = (m as TournamentMatch).winner_team_id;
+            if (ma && stats[ma]) {
+                stats[ma].played += 1;
+                if (winner === ma) stats[ma].won += 1; else stats[ma].lost += 1;
+            }
+            if (mb && stats[mb]) {
+                stats[mb].played += 1;
+                if (winner === mb) stats[mb].won += 1; else stats[mb].lost += 1;
+            }
+            const score = (m as TournamentMatch).final_score;
+            if (score && typeof score === "string") {
+                const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+                let pfA = 0, pfB = 0;
+                sets.forEach((setStr) => {
+                    const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        pfA += parts[0];
+                        pfB += parts[1];
+                    }
+                });
+                if (ma && stats[ma]) { stats[ma].pointsFor += pfA; stats[ma].pointsAgainst += pfB; }
+                if (mb && stats[mb]) { stats[mb].pointsFor += pfB; stats[mb].pointsAgainst += pfA; }
+            }
+        });
+    }
+    const withPts = isIndividualPoolMode
+        ? []
+        : teams.map((t) => ({
+            team: t,
+            ...stats[t.id],
+            pts: stats[t.id].won * TEAM_STANDINGS_POINTS_PER_WIN,
+            pointsDifference: stats[t.id].pointsFor - stats[t.id].pointsAgainst,
+        }));
+    const sorted = isIndividualPoolMode
+        ? individualPoolView?.sorted ?? []
+        : withPts.sort((a, b) => {
+            if (a.pts !== b.pts) return b.pts - a.pts;
+            return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
+        });
 
     const byCategory: Record<string, typeof sorted> = {};
     sorted.forEach((row) => {
@@ -5889,16 +6137,22 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
         .map((cat) => byCategory[cat].find((r) => r.played >= 1 && r.won >= 1))
         .filter((r): r is NonNullable<typeof r> => Boolean(r));
     const needEightQF = 8;
-    const qualifiedForQF = [...topPerCategory];
-    if (qualifiedForQF.length < needEightQF && eligible.length > topPerCategory.length) {
-        const alreadyIn = new Set(qualifiedForQF.map((r) => r.team.id));
-        const rest = eligible.filter((r) => !alreadyIn.has(r.team.id));
-        for (let i = 0; i < rest.length && qualifiedForQF.length < needEightQF; i++) {
-            qualifiedForQF.push(rest[i]);
-        }
-    }
+    const qualifiedForQF = isIndividualPoolMode
+        ? []
+        : (() => {
+            const q = [...topPerCategory];
+            if (q.length < needEightQF && eligible.length > topPerCategory.length) {
+                const alreadyIn = new Set(q.map((r) => r.team.id));
+                const rest = eligible.filter((r) => !alreadyIn.has(r.team.id));
+                for (let i = 0; i < rest.length && q.length < needEightQF; i++) {
+                    q.push(rest[i]);
+                }
+            }
+            return q;
+        })();
 
     const memberRowsByTeam = useMemo(() => {
+        if (isIndividualPoolMode) return individualPoolView?.memberRowsByTeam ?? {};
         const byTeam: Record<string, { id: string; name: string; points: number }[]> = {};
         const ptsByMemberId: Record<string, number> = {};
         members.forEach((m) => {
@@ -5928,20 +6182,34 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
             byTeam[tid].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
         });
         return byTeam;
-    }, [members, matches]);
+    }, [isIndividualPoolMode, individualPoolView, members, matches]);
 
     return (
         <div className="space-y-4">
-            <h2 className="text-xl font-semibold text-gray-900">Team standings</h2>
+            <h2 className="text-xl font-semibold text-gray-900">
+                {isIndividualPoolMode ? "Doubles team standings" : "Team standings"}
+            </h2>
             <p className="text-sm text-gray-600">
-                Ranked by PTS, then point difference (PD). {TEAM_STANDINGS_POINTS_PER_WIN} points per team win. Only teams with at
-                least one win can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF → Semis → Finals.
+                {isIndividualPoolMode ? (
+                    <>
+                        One row per doubles pair from the schedule. Ranked by PTS, then PD.{" "}
+                        {TEAM_STANDINGS_POINTS_PER_WIN} points per win.
+                    </>
+                ) : (
+                    <>
+                        Ranked by PTS, then point difference (PD). {TEAM_STANDINGS_POINTS_PER_WIN} points per team win. Only teams
+                        with at least one win can qualify. Top 1 per category (by PTS, PD) → QF; next best fill to 8. Then QF →
+                        Semis → Finals.
+                    </>
+                )}
             </p>
             <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
                 <table className="min-w-full overflow-hidden">
                     <thead className="bg-white border-b border-gray-200">
                         <tr>
-                            <th className="text-left py-2.5 px-4 text-xs font-medium uppercase tracking-wide text-gray-600">Team</th>
+                            <th className="text-left py-2.5 px-4 text-xs font-medium uppercase tracking-wide text-gray-600">
+                                {isIndividualPoolMode ? "Doubles team" : "Team"}
+                            </th>
                             <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">PL</th>
                             <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">W</th>
                             <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-wide text-gray-600">L</th>
@@ -5960,24 +6228,47 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
                                 : rank === 3 ? <span className="text-xl" title="3rd" aria-label="3rd">🥉</span>
                                 : <span className="text-gray-700">{rank}</span>;
                             const teamMembers = memberRowsByTeam[row.team.id] || [];
+                            const rowExpandable = !isIndividualPoolMode && teamMembers.length > 0;
+                            const poolDoublesPlayers = isIndividualPoolMode
+                                ? (row as IndividualDoublesPairStatsRow).doublesPlayers
+                                : null;
                             return (
                             <Fragment key={row.team.id}>
                                 <tr
-                                    className="border-t border-gray-200 cursor-pointer"
+                                    className={`border-t border-gray-200 ${rowExpandable ? "cursor-pointer" : ""}`}
                                     style={{ backgroundColor: idx % 2 === 0 ? "#FFFFFF" : "#FFF5F5" }}
-                                    onClick={() =>
-                                        setExpandedTeamIds((prev) => {
-                                            const next = new Set(prev);
-                                            if (next.has(row.team.id)) next.delete(row.team.id);
-                                            else next.add(row.team.id);
-                                            return next;
-                                        })
+                                    onClick={
+                                        rowExpandable
+                                            ? () =>
+                                                  setExpandedTeamIds((prev) => {
+                                                      const next = new Set(prev);
+                                                      if (next.has(row.team.id)) next.delete(row.team.id);
+                                                      else next.add(row.team.id);
+                                                      return next;
+                                                  })
+                                            : undefined
                                     }
                                 >
                                     <td className="py-2.5 px-4 text-sm sm:text-base font-semibold text-gray-900">
                                         <span className="inline-flex items-center gap-2">
-                                            <span className="text-xs text-gray-500">{isExpanded ? "▼" : "▶"}</span>
-                                            {stripTrailingBracketLabel(row.team.name)}
+                                            {rowExpandable ? (
+                                                <span className="text-xs text-gray-500">{isExpanded ? "▼" : "▶"}</span>
+                                            ) : null}
+                                            {poolDoublesPlayers ? (
+                                                <div className="rounded-lg border border-blue-100 bg-blue-50/80 px-2.5 py-2 max-w-xs">
+                                                    <ul className="text-sm text-gray-900 space-y-1">
+                                                        {poolDoublesPlayers.map((p) => (
+                                                            <li key={p.id} className="leading-snug">
+                                                                <span className="font-semibold">
+                                                                    {formatPlayerNameWithCategory(p.name, p.category)}
+                                                                </span>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            ) : (
+                                                stripTrailingBracketLabel(row.team.name)
+                                            )}
                                         </span>
                                         {isQualified && <span className="ml-2 text-red-600 text-xs font-medium">→ QF</span>}
                                     </td>
@@ -5988,7 +6279,7 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
                                     <td className="py-2.5 px-3 text-sm text-center text-gray-700">{row.pointsDifference != null ? (row.pointsDifference >= 0 ? `+${row.pointsDifference}` : String(row.pointsDifference)) : "—"}</td>
                                     <td className="py-2.5 px-3 text-sm text-center">{rankDisplay}</td>
                                 </tr>
-                                {isExpanded && (
+                                {rowExpandable && isExpanded && (
                                     <tr className="border-t border-gray-100 bg-white">
                                         <td colSpan={7} className="py-2.5 px-4">
                                             {teamMembers.length === 0 ? (
@@ -6013,12 +6304,21 @@ function TeamStatsTab({ tournament, canEdit = false }: { tournament: Tournament;
                 </table>
             </div>
             <p className="text-xs text-gray-500">
-                PL = Played, W = Won, L = Lost, PTS = Points ({TEAM_STANDINGS_POINTS_PER_WIN} per win), PD = Point difference
-                (for–against). Tiebreaker: PTS then PD. Expanded roster PTS = {PLAYER_STANDINGS_POINTS_PER_WIN} per win for players in
-                the recorded doubles lineup only.
+                {isIndividualPoolMode ? (
+                    <>
+                        PL = played, W = won, L = lost, PTS = points ({TEAM_STANDINGS_POINTS_PER_WIN} per win), PD = point
+                        difference (sets). Rank (#) follows PTS then PD.
+                    </>
+                ) : (
+                    <>
+                        PL = Played, W = Won, L = Lost, PTS = Points ({TEAM_STANDINGS_POINTS_PER_WIN} per win), PD = Point
+                        difference (for–against). Tiebreaker: PTS then PD. Expanded roster PTS = {PLAYER_STANDINGS_POINTS_PER_WIN}{" "}
+                        per win for players in the recorded doubles lineup only.
+                    </>
+                )}
             </p>
 
-            {canEdit && qualifiedForQF.length >= 4 && (
+            {canEdit && !isIndividualPoolMode && qualifiedForQF.length >= 4 && (
                 <GeneratePlayoffsBlock
                     tournament={tournament}
                     qualifiedTeams={qualifiedForQF.map((r) => r.team)}
@@ -6374,6 +6674,177 @@ function compareIndividualParticipantStatRows(
     return (a.participant.player_name || "").localeCompare(b.participant.player_name || "", undefined, { sensitivity: "base" });
 }
 
+function doublesPairKey(id1: string, id2: string): string {
+    return [id1, id2].sort().join("|");
+}
+
+type DoublesPairAccum = {
+    pairKey: string;
+    players: { id: string; name: string; category: string }[];
+    played: number;
+    won: number;
+    lost: number;
+    pointsFor: number;
+    pointsAgainst: number;
+};
+
+function registerDoublesPair(
+    map: Map<string, DoublesPairAccum>,
+    p1: { id: string; name: string; category: string },
+    p2: { id: string; name: string; category: string },
+): DoublesPairAccum {
+    const key = doublesPairKey(p1.id, p2.id);
+    let row = map.get(key);
+    if (!row) {
+        row = {
+            pairKey: key,
+            players: [p1, p2],
+            played: 0,
+            won: 0,
+            lost: 0,
+            pointsFor: 0,
+            pointsAgainst: 0,
+        };
+        map.set(key, row);
+    }
+    return row;
+}
+
+function computeIndividualDoublesPairStats(matches: TournamentMatch[]): Map<string, DoublesPairAccum> {
+    const map = new Map<string, DoublesPairAccum>();
+    for (const match of matches) {
+        const tm = match as TournamentMatch;
+        if (tm.team_a_id || tm.team_b_id) continue;
+        const doubles = parseDoublesMatchNotes(tm.notes);
+        if (!doubles) continue;
+        const [a1, a2] = doubles.sideA.slice(0, 2);
+        const [b1, b2] = doubles.sideB.slice(0, 2);
+        if (!a1?.id || !a2?.id || !b1?.id || !b2?.id) continue;
+
+        registerDoublesPair(map, a1, a2);
+        registerDoublesPair(map, b1, b2);
+
+        const winnerSide = doublesWinnerTeamId(tm.notes, tm.winner_team_id);
+        if (tm.status !== "completed" || !winnerSide) continue;
+
+        let pfA = 0;
+        let pfB = 0;
+        const score = tm.final_score;
+        if (score && typeof score === "string") {
+            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+            sets.forEach((setStr) => {
+                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    pfA += parts[0];
+                    pfB += parts[1];
+                }
+            });
+        }
+        const aWon = winnerSide === doubles.teamAId;
+        const rowA = map.get(doublesPairKey(a1.id, a2.id))!;
+        const rowB = map.get(doublesPairKey(b1.id, b2.id))!;
+        rowA.played += 1;
+        rowB.played += 1;
+        if (aWon) {
+            rowA.won += 1;
+            rowB.lost += 1;
+        } else {
+            rowB.won += 1;
+            rowA.lost += 1;
+        }
+        rowA.pointsFor += pfA;
+        rowA.pointsAgainst += pfB;
+        rowB.pointsFor += pfB;
+        rowB.pointsAgainst += pfA;
+    }
+    return map;
+}
+
+function computeIndividualParticipantStats(
+    participants: Participant[],
+    matches: TournamentMatch[],
+): Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> {
+    const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> =
+        {};
+    participants.forEach((p) => {
+        stats[p.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
+    });
+    for (const match of matches) {
+        const tm = match as TournamentMatch;
+        if (tm.team_a_id || tm.team_b_id) continue;
+        const doubles = parseDoublesMatchNotes(tm.notes);
+        const winnerSide = doubles ? doublesWinnerTeamId(tm.notes, tm.winner_team_id) : null;
+        if (doubles && winnerSide) {
+            const w = winnerSide;
+            let pfA = 0;
+            let pfB = 0;
+            const score = tm.final_score;
+            if (score && typeof score === "string") {
+                const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+                sets.forEach((setStr) => {
+                    const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                        pfA += parts[0];
+                        pfB += parts[1];
+                    }
+                });
+            }
+            const sideAIds = new Set(doubles.sideA.map((s) => s.id));
+            const sideBIds = new Set(doubles.sideB.map((s) => s.id));
+            const aWon = w === doubles.teamAId;
+            for (const pid of [...sideAIds, ...sideBIds]) {
+                if (!pid || !stats[pid]) continue;
+                stats[pid].played += 1;
+                const onA = sideAIds.has(pid);
+                if ((onA && aWon) || (!onA && !aWon)) stats[pid].won += 1;
+                else stats[pid].lost += 1;
+                if (onA) {
+                    stats[pid].pointsFor += pfA;
+                    stats[pid].pointsAgainst += pfB;
+                } else {
+                    stats[pid].pointsFor += pfB;
+                    stats[pid].pointsAgainst += pfA;
+                }
+            }
+            continue;
+        }
+        const p1 = tm.match_players?.find((x) => x.team === "player_1");
+        const p2 = tm.match_players?.find((x) => x.team === "player_2");
+        if (!p1 || !p2) continue;
+        const pid1 = participantIdForMatchPlayer(p1, participants);
+        const pid2 = participantIdForMatchPlayer(p2, participants);
+        const w = tm.winner_id;
+        let pf1 = 0;
+        let pf2 = 0;
+        const score = tm.final_score;
+        if (score && typeof score === "string") {
+            const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
+            sets.forEach((setStr) => {
+                const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
+                if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                    pf1 += parts[0];
+                    pf2 += parts[1];
+                }
+            });
+        }
+        if (pid1 && stats[pid1]) {
+            stats[pid1].played += 1;
+            if (w === p1.id) stats[pid1].won += 1;
+            else if (w && w === p2.id) stats[pid1].lost += 1;
+            stats[pid1].pointsFor += pf1;
+            stats[pid1].pointsAgainst += pf2;
+        }
+        if (pid2 && stats[pid2]) {
+            stats[pid2].played += 1;
+            if (w === p2.id) stats[pid2].won += 1;
+            else if (w && w === p1.id) stats[pid2].lost += 1;
+            stats[pid2].pointsFor += pf2;
+            stats[pid2].pointsAgainst += pf1;
+        }
+    }
+    return stats;
+}
+
 function IndividualPlayerStatsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [sortKey, setSortKey] = useState<PlayerStatsSortKey>("pts");
@@ -6389,48 +6860,7 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
     }, [tournament.id, supabase]);
 
     const rowsWithStats = useMemo(() => {
-        const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> =
-            {};
-        participants.forEach((p) => {
-            stats[p.id] = { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
-        });
-        for (const match of matches) {
-            const tm = match as TournamentMatch;
-            if (tm.team_a_id || tm.team_b_id) continue;
-            const p1 = tm.match_players?.find((x) => x.team === "player_1");
-            const p2 = tm.match_players?.find((x) => x.team === "player_2");
-            if (!p1 || !p2) continue;
-            const pid1 = participantIdForMatchPlayer(p1, participants);
-            const pid2 = participantIdForMatchPlayer(p2, participants);
-            const w = tm.winner_id;
-            let pf1 = 0;
-            let pf2 = 0;
-            const score = tm.final_score;
-            if (score && typeof score === "string") {
-                const sets = score.split(",").map((s) => s.trim()).filter(Boolean);
-                sets.forEach((setStr) => {
-                    const parts = setStr.split("-").map((n) => parseInt(n.trim(), 10));
-                    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-                        pf1 += parts[0];
-                        pf2 += parts[1];
-                    }
-                });
-            }
-            if (pid1 && stats[pid1]) {
-                stats[pid1].played += 1;
-                if (w === p1.id) stats[pid1].won += 1;
-                else if (w && w === p2.id) stats[pid1].lost += 1;
-                stats[pid1].pointsFor += pf1;
-                stats[pid1].pointsAgainst += pf2;
-            }
-            if (pid2 && stats[pid2]) {
-                stats[pid2].played += 1;
-                if (w === p2.id) stats[pid2].won += 1;
-                else if (w && w === p1.id) stats[pid2].lost += 1;
-                stats[pid2].pointsFor += pf2;
-                stats[pid2].pointsAgainst += pf1;
-            }
-        }
+        const stats = computeIndividualParticipantStats(participants, matches);
         return participants.map((p) => {
             const s = stats[p.id] || { played: 0, won: 0, lost: 0, pointsFor: 0, pointsAgainst: 0 };
             const pointsDifference = s.pointsFor - s.pointsAgainst;
