@@ -15,6 +15,7 @@ import {
     generateDoublesScheduleByCountsOnly,
     generateBalancedDoublesSchedule,
     formatDoublesMatchNotes,
+    formatDoublesPlayersLineCompact,
     normalizeCategoryLabel,
     NOTES_JSON_MARK,
     parseDoublesMatchNotes,
@@ -2042,7 +2043,32 @@ function IndividualScheduleTab({
     /** Optional: day 2 (and later days) session start; day 1 uses datetime-local above. */
     const [assignSessionDay2Time, setAssignSessionDay2Time] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
+    const [showAdd, setShowAdd] = useState(false);
+    const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+    const [newMatch, setNewMatch] = useState({
+        lineup_a1: "",
+        lineup_a2: "",
+        lineup_b1: "",
+        lineup_b2: "",
+        court_number: "",
+        match_date: "",
+        match_number: "",
+        umpire_name: "",
+    });
     const supabase = createClient();
+
+    const sortedParticipants = useMemo(
+        () =>
+            [...participants].sort((a, b) =>
+                (a.player_name || "").localeCompare(b.player_name || "", undefined, { numeric: true }),
+            ),
+        [participants],
+    );
+
+    const courtKeys = useMemo(
+        () => Array.from({ length: getCourtCount(tournament) }, (_, i) => String(i + 1)),
+        [tournament],
+    );
 
     const drawMatches = useMemo(
         () => matches.filter((m) => isIndividualDrawMatch(m as TournamentMatch)),
@@ -2203,12 +2229,258 @@ function IndividualScheduleTab({
         }
     };
 
+    const selectedLineupIds = useMemo(
+        () => new Set([newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2].filter(Boolean)),
+        [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2],
+    );
+
+    const handleAddMatch = async () => {
+        const lineupIds = [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2];
+        if (lineupIds.some((id) => !id)) {
+            alert("Select all four players — two per side.");
+            return;
+        }
+        if (new Set(lineupIds).size !== 4) {
+            alert("Each of the four players must be different.");
+            return;
+        }
+        const participantToSide = (id: string) => {
+            const p = participants.find((x) => x.id === id);
+            if (!p) throw new Error("missing participant");
+            const cat = (p.category && String(p.category).trim()) || "—";
+            return { id: p.id, name: p.player_name || "—", category: cat };
+        };
+        const sideA = [participantToSide(newMatch.lineup_a1), participantToSide(newMatch.lineup_a2)];
+        const sideB = [participantToSide(newMatch.lineup_b1), participantToSide(newMatch.lineup_b2)];
+        const categoryKey = normalizeCategoryLabel(sideA[0].category) || "mixed";
+        const payload: DoublesLinePayload = {
+            type: "doubles_line",
+            categoryKey,
+            teamAId: "side_a",
+            teamBId: "side_b",
+            sideA,
+            sideB,
+        };
+        const notesOut = setUmpireInNotes(`${NOTES_JSON_MARK}${JSON.stringify(payload)}`, newMatch.umpire_name);
+        const addCount = matches.filter((m) => (m.match_number || "").startsWith("ADD-")).length;
+        const matchNumber = newMatch.match_number.trim() || `ADD-${String(addCount + 1).padStart(2, "0")}`;
+        try {
+            const storedUser = localStorage.getItem("sf:user");
+            const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
+            const { error } = await supabase.from("matches").insert({
+                tournament_id: tournament.id,
+                sport: tournament.sport,
+                match_type: "tournament",
+                status: "upcoming",
+                court_number: newMatch.court_number || null,
+                match_date: newMatch.match_date ? new Date(newMatch.match_date).toISOString() : null,
+                match_number: matchNumber,
+                notes: notesOut,
+                created_by,
+            });
+            if (error) throw error;
+            setNewMatch({
+                lineup_a1: "",
+                lineup_a2: "",
+                lineup_b1: "",
+                lineup_b2: "",
+                court_number: "",
+                match_date: "",
+                match_number: "",
+                umpire_name: "",
+            });
+            setShowAdd(false);
+            onRefresh();
+            refreshMatches();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to create match");
+        }
+    };
+
+    const handleDeleteMatch = async (matchId: string) => {
+        const match = matches.find((m) => m.id === matchId);
+        if (!match) return;
+        const label = matchDeleteConfirmLabel(match as TournamentMatch);
+        if (!confirm(`Delete match: ${label}?\n\nThis cannot be undone.`)) return;
+        setDeletingMatchId(matchId);
+        try {
+            const { error } = await supabase.from("matches").delete().eq("id", matchId);
+            if (error) throw error;
+            onRefresh();
+            refreshMatches();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to delete match");
+        } finally {
+            setDeletingMatchId(null);
+        }
+    };
+
     return (
         <div className="space-y-4 min-w-0 w-full overflow-hidden">
-            {!canEdit && (
-                <div className="flex justify-end min-w-0">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                {canEdit ? (
+                    <button
+                        type="button"
+                        onClick={() => setShowAdd(!showAdd)}
+                        disabled={participants.length < 4}
+                        className="w-full sm:w-auto bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                    >
+                        {showAdd ? "Cancel" : "Add Match"}
+                    </button>
+                ) : (
                     <p className="text-sm text-gray-600">View only</p>
+                )}
             </div>
+            {canEdit && participants.length < 4 && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Add at least four participants before creating doubles matches.
+                </p>
+            )}
+            {canEdit && showAdd && (
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 space-y-3">
+                    <p className="text-xs text-gray-700">
+                        Pick two players per side from the participant list, then set court and time.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+                            <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Side A</p>
+                            <div>
+                                <label className="block text-xs text-gray-600 mb-1">Player 1</label>
+                                <select
+                                    value={newMatch.lineup_a1}
+                                    onChange={(e) => setNewMatch((m) => ({ ...m, lineup_a1: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">Select player</option>
+                                    {sortedParticipants.map((p) => (
+                                        <option
+                                            key={p.id}
+                                            value={p.id}
+                                            disabled={selectedLineupIds.has(p.id) && p.id !== newMatch.lineup_a1}
+                                        >
+                                            {formatPlayerNameWithCategory(p.player_name, p.category)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-600 mb-1">Player 2</label>
+                                <select
+                                    value={newMatch.lineup_a2}
+                                    onChange={(e) => setNewMatch((m) => ({ ...m, lineup_a2: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">Select player</option>
+                                    {sortedParticipants.map((p) => (
+                                        <option
+                                            key={p.id}
+                                            value={p.id}
+                                            disabled={selectedLineupIds.has(p.id) && p.id !== newMatch.lineup_a2}
+                                        >
+                                            {formatPlayerNameWithCategory(p.player_name, p.category)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50/80 p-3">
+                            <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wide">Side B</p>
+                            <div>
+                                <label className="block text-xs text-gray-600 mb-1">Player 1</label>
+                                <select
+                                    value={newMatch.lineup_b1}
+                                    onChange={(e) => setNewMatch((m) => ({ ...m, lineup_b1: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">Select player</option>
+                                    {sortedParticipants.map((p) => (
+                                        <option
+                                            key={p.id}
+                                            value={p.id}
+                                            disabled={selectedLineupIds.has(p.id) && p.id !== newMatch.lineup_b1}
+                                        >
+                                            {formatPlayerNameWithCategory(p.player_name, p.category)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-600 mb-1">Player 2</label>
+                                <select
+                                    value={newMatch.lineup_b2}
+                                    onChange={(e) => setNewMatch((m) => ({ ...m, lineup_b2: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">Select player</option>
+                                    {sortedParticipants.map((p) => (
+                                        <option
+                                            key={p.id}
+                                            value={p.id}
+                                            disabled={selectedLineupIds.has(p.id) && p.id !== newMatch.lineup_b2}
+                                        >
+                                            {formatPlayerNameWithCategory(p.player_name, p.category)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
+                            <select
+                                value={newMatch.court_number}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, court_number: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            >
+                                <option value="">—</option>
+                                {courtKeys.map((ck) => (
+                                    <option key={ck} value={ck}>
+                                        {courtDisplayLabelForKey(tournament, ck)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date & time</label>
+                            <input
+                                type="datetime-local"
+                                value={newMatch.match_date}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, match_date: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Match # (optional)</label>
+                            <input
+                                type="text"
+                                value={newMatch.match_number}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, match_number: e.target.value }))}
+                                placeholder="ADD-01"
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Umpire (optional)</label>
+                            <input
+                                type="text"
+                                value={newMatch.umpire_name}
+                                onChange={(e) => setNewMatch((m) => ({ ...m, umpire_name: e.target.value }))}
+                                placeholder="e.g. Harshita"
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            />
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => void handleAddMatch()}
+                        className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700"
+                    >
+                        Save Match
+                    </button>
+                </div>
             )}
             {canEdit && drawMatches.length > 0 && (
                 <div className="hidden md:block rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
@@ -2320,9 +2592,14 @@ function IndividualScheduleTab({
                 tournament={tournament}
                 poolSize={drawMatches.length}
                 hideCourtsNote
+                canEdit={canEdit}
+                onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
+                deletingMatchId={deletingMatchId}
             />
             {drawMatches.length === 0 && (
-                <p className="text-gray-600 text-sm">No singles/bracket matches yet. Generate brackets to create matches.</p>
+                <p className="text-gray-600 text-sm">
+                    No matches yet. {canEdit ? "Click Add Match above, or generate brackets to create matches." : "Matches will appear here once the schedule is published."}
+                </p>
             )}
             {drawMatches.length > 0 && filteredMatches.length === 0 && scheduleFilterPlayer.trim() && (
                 <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -3105,16 +3382,34 @@ function participantIdForMatchPlayer(mp: MatchPlayer | undefined, participants: 
     return p?.id ?? null;
 }
 
+function matchDeleteConfirmLabel(m: TournamentMatch): string {
+    const doubles = parseDoublesMatchNotes(m.notes);
+    if (doubles) return formatDoublesPlayersLineCompact(doubles, { includeCategories: false });
+    const p1 = m.match_players?.find((x) => x.team === "player_1")?.player_name;
+    const p2 = m.match_players?.find((x) => x.team === "player_2")?.player_name;
+    if (p1 || p2) return `${p1 || "TBD"} vs ${p2 || "TBD"}`;
+    const a = m.team_a?.name;
+    const b = m.team_b?.name;
+    if (a || b) return `${displayTeamCardTitle(a || "TBD")} vs ${displayTeamCardTitle(b || "TBD")}`;
+    return m.match_number || "this match";
+}
+
 function IndividualScheduleMatchCard({
     match,
     participants,
     tournamentId,
     tournament,
+    canEdit = false,
+    onDeleteMatch,
+    deletingMatchId,
 }: {
     match: TournamentMatch;
     participants: Participant[];
     tournamentId: string;
     tournament: Tournament;
+    canEdit?: boolean;
+    onDeleteMatch?: (matchId: string) => void;
+    deletingMatchId?: string | null;
 }) {
     const m = match;
     const doublesPayload = parseDoublesMatchNotes(m.notes);
@@ -3158,6 +3453,16 @@ function IndividualScheduleMatchCard({
                     >
                         {m.status === "completed" ? "View results" : "Enter results"}
                     </Link>
+                    {canEdit && onDeleteMatch ? (
+                        <button
+                            type="button"
+                            disabled={deletingMatchId === m.id}
+                            onClick={() => onDeleteMatch(m.id)}
+                            className="block text-xs font-medium text-gray-500 hover:text-red-700 mt-1 disabled:opacity-50"
+                        >
+                            {deletingMatchId === m.id ? "Deleting…" : "Delete match"}
+                        </button>
+                    ) : null}
                 </div>
             </div>
             <span
@@ -3529,6 +3834,9 @@ function IndividualCourtScheduleGrid({
     tournament,
     poolSize,
     hideCourtsNote,
+    canEdit = false,
+    onDeleteMatch,
+    deletingMatchId,
 }: {
     matches: TournamentMatch[];
     participants: Participant[];
@@ -3536,6 +3844,9 @@ function IndividualCourtScheduleGrid({
     /** When filtering: total unfiltered count (for empty-state copy). */
     poolSize: number;
     hideCourtsNote?: boolean;
+    canEdit?: boolean;
+    onDeleteMatch?: (matchId: string) => void;
+    deletingMatchId?: string | null;
 }) {
     const numCourts = getCourtCount(tournament);
     const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
@@ -3594,6 +3905,9 @@ function IndividualCourtScheduleGrid({
                             participants={participants}
                             tournamentId={tournament.id}
                             tournament={tournament}
+                            canEdit={canEdit}
+                            onDeleteMatch={onDeleteMatch}
+                            deletingMatchId={deletingMatchId}
                         />
                     )}
                 />
@@ -3607,11 +3921,15 @@ function ScheduleMatchCard({
     tournament,
     canEdit = false,
     onSaveUmpire,
+    onDeleteMatch,
+    deletingMatchId,
 }: {
     match: TournamentMatch;
     tournament: Tournament;
     canEdit?: boolean;
     onSaveUmpire?: (matchId: string, umpireName: string) => Promise<void>;
+    onDeleteMatch?: (matchId: string) => void;
+    deletingMatchId?: string | null;
 }) {
     const m = match;
     const nameA = m.team_a?.name ?? "TBD";
@@ -3671,6 +3989,16 @@ function ScheduleMatchCard({
                             </button>
                         </div>
                     ) : null}
+                    {canEdit && onDeleteMatch ? (
+                        <button
+                            type="button"
+                            disabled={deletingMatchId === m.id}
+                            onClick={() => onDeleteMatch(m.id)}
+                            className="block text-xs font-medium text-gray-500 hover:text-red-700 mt-1 disabled:opacity-50"
+                        >
+                            {deletingMatchId === m.id ? "Deleting…" : "Delete match"}
+                        </button>
+                    ) : null}
                 </div>
             </div>
             <span
@@ -3692,6 +4020,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [showAdd, setShowAdd] = useState(false);
+    const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [scheduleBaseDate, setScheduleBaseDate] = useState("");
     const [assignSessionStart, setAssignSessionStart] = useState(() => {
@@ -4209,6 +4538,25 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         setMatches((prev) =>
             prev.map((m) => (m.id === matchId ? { ...(m as TournamentMatch), notes: nextNotes } : m)),
         );
+    };
+
+    const handleDeleteMatch = async (matchId: string) => {
+        const match = matches.find((m) => m.id === matchId) as TournamentMatch | undefined;
+        if (!match) return;
+        const label = matchDeleteConfirmLabel(match);
+        if (!confirm(`Delete match: ${label}?\n\nThis cannot be undone.`)) return;
+        setDeletingMatchId(matchId);
+        try {
+            const { error } = await supabase.from("matches").delete().eq("id", matchId);
+            if (error) throw error;
+            onRefresh();
+            setMatches((prev) => prev.filter((m) => m.id !== matchId));
+        } catch (e) {
+            console.error(e);
+            alert("Failed to delete match");
+        } finally {
+            setDeletingMatchId(null);
+        }
     };
 
     const handleGenerateBalancedDoubles = async () => {
@@ -4926,6 +5274,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             tournament={tournament}
                             canEdit={canEdit}
                             onSaveUmpire={handleSaveMatchUmpire}
+                            onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
+                            deletingMatchId={deletingMatchId}
                         />
                     )}
                 />
