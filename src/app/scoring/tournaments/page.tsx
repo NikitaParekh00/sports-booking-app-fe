@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabaseClient";
 import PhoneInput from "@/components/PhoneInput";
 import { opponentManager } from "@/lib/opponentManagement";
@@ -49,14 +49,13 @@ interface Tournament {
 }
 
 export default function TournamentsPage() {
-    const router = useRouter();
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [selectedSport, setSelectedSport] = useState<string | null>(null);
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [authLoading, setAuthLoading] = useState(true);
-    /** Set true only after a valid `sf:user` session (same gate as auction). */
-    const [sessionOk, setSessionOk] = useState(false);
+    /** Guest = no `sf:user` session; can browse tournaments read-only. */
+    const [isGuest, setIsGuest] = useState(true);
     const [canEdit, setCanEdit] = useState(false);
     const supabase = createClient();
 
@@ -65,26 +64,24 @@ export default function TournamentsPage() {
             try {
                 const storedUser = localStorage.getItem("sf:user");
                 if (!storedUser) {
+                    setIsGuest(true);
                     setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
                     return;
                 }
                 let userData: { user_id?: string };
                 try {
                     userData = JSON.parse(storedUser) as { user_id?: string };
                 } catch {
+                    setIsGuest(true);
                     setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
                     return;
                 }
                 if (!userData?.user_id) {
+                    setIsGuest(true);
                     setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
                     return;
                 }
+                setIsGuest(false);
                 const { data: profile, error } = await supabase
                     .from("profiles")
                     .select("phone")
@@ -96,17 +93,16 @@ export default function TournamentsPage() {
                 } else {
                     setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
                 }
-                setSessionOk(true);
             } catch (e) {
                 console.error(e);
+                setIsGuest(true);
                 setCanEdit(false);
-                setSessionOk(true);
             } finally {
                 setAuthLoading(false);
             }
         };
         void checkEditAccess();
-    }, [router, supabase]);
+    }, [supabase]);
 
     useEffect(() => {
         if (!authLoading && !canEdit) {
@@ -139,10 +135,10 @@ export default function TournamentsPage() {
     }, [supabase]);
 
     useEffect(() => {
-        if (sessionOk) {
+        if (!authLoading) {
             void fetchTournaments();
         }
-    }, [sessionOk, fetchTournaments]);
+    }, [authLoading, fetchTournaments]);
 
     const handleSportSelect = (sportId: string) => {
         setSelectedSport(sportId);
@@ -153,7 +149,7 @@ export default function TournamentsPage() {
         window.alert(GUEST_CREATE_BLOCKED_MESSAGE);
     };
 
-    if (canEdit && !authLoading && sessionOk && showCreateForm && selectedSport) {
+    if (canEdit && !authLoading && showCreateForm && selectedSport) {
         return <CreateTournamentForm sport={selectedSport} onBack={() => setShowCreateForm(false)} />;
     }
 
@@ -161,14 +157,6 @@ export default function TournamentsPage() {
         return (
             <div className="min-h-screen bg-white flex items-center justify-center">
                 <div className="text-gray-500">Checking access…</div>
-            </div>
-        );
-    }
-
-    if (!sessionOk) {
-        return (
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="text-gray-500">Redirecting to login…</div>
             </div>
         );
     }
@@ -182,7 +170,21 @@ export default function TournamentsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-white p-4 md:p-6 w-full min-w-0 overflow-x-hidden">
+        <div className="min-h-screen bg-white w-full min-w-0 overflow-x-hidden">
+            {isGuest ? (
+                <div className="border-b border-blue-100 bg-blue-50">
+                    <div className="max-w-4xl mx-auto px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span className="text-blue-900">Viewing as guest — tournaments are read-only.</span>
+                        <Link
+                            href="/login?returnTo=%2Fscoring%2Ftournaments"
+                            className="font-semibold text-red-600 hover:text-red-700 whitespace-nowrap"
+                        >
+                            Admin sign in
+                        </Link>
+                    </div>
+                </div>
+            ) : null}
+            <div className="p-4 md:p-6">
             <div className="max-w-4xl mx-auto min-w-0">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 min-w-0">
                     <div className="flex items-center gap-3 min-w-0 w-full sm:w-auto">
@@ -286,6 +288,7 @@ export default function TournamentsPage() {
                         </div>
                     </div>
                 )}
+            </div>
             </div>
         </div>
     );

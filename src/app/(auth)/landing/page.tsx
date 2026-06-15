@@ -16,6 +16,16 @@ export default function LandingPage() {
         router.push('/login');
     };
 
+    const handleContinueWithoutLogin = () => {
+        // Drop any prior app login so guest browsing is not treated as edit/admin (sf:user drives canEdit on tournament pages).
+        try {
+            localStorage.removeItem("sf:user");
+        } catch {
+            /* ignore */
+        }
+        router.push("/scoring/tournaments");
+    };
+
     return (
         <div className="min-h-screen bg-white flex flex-col relative">
             {/* Subtle Background Pattern */}
@@ -65,6 +75,16 @@ export default function LandingPage() {
                             className="text-gray-700 font-medium hover:text-red-600 transition-colors duration-200 text-base"
                         >
                             Already have an account? <span className="text-red-600 font-semibold">Sign In</span>
+                        </button>
+                    </div>
+
+                    {/* Continue without login */}
+                    <div className="text-center pt-2">
+                        <button
+                            onClick={handleContinueWithoutLogin}
+                            className="text-gray-500 text-sm hover:text-gray-700 transition-colors duration-200"
+                        >
+                            Continue as guest
                         </button>
                     </div>
                 </div>

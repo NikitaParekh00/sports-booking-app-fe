@@ -249,8 +249,8 @@ export default function TournamentDetailPage() {
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [authLoading, setAuthLoading] = useState(true);
-    /** Set true only after a valid `sf:user` session (same gate as auction). */
-    const [sessionOk, setSessionOk] = useState(false);
+    /** Guest = no `sf:user` session; can view tournament read-only. */
+    const [isGuest, setIsGuest] = useState(true);
     const [canEdit, setCanEdit] = useState(false);
     type TabType = 'overview' | 'participants' | 'groups' | 'brackets' | 'settings' | 'teams' | 'schedule' | 'results' | 'team_stats' | 'player_stats';
     const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -263,26 +263,24 @@ export default function TournamentDetailPage() {
             try {
                 const storedUser = localStorage.getItem("sf:user");
                 if (!storedUser) {
+                    setIsGuest(true);
                     setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
                     return;
                 }
                 let userData: { user_id?: string };
                 try {
                     userData = JSON.parse(storedUser) as { user_id?: string };
-            } catch {
-                setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
+                } catch {
+                    setIsGuest(true);
+                    setCanEdit(false);
                     return;
                 }
                 if (!userData?.user_id) {
+                    setIsGuest(true);
                     setCanEdit(false);
-                    alert("Please log in to view tournaments.");
-                    router.push("/login");
                     return;
                 }
+                setIsGuest(false);
                 const { data: profile, error } = await supabase
                     .from("profiles")
                     .select("phone")
@@ -294,17 +292,16 @@ export default function TournamentDetailPage() {
                 } else {
                     setCanEdit(profile?.phone === ALLOWED_EDIT_PHONE);
                 }
-                setSessionOk(true);
             } catch (e) {
                 console.error(e);
+                setIsGuest(true);
                 setCanEdit(false);
-                setSessionOk(true);
             } finally {
                 setAuthLoading(false);
             }
         };
         void checkEditAccess();
-    }, [router, supabase]);
+    }, [supabase]);
 
     const fetchTournamentData = useCallback(async () => {
         try {
@@ -337,10 +334,10 @@ export default function TournamentDetailPage() {
     }, [tournamentId, supabase]);
 
     useEffect(() => {
-        if (tournamentId && sessionOk) {
+        if (tournamentId && !authLoading) {
             void fetchTournamentData();
         }
-    }, [tournamentId, sessionOk, fetchTournamentData]);
+    }, [tournamentId, authLoading, fetchTournamentData]);
 
     const showSettingsTab = !authLoading && canEdit;
 
@@ -395,18 +392,7 @@ export default function TournamentDetailPage() {
             <div className="min-h-screen flex items-center justify-center bg-white px-4">
                 <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
-                    <p className="text-gray-600">Checking access…</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (!sessionOk) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-white px-4">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4" />
-                    <p className="text-gray-600">Redirecting to login…</p>
+                    <p className="text-gray-600">Loading…</p>
                 </div>
             </div>
         );
@@ -451,18 +437,31 @@ export default function TournamentDetailPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 w-full min-w-0 overflow-x-hidden">
+            {isGuest ? (
+                <div className="border-b border-blue-100 bg-blue-50">
+                    <div className="max-w-6xl mx-auto px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-sm">
+                        <span className="text-blue-900">Viewing as guest — schedule, results, and stats are read-only.</span>
+                        <Link
+                            href={`/login?returnTo=${encodeURIComponent(`/scoring/tournaments/${tournamentId}`)}`}
+                            className="font-semibold text-red-600 hover:text-red-700 whitespace-nowrap"
+                        >
+                            Admin sign in
+                        </Link>
+                    </div>
+                </div>
+            ) : null}
             {/* Header */}
             <div className="border-b border-gray-200 bg-white sticky top-0 z-10 shadow-sm">
                 <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3 sm:py-4 min-w-0">
                     <div className="flex items-center gap-2 sm:gap-4 mb-4 min-w-0">
                     <button
-                        onClick={() => router.push('/scoring/tournaments')}
+                        onClick={() => router.push(isGuest ? "/landing" : "/scoring/tournaments")}
                             className="flex items-center gap-1.5 sm:gap-2 text-gray-600 hover:text-red-600 text-sm md:text-base touch-manipulation flex-shrink-0 min-w-0"
                     >
                             <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
-                            <span className="truncate">Back to Tournaments</span>
+                            <span className="truncate">{isGuest ? "Home" : "Back to Tournaments"}</span>
                     </button>
                     </div>
 

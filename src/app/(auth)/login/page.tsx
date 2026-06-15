@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import PhoneInput from '@/components/PhoneInput';
 
-export default function LoginPage() {
+function LoginContent() {
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const returnTo = searchParams.get("returnTo");
 	const supabase = createClient();
 	const [mobileNumber, setMobileNumber] = useState('');
 	const [isPhoneValid, setIsPhoneValid] = useState(false);
@@ -49,7 +51,8 @@ export default function LoginPage() {
 			}
 
 			// Redirect to OTP verification (with hardcoded OTP)
-			router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=login`);
+			const returnQs = returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : "";
+			router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=login${returnQs}`);
 		} catch (error) {
 			console.error('Unexpected error:', error);
 			alert('An unexpected error occurred. Please try again.');
@@ -111,5 +114,17 @@ export default function LoginPage() {
 			{/* Home Indicator */}
 			<div className="w-24 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
 		</div>
+	);
+}
+
+export default function LoginPage() {
+	return (
+		<Suspense fallback={
+			<div className="min-h-screen bg-white flex items-center justify-center">
+				<div className="text-gray-500">Loading...</div>
+			</div>
+		}>
+			<LoginContent />
+		</Suspense>
 	);
 }

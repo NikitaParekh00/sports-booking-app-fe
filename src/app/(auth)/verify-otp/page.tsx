@@ -113,8 +113,11 @@ function VerifyOtpContent() {
                 email: ''
             }));
 
-            // Success! Land on homepage (dashboard)
-            router.push("/dashboard");
+            // Success! Land on return URL or homepage
+            const returnTo = searchParams.get("returnTo");
+            const safeReturn =
+                returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : null;
+            router.push(safeReturn ?? "/dashboard");
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');
