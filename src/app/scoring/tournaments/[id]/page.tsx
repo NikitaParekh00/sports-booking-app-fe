@@ -350,6 +350,9 @@ export default function TournamentDetailPage() {
         }
         if (t === "results") setActiveTab("results");
         if (t === "schedule") setActiveTab("schedule");
+        if (t === "teams") setActiveTab("teams");
+        if (t === "groups") setActiveTab("groups");
+        if (t === "brackets") setActiveTab("brackets");
         if (t === "player_stats") setActiveTab("player_stats");
         if (t === "team_stats") setActiveTab("team_stats");
         if (t === "settings" && showSettingsTab) setActiveTab("settings");
@@ -359,7 +362,10 @@ export default function TournamentDetailPage() {
         if (!showSettingsTab && activeTab === "settings") {
             setActiveTab("overview");
         }
-        if (!isTeamTournament && activeTab === "brackets") {
+        if (isTeamTournament && (activeTab === "brackets" || activeTab === "groups")) {
+            setActiveTab("overview");
+        }
+        if (!isTeamTournament && activeTab === "teams") {
             setActiveTab("overview");
         }
     }, [showSettingsTab, activeTab, isTeamTournament]);
@@ -503,6 +509,7 @@ export default function TournamentDetailPage() {
                                 ? [
                                       { id: "overview", label: "Overview" },
                                       { id: "participants", label: `Participants (${participants.length})` },
+                                      { id: "teams", label: "Teams" },
                                       { id: "schedule", label: "Schedule" },
                                       { id: "results", label: "Results" },
                                       { id: "team_stats", label: "Team Stats" },
@@ -512,6 +519,8 @@ export default function TournamentDetailPage() {
                                 : [
                                       { id: "overview", label: "Overview" },
                                       { id: "participants", label: `Participants (${participants.length})` },
+                                      { id: "groups", label: "Groups" },
+                                      { id: "brackets", label: "Brackets" },
                                       { id: "schedule", label: "Schedule" },
                                       { id: "results", label: "Results" },
                                       { id: "team_stats", label: "Team Stats" },
@@ -562,6 +571,24 @@ export default function TournamentDetailPage() {
                         onParticipantsChange={fetchTournamentData}
                         showAddParticipant={showAddParticipant}
                         setShowAddParticipant={setShowAddParticipant}
+                        canEdit={canEdit}
+                    />
+                )}
+
+                {activeTab === "groups" && !isTeamTournament && (
+                    <GroupsTab
+                        tournament={tournament}
+                        participants={participants}
+                        onRefresh={fetchTournamentData}
+                        canEdit={canEdit}
+                    />
+                )}
+
+                {activeTab === "brackets" && !isTeamTournament && (
+                    <BracketsTab
+                        tournament={tournament}
+                        participants={participants}
+                        onRefresh={fetchTournamentData}
                         canEdit={canEdit}
                     />
                 )}
@@ -2621,6 +2648,44 @@ function displayTeamCardTitle(teamName: string): string {
     return s || teamName;
 }
 
+type EmbeddedTeam = { id: string; name: string; short_name?: string | null };
+
+function embeddedTeamRecord(
+    team: EmbeddedTeam | EmbeddedTeam[] | null | undefined,
+): EmbeddedTeam | null {
+    if (!team) return null;
+    return Array.isArray(team) ? team[0] ?? null : team;
+}
+
+function resolveMatchTeamName(
+    team: EmbeddedTeam | EmbeddedTeam[] | null | undefined,
+    teamId: string | null | undefined,
+    teams: TournamentTeam[],
+): string {
+    const embedded = embeddedTeamRecord(team);
+    if (embedded?.name) return embedded.name;
+    if (teamId) {
+        const t = teams.find((x) => x.id === teamId);
+        if (t?.name) return t.name;
+    }
+    return "TBD";
+}
+
+function normalizeTournamentMatchesFromDb(rows: unknown[] | null | undefined): TournamentMatch[] {
+    return (rows || []).map((row) => {
+        const m = row as TournamentMatch;
+        return {
+            ...m,
+            team_a: embeddedTeamRecord(m.team_a) ?? undefined,
+            team_b: embeddedTeamRecord(m.team_b) ?? undefined,
+        };
+    });
+}
+
+function isDoublesScheduleMatch(m: { match_number?: string | null }): boolean {
+    return (m.match_number || "").startsWith("DD-");
+}
+
 /** CSV `club` cell is often `A` or `Team A` — avoid `Team Team A`. */
 function teamTitleFromClubSlug(slug: string): string {
     const t = slug.trim();
@@ -3919,6 +3984,7 @@ function IndividualCourtScheduleGrid({
 function ScheduleMatchCard({
     match,
     tournament,
+    teams,
     canEdit = false,
     onSaveUmpire,
     onDeleteMatch,
@@ -3926,14 +3992,15 @@ function ScheduleMatchCard({
 }: {
     match: TournamentMatch;
     tournament: Tournament;
+    teams: TournamentTeam[];
     canEdit?: boolean;
     onSaveUmpire?: (matchId: string, umpireName: string) => Promise<void>;
     onDeleteMatch?: (matchId: string) => void;
     deletingMatchId?: string | null;
 }) {
     const m = match;
-    const nameA = m.team_a?.name ?? "TBD";
-    const nameB = m.team_b?.name ?? "TBD";
+    const nameA = resolveMatchTeamName(m.team_a, m.team_a_id, teams);
+    const nameB = resolveMatchTeamName(m.team_b, m.team_b_id, teams);
     const titleA = displayTeamCardTitle(nameA);
     const titleB = displayTeamCardTitle(nameB);
     const doublesPayload = parseDoublesMatchNotes(m.notes);
@@ -3946,7 +4013,11 @@ function ScheduleMatchCard({
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
-                {doublesPayload ? <DoublesLineupBlocks payload={doublesPayload} /> : null}
+                {doublesPayload ? (
+                    <DoublesLineupBlocks payload={doublesPayload} />
+                ) : (
+                    <BracketSinglesLineupBlocks nameA={titleA} nameB={titleB} />
+                )}
                 <div className="pt-2 border-t border-gray-100 space-y-0.5">
                     <div className="text-sm font-semibold text-gray-800">
                         {match.match_date
@@ -4047,7 +4118,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     });
     type AddMatchRosterPlayer = { id: string; player_name: string; category: string | null; position: number };
     const [addMatchRosters, setAddMatchRosters] = useState<Record<string, AddMatchRosterPlayer[]>>({});
-    const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(12);
+    const [doublesTargetPerPlayer, setDoublesTargetPerPlayer] = useState(8);
     const [scheduleFilterTeamId, setScheduleFilterTeamId] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
     const [scheduleFilterDayKey, setScheduleFilterDayKey] = useState("");
@@ -4072,6 +4143,11 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             [...new Set(matches.map((m) => scheduleMatchDayKey(m as TournamentMatch)))].filter((k) => k !== "unscheduled")
         );
         return dayKeys.map((key, idx) => ({ key, label: `Day ${idx + 1}` }));
+    }, [matches]);
+
+    const scheduleMatchBreakdown = useMemo(() => {
+        const doubles = matches.filter((m) => isDoublesScheduleMatch(m)).length;
+        return { doubles, legacy: matches.length - doubles };
     }, [matches]);
 
     const filteredMatches = useMemo(() => {
@@ -4138,17 +4214,22 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
         await downloadSchedulePdf(tournament.name, rows, scheduleExportFilterNote, resolveCourtExport);
     }, [filteredMatches, tournament.name, scheduleExportFilterNote, resolveCourtExport]);
 
+    const reloadTeamScheduleMatches = useCallback(async () => {
+        const { data, error } = await supabase
+            .from("matches")
+            .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
+            .eq("tournament_id", tournament.id)
+            .order("match_date", { ascending: true });
+        if (error) throw error;
+        setMatches(normalizeTournamentMatchesFromDb(data));
+    }, [tournament.id, supabase]);
+
     useEffect(() => {
         supabase.from("tournament_teams").select("*").eq("tournament_id", tournament.id).order("name").then(({ data }) => setTeams(data || []));
     }, [tournament.id, supabase]);
     useEffect(() => {
-        supabase
-            .from("matches")
-            .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
-            .eq("tournament_id", tournament.id)
-            .order("match_date", { ascending: true })
-            .then(({ data }) => setMatches(data || []));
-    }, [tournament.id, supabase]);
+        reloadTeamScheduleMatches().catch(console.error);
+    }, [reloadTeamScheduleMatches]);
 
     const existingPairs = new Set<string>();
     matches.forEach((m) => {
@@ -4560,8 +4641,13 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
     };
 
     const handleGenerateBalancedDoubles = async () => {
-        const target = Math.min(50, Math.max(1, Math.floor(Number(doublesTargetPerPlayer) || 12)));
+        const target = Math.min(50, Math.max(1, Math.floor(Number(doublesTargetPerPlayer) || 8)));
         const teamIds = teams.map((t) => t.id);
+        if (teams.length < 2) {
+            alert("Add at least 2 teams on the Teams tab before generating a doubles schedule.");
+            return;
+        }
+        const pairingOpts = { sameCategoryTeammatesOnly: true as const };
         setIsGenerating(true);
         try {
             const { data: rows, error } = await supabase
@@ -4591,6 +4677,16 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 teamName: t.name,
                 players: byTeam[t.id] || [],
             }));
+            const missingCategory = rosters.flatMap((r) =>
+                r.players.filter((p) => !p.categoryNorm).map((p) => `${p.name} (${r.teamName})`),
+            );
+            if (missingCategory.length > 0) {
+                alert(
+                    `Set a skill category on every participant (e.g. Advanced, Intermediate). Missing for:\n${missingCategory.slice(0, 8).join("\n")}${missingCategory.length > 8 ? `\n…and ${missingCategory.length - 8} more` : ""}`,
+                );
+                setIsGenerating(false);
+                return;
+            }
             const uniqueParticipantCount = (() => {
                 const s = new Set<string>();
                 rosters.forEach((r) => r.players.forEach((p) => s.add(p.participantId)));
@@ -4598,28 +4694,25 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             })();
             const theoryMatches = theoreticalDoublesMatchCountIfFullyMet(uniqueParticipantCount, target);
             const theoryStr = Number.isInteger(theoryMatches) ? String(theoryMatches) : theoryMatches.toFixed(2);
-            const result = generateBalancedDoublesSchedule(rosters, target, {
+            const countsResult = generateDoublesScheduleByCountsOnly(rosters, target, pairingOpts);
+            const balancedResult = generateBalancedDoublesSchedule(rosters, target, {
                 randomTrials: 120,
                 localSearchIterations: 500,
-                teammateMax3RepeatPlayerNames: [
-                    "Arvind",
-                    "Ashok Nayak",
-                    "Hardik Parekh",
-                    "Jignesh",
-                    "Mounish Ambaiya",
-                    "Naitik",
-                    "Om Chatbar",
-                    "Parth Gandhi",
-                    "Ritesh R Raul",
-                    "Rohan",
-                    "Viral Desai 501",
-                    "Viral Desai",
-                    "Vivek",
-                ],
+                sameCategoryTeammatesOnly: true,
             });
+            const pickBetter = (
+                a: typeof countsResult,
+                b: typeof balancedResult,
+            ) => {
+                if (a.unmetPlayerIds.length !== b.unmetPlayerIds.length) {
+                    return a.unmetPlayerIds.length < b.unmetPlayerIds.length ? a : b;
+                }
+                return a.matches.length >= b.matches.length ? a : b;
+            };
+            const result = pickBetter(countsResult, balancedResult);
             if (result.matches.length === 0) {
                 alert(
-                    "Could not build doubles schedule for target counts."
+                    "Could not build a doubles schedule. Check that each team has at least two players in the same category so pairs can be formed.",
                 );
                 setIsGenerating(false);
                 return;
@@ -4627,15 +4720,20 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
             const constraintNotes = result.coverageNotes && result.coverageNotes.length > 0
                 ? `\n\nNotes:\n${result.coverageNotes.join("\n")}`
                 : "";
+            const existingCount = matches.length;
+            const replaceOk = window.confirm(
+                existingCount > 0
+                    ? `Replace the entire schedule?\n\n` +
+                          `• Delete all ${existingCount} existing match(es) for this tournament\n` +
+                          `• Create ${result.matches.length} new balanced doubles matches\n\n` +
+                          `Any completed results on old matches will be lost. Continue?`
+                    : `Create ${result.matches.length} balanced doubles matches?`,
+            );
+            if (!replaceOk) return;
             const storedUser = localStorage.getItem("sf:user");
             const created_by = storedUser ? JSON.parse(storedUser).user_id : null;
-            const existingDd = matches.filter((m) => (m.match_number || "").startsWith("DD-")).length;
-            if (existingDd > 0) {
-                const { error: delErr } = await supabase
-                    .from("matches")
-                    .delete()
-                    .eq("tournament_id", tournament.id)
-                    .ilike("match_number", "DD-%");
+            if (existingCount > 0) {
+                const { error: delErr } = await supabase.from("matches").delete().eq("tournament_id", tournament.id);
                 if (delErr) throw delErr;
             }
             let seq = 0;
@@ -4659,26 +4757,56 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 if (insErr) throw insErr;
             }
             onRefresh();
-            supabase
-                .from("matches")
-                .select("*, team_a:tournament_teams!team_a_id(id,name,short_name), team_b:tournament_teams!team_b_id(id,name,short_name)")
-                .eq("tournament_id", tournament.id)
-                .order("match_date", { ascending: true })
-                .then(({ data }) => setMatches(data || []));
+            await reloadTeamScheduleMatches();
             const shortN = result.unmetPlayerIds.length;
-            const mathHint =
-                `All teams mode. Target is 12 matches per player (${Math.floor((6 * 12) / 2)} matches per team).`;
-            const coverageHint = `\n\nAll-teams mode with same-category pair vs same-category pair.`;
+            const mathHint = `Target: ${target} doubles matches per player (~${theoryStr} total matches if everyone is filled).`;
+            const coverageHint =
+                "\n\nRandom partners within each team; only same category vs same category (e.g. Advanced vs Advanced).";
             const bestEffortWarn =
-                shortN > 0 ? `\n\nBest-effort result: ${shortN} player(s) are below 12 matches.` : "";
+                shortN > 0 ? `\n\nBest-effort: ${shortN} player(s) are below ${target} matches — add more same-category opponents per team or lower the target.` : "";
             alert(
                 shortN === 0
-                    ? `Created ${result.matches.length} doubles matches (${target} appearances each). Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}${constraintNotes}\n\nLineups are in each match note.`
-                    : `Created ${result.matches.length} doubles matches. Replaced ${existingDd} old DD match(es).\n\n${mathHint}${coverageHint}${bestEffortWarn}${constraintNotes}\n\nTry more overlapping category mixes across teams, or run again (randomized).`
+                    ? `Schedule updated: ${result.matches.length} doubles matches (${target} per player).\n\n${mathHint}${coverageHint}${constraintNotes}\n\nLineups are stored in each match note. Use “Assign times to matches” below when ready.`
+                    : `Schedule updated: ${result.matches.length} doubles matches.\n\n${mathHint}${coverageHint}${bestEffortWarn}${constraintNotes}\n\nTry again (randomized) or adjust categories/teams.`,
             );
         } catch (e) {
             console.error(e);
             alert("Failed to generate balanced doubles schedule.");
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const handleDeleteLegacyScheduleMatches = async () => {
+        const legacy = matches.filter((m) => !isDoublesScheduleMatch(m));
+        if (legacy.length === 0) {
+            alert("No older round-robin matches to remove.");
+            return;
+        }
+        const doublesCount = matches.length - legacy.length;
+        if (
+            !confirm(
+                `Remove ${legacy.length} older match(es) (round-robin / manual)?\n\n` +
+                    (doublesCount > 0
+                        ? `Your ${doublesCount} doubles (DD-) match(es) will stay.`
+                        : "This will clear the schedule."),
+            )
+        ) {
+            return;
+        }
+        setIsGenerating(true);
+        try {
+            const { error } = await supabase.from("matches").delete().in(
+                "id",
+                legacy.map((m) => m.id),
+            );
+            if (error) throw error;
+            onRefresh();
+            await reloadTeamScheduleMatches();
+            alert(`Removed ${legacy.length} older match(es).`);
+        } catch (e) {
+            console.error(e);
+            alert("Failed to remove older matches.");
         } finally {
             setIsGenerating(false);
         }
@@ -4946,7 +5074,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 </div>
             )}
             {canEdit && teams.length >= 2 && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 sm:p-4">
+                <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 sm:p-4 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                         <label className="text-xs text-gray-700 whitespace-nowrap" htmlFor="doubles-target">
                             Target matches per player
@@ -4957,7 +5085,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             min={1}
                             max={50}
                             value={doublesTargetPerPlayer}
-                            onChange={(e) => setDoublesTargetPerPlayer(parseInt(e.target.value, 10) || 12)}
+                            onChange={(e) => setDoublesTargetPerPlayer(parseInt(e.target.value, 10) || 8)}
                             className="w-20 px-2 py-1.5 border border-gray-300 rounded-lg bg-white text-gray-900 text-sm"
                         />
                         <button
@@ -4969,6 +5097,12 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                             {isGenerating ? "Generating…" : "Generate balanced doubles schedule"}
                         </button>
                     </div>
+                    <p className="text-xs text-gray-600 max-w-3xl">
+                        Doubles with <strong>random partners</strong> within each team. Only <strong>same category vs same category</strong> (e.g. Advanced pair vs Advanced pair).
+                        <strong> Replaces the entire schedule</strong> (deletes all existing matches, then creates new <code className="text-[10px]">DD-</code> matches).
+                        Set each player&apos;s <strong>category</strong> on Participants first.
+                        For 60 players at 8 each, expect ~120 matches.
+                    </p>
                 </div>
             )}
             {canEdit && showAdd && (
@@ -5208,8 +5342,32 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                     Total matches: <span className="font-medium text-gray-800">{filteredMatches.length}</span>
                     {filteredMatches.length !== matches.length ? (
                         <span className="text-gray-500"> (filtered from {matches.length})</span>
+                    ) : scheduleMatchBreakdown.legacy > 0 ? (
+                        <span className="text-amber-800">
+                            {" "}
+                            ({scheduleMatchBreakdown.doubles} doubles + {scheduleMatchBreakdown.legacy} older)
+                        </span>
                     ) : null}
                 </p>
+                {scheduleMatchBreakdown.legacy > 0 ? (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-2">
+                        <p className="text-xs text-amber-900">
+                            You have <strong>{scheduleMatchBreakdown.legacy}</strong> older round-robin match(es) mixed with{" "}
+                            <strong>{scheduleMatchBreakdown.doubles}</strong> doubles match(es). Cards showing <strong>TBD</strong> are
+                            usually the old matches with no player lineups. Remove them or regenerate doubles to replace the full schedule.
+                        </p>
+                        {canEdit ? (
+                            <button
+                                type="button"
+                                onClick={handleDeleteLegacyScheduleMatches}
+                                disabled={isGenerating}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-400 bg-white text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                            >
+                                Remove {scheduleMatchBreakdown.legacy} older match(es)
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
                 {matches.length > 0 && (
                     <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
                         <div className="flex flex-wrap gap-2">
@@ -5272,6 +5430,7 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                         <ScheduleMatchCard
                             match={m}
                             tournament={tournament}
+                            teams={teams}
                             canEdit={canEdit}
                             onSaveUmpire={handleSaveMatchUmpire}
                             onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
@@ -8361,7 +8520,8 @@ function SettingsTab({ tournament, onTournamentUpdate, canEdit = false }: { tour
                         <option value="team">Team (team vs team — shows Teams, Schedule, Results, Stats)</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
-                        Team mode adds Teams, Team Stats, and Player Stats. Individual mode includes Groups, Brackets, and Player Stats (singles leaderboard).
+                        <strong>Team</strong> mode uses the <strong>Teams</strong> tab (squads from club/seed), then Schedule for round robin.{" "}
+                        <strong>Individual</strong> mode uses <strong>Groups</strong> and <strong>Brackets</strong> for club-based pools and knockouts.
                     </p>
                 </div>
 

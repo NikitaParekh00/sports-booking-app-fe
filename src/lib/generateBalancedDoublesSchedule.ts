@@ -68,17 +68,32 @@ function allFourPlayersHaveRoom(plays: Record<string, number>, ids: string[], ta
     return ids.every((id) => (plays[id] ?? 0) < targetPerPlayer);
 }
 
-function pairKey(p1: RosterPlayer, p2: RosterPlayer): string {
+function pairKey(p1: RosterPlayer, p2: RosterPlayer, sameCategoryTeammatesOnly?: boolean): string {
+    if (sameCategoryTeammatesOnly && p1.categoryNorm === p2.categoryNorm && p1.categoryNorm) {
+        return p1.categoryNorm;
+    }
     return [p1.categoryNorm, p2.categoryNorm].sort().join("+");
 }
 
-function enumeratePairs(players: RosterPlayer[]): { a: RosterPlayer; b: RosterPlayer; key: string }[] {
+export type DoublesPairingOptions = {
+    /** Only pair teammates who share the same category; matchups are category vs category. */
+    sameCategoryTeammatesOnly?: boolean;
+};
+
+function enumeratePairs(
+    players: RosterPlayer[],
+    options?: DoublesPairingOptions,
+): { a: RosterPlayer; b: RosterPlayer; key: string }[] {
+    const sameCat = options?.sameCategoryTeammatesOnly === true;
     const out: { a: RosterPlayer; b: RosterPlayer; key: string }[] = [];
     for (let i = 0; i < players.length; i++) {
         for (let j = i + 1; j < players.length; j++) {
             const a = players[i];
             const b = players[j];
-            out.push({ a, b, key: pairKey(a, b) });
+            if (sameCat) {
+                if (!a.categoryNorm || !b.categoryNorm || a.categoryNorm !== b.categoryNorm) continue;
+            }
+            out.push({ a, b, key: pairKey(a, b, sameCat) });
         }
     }
     return out;
@@ -607,8 +622,8 @@ function greedyExtendUntilStuck(
     while (!allSatisfied() && stagnation < maxStagnation) {
         const pool: MainCand[] = [];
         for (const [TA, TB] of teamPairs) {
-            const pairsA = enumeratePairs(TA.players);
-            const pairsB = enumeratePairs(TB.players);
+            const pairsA = enumeratePairs(TA.players, options);
+            const pairsB = enumeratePairs(TB.players, options);
             const byKeyB = new Map<string, { a: RosterPlayer; b: RosterPlayer; key: string }[]>();
             for (const pb of pairsB) {
                 if (!byKeyB.has(pb.key)) byKeyB.set(pb.key, []);
@@ -683,7 +698,7 @@ function generateBalancedDoublesScheduleOnce(
     return greedyStateToResult(state, targetPerPlayer);
 }
 
-export type GenerateBalancedDoublesOptions = {
+export type GenerateBalancedDoublesOptions = DoublesPairingOptions & {
     /**
      * Run the greedy builder this many times with different random shuffles; keep the best result
      * (most matches, then fewest players below target). Improves chances of reaching ~theoretical max.
@@ -900,6 +915,7 @@ export function generateBalancedDoublesSchedule(
 export function generateDoublesScheduleByCountsOnly(
     rosters: TeamRosterInput[],
     targetPerPlayer: number,
+    options?: DoublesPairingOptions,
 ): DoublesScheduleResult {
     const target = Math.max(1, Math.floor(targetPerPlayer));
     const nTeams = rosters.length;
@@ -910,7 +926,7 @@ export function generateDoublesScheduleByCountsOnly(
     // 1) Build per-team pair pool without forced 2/3 teammate distribution.
     const teamPairRemaining = new Map<string, number>();
     for (const r of rosters) {
-        const pairs = enumeratePairs(r.players);
+        const pairs = enumeratePairs(r.players, options);
         for (const p of pairs) {
             const k = `${r.teamId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
             teamPairRemaining.set(k, target);
@@ -938,14 +954,14 @@ export function generateDoublesScheduleByCountsOnly(
         const teamA = teamById.get(teamAId);
         const teamB = teamById.get(teamBId);
         if (!teamA || !teamB) return null;
-        const pairsA = enumeratePairs(teamA.players)
+        const pairsA = enumeratePairs(teamA.players, options)
             .map((p) => {
                 const pk = `${teamAId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
                 const remPair = teamPairRemaining.get(pk) ?? 0;
                 return { p, pk, remPair };
             })
             .filter((x) => x.remPair > 0);
-        const pairsB = enumeratePairs(teamB.players)
+        const pairsB = enumeratePairs(teamB.players, options)
             .map((p) => {
                 const pk = `${teamBId}\t${edgeKey(p.a.participantId, p.b.participantId)}`;
                 const remPair = teamPairRemaining.get(pk) ?? 0;
@@ -986,7 +1002,7 @@ export function generateDoublesScheduleByCountsOnly(
                 teamBName: teamById.get(e.b)?.teamName ?? e.b,
                 sideA: chosen.sideA,
                 sideB: chosen.sideB,
-                categoryKey: pairKey(chosen.sideA[0], chosen.sideA[1]),
+                categoryKey: pairKey(chosen.sideA[0], chosen.sideA[1], options?.sameCategoryTeammatesOnly),
             });
         }
     }
