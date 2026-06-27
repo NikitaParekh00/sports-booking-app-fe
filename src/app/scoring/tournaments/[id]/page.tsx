@@ -22,6 +22,8 @@ import {
     doublesWinnerTeamId,
     mergeDoublesWinnerIntoNotes,
     theoreticalDoublesMatchCountIfFullyMet,
+    collectDoublesCategoryGroupOptions,
+    matchPassesDoublesCategoryGroupFilter,
 } from "@/lib/generateBalancedDoublesSchedule";
 import {
     assignMatchTimesByCourt,
@@ -1217,6 +1219,36 @@ function participantsByClubKey(participants: Participant[]): Map<string, Partici
     return m;
 }
 
+const POOL_GROUP_CATEGORY_ORDER = ["Mens Doubles", "Females Doubles", "Mixed Doubles"];
+
+function sortPoolGroupKeys(keys: string[]): string[] {
+    return [...keys].sort((a, b) => {
+        const catA = a.split(" · Group ")[0] ?? a;
+        const catB = b.split(" · Group ")[0] ?? b;
+        const ia = POOL_GROUP_CATEGORY_ORDER.indexOf(catA);
+        const ib = POOL_GROUP_CATEGORY_ORDER.indexOf(catB);
+        if (ia !== ib) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+}
+
+function poolGroupsFromMatchNotes(
+    matchRows: { notes?: string | null }[],
+): Map<string, Set<string>> {
+    const groupToParticipantIds = new Map<string, Set<string>>();
+    for (const row of matchRows) {
+        const payload = parseDoublesMatchNotes(row.notes);
+        if (!payload?.categoryKey?.trim()) continue;
+        const key = payload.categoryKey.trim();
+        if (!groupToParticipantIds.has(key)) groupToParticipantIds.set(key, new Set());
+        const ids = groupToParticipantIds.get(key)!;
+        for (const p of [...payload.sideA, ...payload.sideB]) {
+            if (p.id?.trim()) ids.add(p.id.trim());
+        }
+    }
+    return groupToParticipantIds;
+}
+
 // Groups Tab Component (individual tournaments — one group per distinct `club` on participants)
 function GroupsTab({
     tournament,
@@ -1276,6 +1308,91 @@ function GroupsTab({
     useEffect(() => {
         loadGroups();
     }, [loadGroups]);
+
+    const handleCreateFromSchedule = async () => {
+        if (!canEdit) return;
+        if (groups.length > 0) {
+            const ok = window.confirm(
+                "This removes existing groups and rebuilds them from pool labels on scheduled matches (e.g. Mens Doubles · Group A). Continue?"
+            );
+            if (!ok) return;
+        }
+        setCreating(true);
+        try {
+            const { data: matchRows, error: matchErr } = await supabase
+                .from("matches")
+                .select("id, notes")
+                .eq("tournament_id", tournament.id);
+            if (matchErr) throw matchErr;
+
+            const groupToParticipantIds = poolGroupsFromMatchNotes(matchRows || []);
+            const sortedKeys = sortPoolGroupKeys([...groupToParticipantIds.keys()]);
+            if (sortedKeys.length === 0) {
+                alert(
+                    "No pool groups found in the schedule. Import matches with categoryKey in notes first (e.g. from the CSC schedule SQL)."
+                );
+                return;
+            }
+
+            const pmap = new Map(participants.map((p) => [p.id, p]));
+            const { error: delErr } = await supabase.from("tournament_groups").delete().eq("tournament_id", tournament.id);
+            if (delErr) throw delErr;
+
+            const usedNames = new Set<string>();
+            const payloads = sortedKeys.map((poolKey, idx) => ({
+                tournament_id: tournament.id,
+                group_name: allocateUniqueGroupName(poolKey, usedNames),
+                group_order: idx,
+            }));
+
+            const { data: inserted, error: insErr } = await supabase
+                .from("tournament_groups")
+                .insert(payloads)
+                .select("id, group_name, group_order");
+            if (insErr) throw insErr;
+            if (!inserted || inserted.length !== sortedKeys.length) {
+                throw new Error("Group insert count mismatch");
+            }
+
+            const orderedGroups = [...inserted].sort((a, b) => (a.group_order ?? 0) - (b.group_order ?? 0));
+            const linkRows: { group_id: string; participant_id: string; position: number }[] = [];
+            orderedGroups.forEach((g, i) => {
+                const poolKey = sortedKeys[i];
+                const idSet = groupToParticipantIds.get(poolKey) ?? new Set<string>();
+                const members = [...idSet]
+                    .map((pid) => pmap.get(pid))
+                    .filter((p): p is Participant => Boolean(p))
+                    .sort((a, b) => (a.player_name || "").localeCompare(b.player_name || "", undefined, { numeric: true }));
+                members.forEach((p, j) => {
+                    linkRows.push({ group_id: g.id, participant_id: p.id, position: j + 1 });
+                });
+            });
+
+            if (linkRows.length > 0) {
+                const { error: linkErr } = await supabase.from("tournament_group_participants").insert(linkRows);
+                if (linkErr) throw linkErr;
+            }
+
+            const { error: upErr } = await supabase.from("tournaments").update({ groups_generated: true }).eq("id", tournament.id);
+            if (upErr) {
+                console.warn("Could not set groups_generated on tournament (RLS/auth):", upErr);
+            }
+
+            await loadGroups();
+            onRefresh();
+            alert(`Created ${orderedGroups.length} group(s) from the schedule (${linkRows.length} player assignments).`);
+        } catch (err) {
+            console.error(err);
+            const msg = err instanceof Error ? err.message : "Failed to create groups from schedule.";
+            const rlsHint =
+                typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "42501"
+                    ? " Run db/fix_tournament_groups_rls_localstorage_auth.sql in Supabase (RLS + localStorage auth)."
+                    : "";
+            alert(`${msg}${rlsHint}`);
+        } finally {
+            setCreating(false);
+        }
+    };
 
     const handleCreateFromClubs = async () => {
         if (!canEdit || participants.length < 2) return;
@@ -1351,19 +1468,30 @@ function GroupsTab({
                 <div>
                 <h2 className="text-xl font-semibold text-gray-900">Groups</h2>
                     <p className="text-sm text-gray-600 mt-1 max-w-2xl">
-                        Use <strong>Club</strong> on each participant (Participants tab or CSV) as the group name. One group per distinct club; blank club →{" "}
-                        <strong>No club</strong>. Rebuild replaces all current groups.
+                        For a pre-built schedule (e.g. CSC pickleball), use <strong>Rebuild groups from schedule</strong> — groups
+                        come from match pool labels like <strong>Mens Doubles · Group A</strong>. Alternatively, set{" "}
+                        <strong>Club</strong> on each participant (CSV column) and use <strong>Rebuild groups from clubs</strong>.
                     </p>
                 </div>
                 {participants.length >= 2 && canEdit && (
-                    <button
-                        type="button"
-                        onClick={handleCreateFromClubs}
-                        disabled={creating}
-                        className="shrink-0 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
-                    >
-                        {creating ? "Working…" : groups.length ? "Rebuild groups from clubs" : "Create groups from clubs"}
-                    </button>
+                    <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={handleCreateFromSchedule}
+                            disabled={creating}
+                            className="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50 text-sm font-medium"
+                        >
+                            {creating ? "Working…" : groups.length ? "Rebuild groups from schedule" : "Create groups from schedule"}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleCreateFromClubs}
+                            disabled={creating}
+                            className="bg-white text-gray-800 border border-gray-300 px-4 py-2 rounded-md hover:bg-gray-50 disabled:opacity-50 text-sm font-medium"
+                        >
+                            {creating ? "Working…" : groups.length ? "Rebuild from clubs" : "Create from clubs"}
+                        </button>
+                    </div>
                 )}
             </div>
             {!canEdit && participants.length >= 2 && (
@@ -1377,7 +1505,12 @@ function GroupsTab({
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 text-center text-gray-600 text-sm">Loading groups…</div>
             ) : groups.length === 0 ? (
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
-                    <p className="text-gray-700">No groups yet. {canEdit ? "Click the button above to create them from the Club column." : ""}</p>
+                    <p className="text-gray-700">
+                        No groups yet.{" "}
+                        {canEdit
+                            ? "If matches are already imported, click “Create groups from schedule”. Otherwise set Club on participants and use “Create from clubs”."
+                            : ""}
+                    </p>
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -2070,6 +2203,8 @@ function IndividualScheduleTab({
     /** Optional: day 2 (and later days) session start; day 1 uses datetime-local above. */
     const [assignSessionDay2Time, setAssignSessionDay2Time] = useState("");
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
+    const [scheduleFilterCategory, setScheduleFilterCategory] = useState("");
+    const [scheduleFilterGroup, setScheduleFilterGroup] = useState("");
     const [showAdd, setShowAdd] = useState(false);
     const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
     const [newMatch, setNewMatch] = useState({
@@ -2102,11 +2237,43 @@ function IndividualScheduleTab({
         [matches],
     );
 
+    const scheduleCategoryGroupOptions = useMemo(
+        () => collectDoublesCategoryGroupOptions(drawMatches),
+        [drawMatches],
+    );
+
+    const scheduleGroupOptions = useMemo(() => {
+        if (scheduleFilterCategory) {
+            return scheduleCategoryGroupOptions.groupsByCategory.get(scheduleFilterCategory) ?? [];
+        }
+        const all = new Set<string>();
+        for (const groups of scheduleCategoryGroupOptions.groupsByCategory.values()) {
+            for (const g of groups) all.add(g);
+        }
+        return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    }, [scheduleCategoryGroupOptions, scheduleFilterCategory]);
+
+    useEffect(() => {
+        if (!scheduleFilterGroup) return;
+        if (!scheduleGroupOptions.includes(scheduleFilterGroup)) {
+            setScheduleFilterGroup("");
+        }
+    }, [scheduleFilterGroup, scheduleGroupOptions]);
+
     const filteredMatches = useMemo(() => {
-        const q = scheduleFilterPlayer.trim().toLowerCase();
-        if (!q) return drawMatches;
         return drawMatches.filter((m) => {
             const tm = m as TournamentMatch;
+            if (
+                !matchPassesDoublesCategoryGroupFilter(
+                    tm.notes,
+                    scheduleFilterCategory,
+                    scheduleFilterGroup,
+                )
+            ) {
+                return false;
+            }
+            const q = scheduleFilterPlayer.trim().toLowerCase();
+            if (!q) return true;
             const names = (tm.match_players || []).map((x) => (x.player_name || "").toLowerCase());
             const doubles = parseDoublesMatchNotes(tm.notes);
             if (doubles) {
@@ -2116,12 +2283,21 @@ function IndividualScheduleTab({
             }
             return names.some((n) => n.includes(q));
         });
-    }, [drawMatches, scheduleFilterPlayer]);
+    }, [drawMatches, scheduleFilterPlayer, scheduleFilterCategory, scheduleFilterGroup]);
+
+    const hasScheduleFilters =
+        Boolean(scheduleFilterPlayer.trim()) ||
+        Boolean(scheduleFilterCategory) ||
+        Boolean(scheduleFilterGroup);
 
     const scheduleExportFilterNote = useMemo(() => {
-        if (!scheduleFilterPlayer.trim()) return undefined;
-        return `Player contains: ${scheduleFilterPlayer.trim()}`;
-    }, [scheduleFilterPlayer]);
+        if (!hasScheduleFilters) return undefined;
+        const bits: string[] = [];
+        if (scheduleFilterCategory) bits.push(`Category: ${scheduleFilterCategory}`);
+        if (scheduleFilterGroup) bits.push(`Group: ${scheduleFilterGroup}`);
+        if (scheduleFilterPlayer.trim()) bits.push(`Player contains: ${scheduleFilterPlayer.trim()}`);
+        return bits.join(" • ");
+    }, [hasScheduleFilters, scheduleFilterCategory, scheduleFilterGroup, scheduleFilterPlayer]);
 
     const resolveCourtExport = useCallback((raw: string) => formatStoredCourtForDisplay(tournament, raw), [tournament]);
 
@@ -2509,6 +2685,62 @@ function IndividualScheduleTab({
                     </button>
                 </div>
             )}
+            <IndividualCourtScheduleGrid
+                matches={filteredMatches.map((m) => m as TournamentMatch)}
+                participants={participants}
+                tournament={tournament}
+                poolSize={drawMatches.length}
+                hideCourtsNote
+                canEdit={canEdit}
+                onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
+                deletingMatchId={deletingMatchId}
+                toolbar={
+                    <DoublesPoolFilterBar
+                        idPrefix="indiv-sched"
+                        categories={scheduleCategoryGroupOptions.categories}
+                        groupOptions={scheduleGroupOptions}
+                        categoryValue={scheduleFilterCategory}
+                        groupValue={scheduleFilterGroup}
+                        playerValue={scheduleFilterPlayer}
+                        onCategoryChange={(v) => {
+                            setScheduleFilterCategory(v);
+                            setScheduleFilterGroup("");
+                        }}
+                        onGroupChange={setScheduleFilterGroup}
+                        onPlayerChange={setScheduleFilterPlayer}
+                        onClear={() => {
+                            setScheduleFilterPlayer("");
+                            setScheduleFilterCategory("");
+                            setScheduleFilterGroup("");
+                        }}
+                        hasActiveFilters={hasScheduleFilters}
+                        showingCount={filteredMatches.length}
+                        totalCount={drawMatches.length}
+                        downloadButtons={
+                            drawMatches.length > 0 ? (
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleScheduleDownloadXlsx}
+                                        disabled={filteredMatches.length === 0}
+                                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:pointer-events-none"
+                                    >
+                                        Download .xlsx
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleScheduleDownloadPdf}
+                                        disabled={filteredMatches.length === 0}
+                                        className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
+                                    >
+                                        Download .pdf
+                                    </button>
+                                </div>
+                            ) : undefined
+                        }
+                    />
+                }
+            />
             {canEdit && drawMatches.length > 0 && (
                 <div className="hidden md:block rounded-xl border border-gray-200 bg-gray-50 p-3 sm:p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
@@ -2576,61 +2808,14 @@ function IndividualScheduleTab({
                     </div>
                 </div>
             )}
-            <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
-                <div>
-                    <label htmlFor="indiv-sched-filter-player" className="block text-xs font-medium text-gray-600 mb-1">
-                        Player name contains
-                    </label>
-                    <input
-                        id="indiv-sched-filter-player"
-                        type="search"
-                        value={scheduleFilterPlayer}
-                        onChange={(e) => setScheduleFilterPlayer(e.target.value)}
-                        placeholder="e.g. Adityaraj"
-                        className="w-full max-w-md px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
-                    />
-                </div>
-                {drawMatches.length > 0 && (
-                    <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200">
-                        <div className="flex flex-wrap gap-2">
-                            <button
-                                type="button"
-                                onClick={handleScheduleDownloadXlsx}
-                                disabled={filteredMatches.length === 0}
-                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                                Download .xlsx
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleScheduleDownloadPdf}
-                                disabled={filteredMatches.length === 0}
-                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 text-white hover:bg-slate-800 disabled:opacity-50 disabled:pointer-events-none"
-                            >
-                                Download .pdf
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-            <IndividualCourtScheduleGrid
-                matches={filteredMatches.map((m) => m as TournamentMatch)}
-                participants={participants}
-                tournament={tournament}
-                poolSize={drawMatches.length}
-                hideCourtsNote
-                canEdit={canEdit}
-                onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
-                deletingMatchId={deletingMatchId}
-            />
             {drawMatches.length === 0 && (
                 <p className="text-gray-600 text-sm">
                     No matches yet. {canEdit ? "Click Add Match above, or generate brackets to create matches." : "Matches will appear here once the schedule is published."}
                 </p>
             )}
-            {drawMatches.length > 0 && filteredMatches.length === 0 && scheduleFilterPlayer.trim() && (
+            {drawMatches.length > 0 && filteredMatches.length === 0 && hasScheduleFilters && (
                 <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                    No matches match your filter. Try another name or clear the search.
+                    No matches match your filters. Try another category, group, or player name, or clear filters.
                 </p>
             )}
         </div>
@@ -3669,6 +3854,7 @@ function buildAlignedScheduleBlocks(
         const gapBreakLabelShown: Record<string, boolean> = Object.fromEntries(
             courtKeys.map((k) => [k, false]),
         );
+        let rowIndex = 0;
 
         while (courtKeys.some((ck) => queues[ck].length > 0)) {
             let nextT = Number.POSITIVE_INFINITY;
@@ -3729,11 +3915,12 @@ function buildAlignedScheduleBlocks(
 
             blocks.push({
                 kind: "row",
-                key: `row-${dayKey}-${nextT}`,
+                key: `row-${dayKey}-${nextT}-${rowIndex}`,
                 cells,
                 breakBefore: breakBeforeFinal,
                 emptySlotBreak,
             });
+            rowIndex += 1;
         }
     }
 
@@ -3892,6 +4079,123 @@ function AlignedMultiCourtScheduleGrid({
     );
 }
 
+type DoublesPoolFilterBarProps = {
+    categories: string[];
+    groupOptions: string[];
+    categoryValue: string;
+    groupValue: string;
+    playerValue: string;
+    onCategoryChange: (value: string) => void;
+    onGroupChange: (value: string) => void;
+    onPlayerChange: (value: string) => void;
+    onClear: () => void;
+    hasActiveFilters: boolean;
+    showingCount: number;
+    totalCount: number;
+    downloadButtons?: ReactNode;
+    idPrefix?: string;
+};
+
+/** Category / group / player filters for individual doubles schedules (mobile + desktop). */
+function DoublesPoolFilterBar({
+    categories,
+    groupOptions,
+    categoryValue,
+    groupValue,
+    playerValue,
+    onCategoryChange,
+    onGroupChange,
+    onPlayerChange,
+    onClear,
+    hasActiveFilters,
+    showingCount,
+    totalCount,
+    downloadButtons,
+    idPrefix = "pool-filter",
+}: DoublesPoolFilterBarProps) {
+    const showPoolFilters = categories.length > 0;
+    return (
+        <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(9rem,1fr)_minmax(7rem,0.75fr)_minmax(10rem,1.25fr)_auto_auto] md:items-end md:gap-x-3 md:gap-y-2">
+                {showPoolFilters ? (
+                    <>
+                        <div className="min-w-0">
+                            <label htmlFor={`${idPrefix}-category`} className="block text-xs font-medium text-gray-600 mb-1">
+                                Category
+                            </label>
+                            <select
+                                id={`${idPrefix}-category`}
+                                value={categoryValue}
+                                onChange={(e) => onCategoryChange(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            >
+                                <option value="">All categories</option>
+                                {categories.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                        {cat}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="min-w-0">
+                            <label htmlFor={`${idPrefix}-group`} className="block text-xs font-medium text-gray-600 mb-1">
+                                Group
+                            </label>
+                            <select
+                                id={`${idPrefix}-group`}
+                                value={groupValue}
+                                onChange={(e) => onGroupChange(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            >
+                                <option value="">All groups</option>
+                                {groupOptions.map((g) => (
+                                    <option key={g} value={g}>
+                                        Group {g}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </>
+                ) : null}
+                <div className="min-w-0 md:col-span-1">
+                    <label htmlFor={`${idPrefix}-player`} className="block text-xs font-medium text-gray-600 mb-1">
+                        Player name contains
+                    </label>
+                    <input
+                        id={`${idPrefix}-player`}
+                        type="search"
+                        value={playerValue}
+                        onChange={(e) => onPlayerChange(e.target.value)}
+                        placeholder="e.g. Adityaraj"
+                        className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                    />
+                </div>
+                {hasActiveFilters ? (
+                    <button
+                        type="button"
+                        onClick={onClear}
+                        className="w-full md:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                        Clear filters
+                    </button>
+                ) : (
+                    <div className="hidden md:block" aria-hidden />
+                )}
+                {totalCount > 0 ? (
+                    <p className="text-xs text-gray-600 md:text-right md:whitespace-nowrap">
+                        Showing {showingCount} of {totalCount}
+                    </p>
+                ) : null}
+            </div>
+            {downloadButtons ? (
+                <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 pt-3 border-t border-gray-200 md:pt-2">
+                    {downloadButtons}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 /** Court columns + match cards (shared by individual Schedule tab and Brackets round 1). */
 function IndividualCourtScheduleGrid({
     matches,
@@ -3902,6 +4206,7 @@ function IndividualCourtScheduleGrid({
     canEdit = false,
     onDeleteMatch,
     deletingMatchId,
+    toolbar,
 }: {
     matches: TournamentMatch[];
     participants: Participant[];
@@ -3912,6 +4217,8 @@ function IndividualCourtScheduleGrid({
     canEdit?: boolean;
     onDeleteMatch?: (matchId: string) => void;
     deletingMatchId?: string | null;
+    /** Filters / actions rendered above the court grid (schedule tab). */
+    toolbar?: ReactNode;
 }) {
     const numCourts = getCourtCount(tournament);
     const courtKeys = Array.from({ length: numCourts }, (_, i) => String(i + 1));
@@ -3927,6 +4234,7 @@ function IndividualCourtScheduleGrid({
     );
     return (
         <>
+            {toolbar}
             {!hideCourtsNote && (
                 <p className="text-xs text-gray-500 mb-2">
                     Showing {numCourts} court column{numCourts === 1 ? "" : "s"}. Change{" "}
@@ -3941,7 +4249,7 @@ function IndividualCourtScheduleGrid({
                 </p>
             )}
             {isMobileLayout && courtKeys.length > 1 && (
-                <div className="mb-2 flex flex-wrap gap-2">
+                <div className="mb-2 flex flex-wrap gap-2 md:hidden">
                     {courtKeys.map((ck) => (
                         <button
                             key={ck}
@@ -5644,6 +5952,31 @@ function BracketResultsTab({
     const [dayFilter, setDayFilter] = useState("all");
     const [courtFilter, setCourtFilter] = useState("all");
     const [timeFilter, setTimeFilter] = useState("all");
+    const [categoryFilter, setCategoryFilter] = useState("");
+    const [groupFilter, setGroupFilter] = useState("");
+
+    const resultsCategoryGroupOptions = useMemo(
+        () => collectDoublesCategoryGroupOptions(bracketMatches),
+        [bracketMatches],
+    );
+
+    const resultsGroupOptions = useMemo(() => {
+        if (categoryFilter) {
+            return resultsCategoryGroupOptions.groupsByCategory.get(categoryFilter) ?? [];
+        }
+        const all = new Set<string>();
+        for (const groups of resultsCategoryGroupOptions.groupsByCategory.values()) {
+            for (const g of groups) all.add(g);
+        }
+        return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    }, [resultsCategoryGroupOptions, categoryFilter]);
+
+    useEffect(() => {
+        if (!groupFilter) return;
+        if (!resultsGroupOptions.includes(groupFilter)) {
+            setGroupFilter("");
+        }
+    }, [groupFilter, resultsGroupOptions]);
 
     const resultsSessionDayOptions = useMemo(() => {
         const dayKeys = sortScheduleDayKeys(
@@ -5705,6 +6038,7 @@ function BracketResultsTab({
             if (dayFilter !== "all" && scheduleMatchDayKey(m as TournamentMatch) !== dayFilter) return false;
             if (courtFilter !== "all" && courtKeyForMatch(m) !== courtFilter) return false;
             if (timeFilter !== "all" && timeKeyForMatch(m) !== timeFilter) return false;
+            if (!matchPassesDoublesCategoryGroupFilter(m.notes, categoryFilter, groupFilter)) return false;
             if (!normalizedSearch) return true;
 
             const tm = m as TournamentMatch;
@@ -5716,14 +6050,27 @@ function BracketResultsTab({
             const haystack = `${singlesNames} ${doublesNames} ${tm.court_number ?? ""}`.toLowerCase();
             return haystack.includes(normalizedSearch);
         });
-    }, [bracketMatches, statusFilter, dayFilter, courtFilter, courtKeyForMatch, timeFilter, timeKeyForMatch, normalizedSearch]);
+    }, [
+        bracketMatches,
+        statusFilter,
+        dayFilter,
+        courtFilter,
+        courtKeyForMatch,
+        timeFilter,
+        timeKeyForMatch,
+        categoryFilter,
+        groupFilter,
+        normalizedSearch,
+    ]);
 
     const hasActiveFilters =
         Boolean(normalizedSearch) ||
         statusFilter !== "all" ||
         dayFilter !== "all" ||
         courtFilter !== "all" ||
-        timeFilter !== "all";
+        timeFilter !== "all" ||
+        Boolean(categoryFilter) ||
+        Boolean(groupFilter);
 
     return (
         <div className="space-y-4">
@@ -5739,14 +6086,47 @@ function BracketResultsTab({
             )}
             {!loading && (
                 <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-[repeat(7,minmax(0,auto))] md:items-center md:gap-x-3 md:gap-y-2">
                         <input
                             type="text"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             placeholder="Search player name"
-                            className="w-full sm:max-w-xs px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            className="w-full md:min-w-[10rem] px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
                         />
+                        {resultsCategoryGroupOptions.categories.length > 0 ? (
+                            <>
+                                <select
+                                    value={categoryFilter}
+                                    onChange={(e) => {
+                                        setCategoryFilter(e.target.value);
+                                        setGroupFilter("");
+                                    }}
+                                    aria-label="Category"
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">All categories</option>
+                                    {resultsCategoryGroupOptions.categories.map((cat) => (
+                                        <option key={cat} value={cat}>
+                                            {cat}
+                                        </option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={groupFilter}
+                                    onChange={(e) => setGroupFilter(e.target.value)}
+                                    aria-label="Group"
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    <option value="">All groups</option>
+                                    {resultsGroupOptions.map((g) => (
+                                        <option key={g} value={g}>
+                                            Group {g}
+                                        </option>
+                                    ))}
+                                </select>
+                            </>
+                        ) : null}
                         <select
                             value={dayFilter}
                             onChange={(e) => setDayFilter(e.target.value)}
@@ -5803,13 +6183,15 @@ function BracketResultsTab({
                                     setStatusFilter("all");
                                     setCourtFilter("all");
                                     setTimeFilter("all");
+                                    setCategoryFilter("");
+                                    setGroupFilter("");
                                 }}
-                                className="w-full sm:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                                className="w-full md:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                             >
                                 Clear filters
                             </button>
                         ) : null}
-                        <p className="text-xs text-gray-600 sm:ml-auto">
+                        <p className="text-xs text-gray-600 md:col-span-2 xl:col-span-1 md:text-right md:whitespace-nowrap">
                             Showing {filteredMatches.length} of {bracketMatches.length}
                         </p>
                     </div>

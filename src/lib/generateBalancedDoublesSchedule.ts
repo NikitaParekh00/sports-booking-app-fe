@@ -495,6 +495,71 @@ export function normalizeCategoryLabel(raw: string | null | undefined): string {
     return t || "";
 }
 
+const CATEGORY_GROUP_SEP = " · Group ";
+
+/** Parse stored `categoryKey` e.g. `Mens Doubles · Group A` into event + group. */
+export function parseMatchCategoryKey(categoryKey: string | null | undefined): {
+    eventCategory: string;
+    group: string;
+} | null {
+    if (!categoryKey?.trim()) return null;
+    const idx = categoryKey.indexOf(CATEGORY_GROUP_SEP);
+    if (idx === -1) {
+        return { eventCategory: categoryKey.trim(), group: "" };
+    }
+    return {
+        eventCategory: categoryKey.slice(0, idx).trim(),
+        group: categoryKey.slice(idx + CATEGORY_GROUP_SEP.length).trim(),
+    };
+}
+
+export function getDoublesMatchCategoryParts(
+    notes: string | null | undefined,
+): { eventCategory: string; group: string } | null {
+    const payload = parseDoublesMatchNotes(notes);
+    if (!payload?.categoryKey) return null;
+    return parseMatchCategoryKey(payload.categoryKey);
+}
+
+export function collectDoublesCategoryGroupOptions(
+    matches: { notes?: string | null }[],
+): { categories: string[]; groupsByCategory: Map<string, string[]> } {
+    const categories = new Set<string>();
+    const groupsByCategory = new Map<string, Set<string>>();
+    for (const m of matches) {
+        const parts = getDoublesMatchCategoryParts(m.notes);
+        if (!parts) continue;
+        categories.add(parts.eventCategory);
+        if (parts.group) {
+            if (!groupsByCategory.has(parts.eventCategory)) {
+                groupsByCategory.set(parts.eventCategory, new Set());
+            }
+            groupsByCategory.get(parts.eventCategory)!.add(parts.group);
+        }
+    }
+    const sortGroups = (a: string, b: string) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    return {
+        categories: [...categories].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+        groupsByCategory: new Map(
+            [...groupsByCategory.entries()].map(([cat, groups]) => [cat, [...groups].sort(sortGroups)]),
+        ),
+    };
+}
+
+export function matchPassesDoublesCategoryGroupFilter(
+    notes: string | null | undefined,
+    eventCategoryFilter: string,
+    groupFilter: string,
+): boolean {
+    if (!eventCategoryFilter && !groupFilter) return true;
+    const parts = getDoublesMatchCategoryParts(notes);
+    if (!parts) return false;
+    if (eventCategoryFilter && parts.eventCategory !== eventCategoryFilter) return false;
+    if (groupFilter && parts.group !== groupFilter) return false;
+    return true;
+}
+
 /**
  * If every participant reached `targetPerPlayer` appearances, match count would be
  * (number of participants × target) / 4 (each doubles match adds one appearance to 4 players).
