@@ -336,6 +336,13 @@ export default function TournamentDetailPage() {
         }
     }, [tournamentId, supabase]);
 
+    /** Bumped when participant names (or other cross-tab data) change so match-backed tabs refetch. */
+    const [matchDataVersion, setMatchDataVersion] = useState(0);
+    const handleParticipantsChange = useCallback(async () => {
+        await fetchTournamentData();
+        setMatchDataVersion((v) => v + 1);
+    }, [fetchTournamentData]);
+
     useEffect(() => {
         if (tournamentId && !authLoading) {
             void fetchTournamentData();
@@ -570,7 +577,7 @@ export default function TournamentDetailPage() {
                     <ParticipantsTab
                         tournament={tournament}
                         participants={participants}
-                        onParticipantsChange={fetchTournamentData}
+                        onParticipantsChange={handleParticipantsChange}
                         showAddParticipant={showAddParticipant}
                         setShowAddParticipant={setShowAddParticipant}
                         canEdit={canEdit}
@@ -599,7 +606,8 @@ export default function TournamentDetailPage() {
                     <IndividualScheduleTab
                         tournament={tournament}
                         participants={participants}
-                        onRefresh={fetchTournamentData}
+                        onRefresh={handleParticipantsChange}
+                        matchDataVersion={matchDataVersion}
                         canEdit={canEdit}
                     />
                 )}
@@ -617,7 +625,8 @@ export default function TournamentDetailPage() {
                     <BracketResultsTab
                         tournament={tournament}
                         participants={participants}
-                        onRefresh={fetchTournamentData}
+                        onRefresh={handleParticipantsChange}
+                        matchDataVersion={matchDataVersion}
                         canEdit={canEdit}
                         resultMatchId={searchParams.get("resultMatch")}
                     />
@@ -627,6 +636,7 @@ export default function TournamentDetailPage() {
                         tournament={tournament}
                         participants={participants}
                         isIndividualPoolMode={!isTeamTournament}
+                        matchDataVersion={matchDataVersion}
                         canEdit={canEdit}
                     />
                 )}
@@ -634,7 +644,11 @@ export default function TournamentDetailPage() {
                     <PlayerStatsTab tournament={tournament} />
                 )}
                 {activeTab === "player_stats" && !isTeamTournament && (
-                    <IndividualPlayerStatsTab tournament={tournament} participants={participants} />
+                    <IndividualPlayerStatsTab
+                        tournament={tournament}
+                        participants={participants}
+                        matchDataVersion={matchDataVersion}
+                    />
                 )}
 
                 {activeTab === "settings" && showSettingsTab && (
@@ -747,7 +761,18 @@ function ParticipantsTab({
     const [csvUploadError, setCsvUploadError] = useState<string | null>(null);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editName, setEditName] = useState("");
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
     const supabase = createClient();
+
+    const startEditingParticipant = (participant: Participant) => {
+        setEditingId(participant.id);
+        setEditName(participant.player_name);
+    };
+
+    const cancelEditingParticipant = () => {
+        setEditingId(null);
+        setEditName("");
+    };
 
     const handleAddParticipant = async () => {
         if (!newParticipantName.trim()) {
@@ -905,25 +930,33 @@ function ParticipantsTab({
             return;
         }
         if (oldName === nextName) {
-            setEditingId(null);
-            setEditName('');
+            cancelEditingParticipant();
             return;
         }
+
+        const participantNamesMatch = (a: string, b: string) =>
+            a.trim().toLowerCase() === b.trim().toLowerCase();
 
         const rewriteDoublesNotesName = (notes: string | null | undefined): string | null | undefined => {
             const parsed = parseDoublesMatchNotes(notes);
             if (!parsed) return notes;
 
+            const shouldUpdateSide = (s: { id?: string; name: string }) => {
+                if (s.id === participantId) return true;
+                const sideId = (s.id || "").trim();
+                return !sideId && !!oldName && participantNamesMatch(s.name, oldName);
+            };
+
             let changed = false;
             const sideA = parsed.sideA.map((s) => {
-                if (s.id !== participantId || s.name === nextName) return s;
+                if (!shouldUpdateSide(s) || s.name === nextName) return s;
                 changed = true;
-                return { ...s, name: nextName };
+                return { ...s, id: participantId, name: nextName };
             });
             const sideB = parsed.sideB.map((s) => {
-                if (s.id !== participantId || s.name === nextName) return s;
+                if (!shouldUpdateSide(s) || s.name === nextName) return s;
                 changed = true;
-                return { ...s, name: nextName };
+                return { ...s, id: participantId, name: nextName };
             });
             if (!changed) return notes;
 
@@ -935,6 +968,7 @@ function ParticipantsTab({
             return assembled || null;
         };
 
+        setIsSavingEdit(true);
         try {
             const { error } = await supabase
                 .from('tournament_participants')
@@ -976,12 +1010,13 @@ function ParticipantsTab({
                 }
             }
 
-            setEditingId(null);
-            setEditName("");
+            cancelEditingParticipant();
             onParticipantsChange();
         } catch (error) {
             console.error('Error updating participant:', error);
             alert('Failed to update participant');
+        } finally {
+            setIsSavingEdit(false);
         }
     };
 
@@ -1019,6 +1054,11 @@ function ParticipantsTab({
                 )}
                 {!canEdit && <p className="text-sm text-gray-600">View only</p>}
             </div>
+            {canEdit && participants.length > 0 && (
+                <p className="text-sm text-gray-600">
+                    Use <span className="font-medium">Edit name</span> to rename a participant. The new name is saved to the schedule, results, and stats.
+                </p>
+            )}
             {csvUploadError && <p className="text-sm text-amber-700 mt-2">{csvUploadError}</p>}
 
             {canEdit && showAddParticipant && (
@@ -1124,31 +1164,36 @@ function ParticipantsTab({
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900">{index + 1}</td>
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm text-gray-900 font-medium">
                                             {canEdit && editingId === participant.id ? (
-                                                <input
-                                                    type="text"
-                                                    value={editName}
-                                                    onChange={(e) => setEditName(e.target.value)}
-                                                    className="w-full px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded text-xs md:text-sm"
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') {
-                                                            handleEditParticipant(participant.id);
-                                                        } else if (e.key === 'Escape') {
-                                                            setEditingId(null);
-                                                            setEditName("");
-                                                        }
-                                                    }}
-                                                    autoFocus
-                                                />
+                                                <div className="space-y-1">
+                                                    <input
+                                                        type="text"
+                                                        value={editName}
+                                                        onChange={(e) => setEditName(e.target.value)}
+                                                        className="w-full px-2 py-1 border border-gray-300 bg-white text-gray-900 rounded text-xs md:text-sm"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                void handleEditParticipant(participant.id);
+                                                            } else if (e.key === 'Escape') {
+                                                                cancelEditingParticipant();
+                                                            }
+                                                        }}
+                                                        autoFocus
+                                                        disabled={isSavingEdit}
+                                                    />
+                                                    {participant.category && (
+                                                        <span className="block text-xs text-gray-500">
+                                                            ({participant.category})
+                                                        </span>
+                                                    )}
+                                                </div>
                                             ) : canEdit ? (
-                                                <span
-                                                    className="cursor-pointer text-gray-900 hover:text-red-600 font-semibold"
-                                                    onClick={() => {
-                                                        setEditingId(participant.id);
-                                                        setEditName(participant.player_name);
-                                                    }}
+                                                <button
+                                                    type="button"
+                                                    className="text-left cursor-pointer text-gray-900 hover:text-red-600 font-semibold"
+                                                    onClick={() => startEditingParticipant(participant)}
                                                 >
                                                     {formatPlayerNameWithCategory(participant.player_name, participant.category)}
-                                                </span>
+                                                </button>
                                             ) : (
                                                 <span className="text-gray-900 font-semibold">
                                                     {formatPlayerNameWithCategory(participant.player_name, participant.category)}
@@ -1174,12 +1219,45 @@ function ParticipantsTab({
                                         </td>
                                         {canEdit && (
                                         <td className="px-2 md:px-4 py-3 text-xs md:text-sm">
-                                            <button
-                                                onClick={() => handleRemoveParticipant(participant.id)}
-                                                className="text-red-600 hover:text-red-700 text-xs md:text-sm"
-                                            >
-                                                Remove
-                                            </button>
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                                {editingId === participant.id ? (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void handleEditParticipant(participant.id)}
+                                                            disabled={isSavingEdit}
+                                                            className="text-green-700 hover:text-green-800 font-medium disabled:opacity-50"
+                                                        >
+                                                            {isSavingEdit ? "Saving…" : "Save"}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={cancelEditingParticipant}
+                                                            disabled={isSavingEdit}
+                                                            className="text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => startEditingParticipant(participant)}
+                                                            className="text-blue-600 hover:text-blue-700"
+                                                        >
+                                                            Edit name
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveParticipant(participant.id)}
+                                                            className="text-red-600 hover:text-red-700"
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
                                         </td>
                                         )}
                                     </tr>
@@ -2184,11 +2262,13 @@ function IndividualScheduleTab({
     tournament,
     participants,
     onRefresh,
+    matchDataVersion = 0,
     canEdit = false,
 }: {
     tournament: Tournament;
     participants: Participant[];
     onRefresh: () => void;
+    matchDataVersion?: number;
     canEdit?: boolean;
 }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
@@ -2312,7 +2392,7 @@ function IndividualScheduleTab({
 
     useEffect(() => {
         refreshMatches();
-    }, [refreshMatches]);
+    }, [refreshMatches, matchDataVersion]);
 
     const handleScheduleDownloadXlsx = useCallback(() => {
         if (filteredMatches.length === 0) {
@@ -5781,12 +5861,14 @@ function BracketResultsTab({
     tournament,
     participants,
     onRefresh,
+    matchDataVersion = 0,
     canEdit = false,
     resultMatchId,
 }: {
     tournament: Tournament;
     participants: Participant[];
     onRefresh: () => void;
+    matchDataVersion?: number;
     canEdit?: boolean;
     resultMatchId: string | null;
 }) {
@@ -5833,7 +5915,7 @@ function BracketResultsTab({
         return () => {
             cancelled = true;
         };
-    }, [tournament.id, supabase]);
+    }, [tournament.id, supabase, matchDataVersion]);
 
     useEffect(() => {
         if (!resultMatchId) {
@@ -6891,17 +6973,22 @@ function TeamStatsTab({
     tournament,
     participants = [],
     isIndividualPoolMode = false,
+    matchDataVersion = 0,
     canEdit = false,
 }: {
     tournament: Tournament;
     participants?: Participant[];
     isIndividualPoolMode?: boolean;
+    matchDataVersion?: number;
     canEdit?: boolean;
 }) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [teams, setTeams] = useState<TournamentTeam[]>([]);
     const [members, setMembers] = useState<(TournamentTeamMember & { participant?: Participant })[]>([]);
     const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set());
+    const [statsFilterCategory, setStatsFilterCategory] = useState("");
+    const [statsFilterGroup, setStatsFilterGroup] = useState("");
+    const [statsFilterPlayer, setStatsFilterPlayer] = useState("");
     const supabase = createClient();
 
     useEffect(() => {
@@ -6930,11 +7017,41 @@ function TeamStatsTab({
             .eq("tournament_id", tournament.id)
             .eq("status", "completed")
             .then(({ data }) => setMatches(data || []));
-    }, [tournament.id, supabase, isIndividualPoolMode]);
+    }, [tournament.id, supabase, isIndividualPoolMode, matchDataVersion]);
+
+    const statsCategoryGroupOptions = useMemo(
+        () => (isIndividualPoolMode ? collectDoublesCategoryGroupOptions(matches) : { categories: [], groupsByCategory: new Map<string, string[]>() }),
+        [isIndividualPoolMode, matches],
+    );
+
+    const statsGroupOptions = useMemo(() => {
+        if (statsFilterCategory) {
+            return statsCategoryGroupOptions.groupsByCategory.get(statsFilterCategory) ?? [];
+        }
+        const all = new Set<string>();
+        for (const groups of statsCategoryGroupOptions.groupsByCategory.values()) {
+            for (const g of groups) all.add(g);
+        }
+        return [...all].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    }, [statsCategoryGroupOptions, statsFilterCategory]);
+
+    useEffect(() => {
+        if (!statsFilterGroup) return;
+        if (!statsGroupOptions.includes(statsFilterGroup)) {
+            setStatsFilterGroup("");
+        }
+    }, [statsFilterGroup, statsGroupOptions]);
+
+    const statsMatchesForCompute = useMemo(() => {
+        if (!isIndividualPoolMode) return matches;
+        return matches.filter((m) =>
+            matchPassesDoublesCategoryGroupFilter(m.notes, statsFilterCategory, statsFilterGroup),
+        );
+    }, [isIndividualPoolMode, matches, statsFilterCategory, statsFilterGroup]);
 
     const individualPoolView = useMemo(() => {
         if (!isIndividualPoolMode) return null;
-        const pairStats = computeIndividualDoublesPairStats(matches);
+        const pairStats = computeIndividualDoublesPairStats(statsMatchesForCompute);
         const withPts: IndividualDoublesPairStatsRow[] = [...pairStats.values()].map((s) => ({
             team: {
                 id: s.pairKey,
@@ -6961,7 +7078,7 @@ function TeamStatsTab({
             return a.team.name.localeCompare(b.team.name, undefined, { sensitivity: "base" });
         });
         return { sorted, memberRowsByTeam: {} as Record<string, { id: string; name: string; points: number }[]>, qualifiedForQF: [] as typeof withPts };
-    }, [isIndividualPoolMode, matches, tournament.id]);
+    }, [isIndividualPoolMode, statsMatchesForCompute, tournament.id]);
 
     const stats: Record<string, { played: number; won: number; lost: number; pointsFor: number; pointsAgainst: number }> = {};
     if (!isIndividualPoolMode) {
@@ -7008,6 +7125,22 @@ function TeamStatsTab({
             if (a.pts !== b.pts) return b.pts - a.pts;
             return (b.pointsDifference ?? 0) - (a.pointsDifference ?? 0);
         });
+
+    const statsPlayerQuery = statsFilterPlayer.trim().toLowerCase();
+    const filteredSorted = useMemo(() => {
+        if (!statsPlayerQuery) return sorted;
+        return sorted.filter((row) => {
+            if (isIndividualPoolMode) {
+                const players = (row as IndividualDoublesPairStatsRow).doublesPlayers;
+                const names = players?.map((p) => (p.name || "").toLowerCase()).join(" ") ?? row.team.name.toLowerCase();
+                return names.includes(statsPlayerQuery);
+            }
+            return row.team.name.toLowerCase().includes(statsPlayerQuery);
+        });
+    }, [sorted, statsPlayerQuery, isIndividualPoolMode]);
+
+    const hasStatsFilters =
+        Boolean(statsFilterCategory) || Boolean(statsFilterGroup) || Boolean(statsPlayerQuery);
 
     const byCategory: Record<string, typeof sorted> = {};
     sorted.forEach((row) => {
@@ -7093,6 +7226,30 @@ function TeamStatsTab({
                     </>
                 )}
             </p>
+            {isIndividualPoolMode && statsCategoryGroupOptions.categories.length > 0 ? (
+                <DoublesPoolFilterBar
+                    idPrefix="team-stats"
+                    categories={statsCategoryGroupOptions.categories}
+                    groupOptions={statsGroupOptions}
+                    categoryValue={statsFilterCategory}
+                    groupValue={statsFilterGroup}
+                    playerValue={statsFilterPlayer}
+                    onCategoryChange={(v) => {
+                        setStatsFilterCategory(v);
+                        setStatsFilterGroup("");
+                    }}
+                    onGroupChange={setStatsFilterGroup}
+                    onPlayerChange={setStatsFilterPlayer}
+                    onClear={() => {
+                        setStatsFilterCategory("");
+                        setStatsFilterGroup("");
+                        setStatsFilterPlayer("");
+                    }}
+                    hasActiveFilters={hasStatsFilters}
+                    showingCount={filteredSorted.length}
+                    totalCount={sorted.length}
+                />
+            ) : null}
             <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto">
                 <table className="min-w-full overflow-hidden">
                     <thead className="bg-white border-b border-gray-200">
@@ -7109,7 +7266,7 @@ function TeamStatsTab({
                         </tr>
                     </thead>
                     <tbody>
-                        {sorted.map((row, idx) => {
+                        {filteredSorted.map((row, idx) => {
                             const isQualified = qualifiedForQF.some((q) => q && q.team && q.team.id === row.team.id);
                             const isExpanded = expandedTeamIds.has(row.team.id);
                             const rank = idx + 1;
@@ -7193,6 +7350,11 @@ function TeamStatsTab({
                     </tbody>
                 </table>
             </div>
+            {isIndividualPoolMode && filteredSorted.length === 0 && sorted.length > 0 && hasStatsFilters ? (
+                <p className="text-amber-800 text-sm bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    No doubles teams match your filters. Try another category, group, or clear filters.
+                </p>
+            ) : null}
             <p className="text-xs text-gray-500">
                 {isIndividualPoolMode ? (
                     <>
@@ -7735,7 +7897,15 @@ function computeIndividualParticipantStats(
     return stats;
 }
 
-function IndividualPlayerStatsTab({ tournament, participants }: { tournament: Tournament; participants: Participant[] }) {
+function IndividualPlayerStatsTab({
+    tournament,
+    participants,
+    matchDataVersion = 0,
+}: {
+    tournament: Tournament;
+    participants: Participant[];
+    matchDataVersion?: number;
+}) {
     const [matches, setMatches] = useState<TournamentMatch[]>([]);
     const [sortKey, setSortKey] = useState<PlayerStatsSortKey>("pts");
     const supabase = createClient();
@@ -7747,7 +7917,7 @@ function IndividualPlayerStatsTab({ tournament, participants }: { tournament: To
             .eq("tournament_id", tournament.id)
             .eq("status", "completed")
             .then(({ data }) => setMatches((data || []) as TournamentMatch[]));
-    }, [tournament.id, supabase]);
+    }, [tournament.id, supabase, matchDataVersion]);
 
     const rowsWithStats = useMemo(() => {
         const stats = computeIndividualParticipantStats(participants, matches);
