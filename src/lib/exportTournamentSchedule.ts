@@ -2,6 +2,7 @@ import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import {
     formatDoublesPlayersLineCompact,
+    getDoublesMatchKnockoutRoundLabel,
     NOTES_JSON_MARK,
     parseDoublesMatchNotes,
 } from "@/lib/generateBalancedDoublesSchedule";
@@ -83,6 +84,7 @@ export type ScheduleExportRow = {
     resting: string;
     finalScore: string;
     status: string;
+    knockoutRound: string;
 };
 
 function scheduleMatchDateMs(m: MatchForScheduleExport): number {
@@ -120,6 +122,7 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
         const umpire = getUmpireFromScheduleNotes(m.notes ?? null);
         const resting = getRestingFromScheduleNotes(m.notes ?? null);
         const finalScore = (m.final_score && String(m.final_score).trim()) || "";
+        const koRound = getDoublesMatchKnockoutRoundLabel(m.notes ?? null);
         return {
             matchNumber: m.match_number?.trim() || "—",
             dateStr,
@@ -131,6 +134,7 @@ export function buildScheduleExportRows(matches: MatchForScheduleExport[]): Sche
             resting,
             finalScore,
             status: m.status?.trim() || "—",
+            knockoutRound: koRound || "",
         };
     });
 }
@@ -152,6 +156,7 @@ export function downloadScheduleXlsx(
     const sheetRows = rows.map((r) => ({
         "Date & time": r.dateStr,
         Court: r.court === "—" ? "—" : resolveCourtDisplay ? resolveCourtDisplay(r.court) : r.court,
+        Round: r.knockoutRound?.trim() || "—",
         Lineups: r.lineups,
         Umpire: r.umpire?.trim() || "—",
         Resting: r.resting?.trim() || "—",
@@ -159,7 +164,7 @@ export function downloadScheduleXlsx(
         Status: r.status,
     }));
     const ws = XLSX.utils.json_to_sheet(sheetRows);
-    const colW = [{ wch: 22 }, { wch: 10 }, { wch: 55 }, { wch: 22 }, { wch: 28 }, { wch: 12 }, { wch: 12 }];
+    const colW = [{ wch: 22 }, { wch: 10 }, { wch: 18 }, { wch: 55 }, { wch: 22 }, { wch: 28 }, { wch: 12 }, { wch: 12 }];
     ws["!cols"] = colW;
     const wb = XLSX.utils.book_new();
     const sheetName = (filterLabel ? "Schedule filtered" : "Schedule").replace(/[:\\/?*[\]]/g, "-").slice(0, 31);
@@ -340,7 +345,8 @@ export async function downloadSchedulePdf(
 
     const drawMatchCard = (r: ScheduleExportRow, x: number, top: number, w: number, compact: boolean): number => {
         const pad = compact ? 2.2 : cardPad;
-        const meta = r.dateStr || "—";
+        const metaParts = [r.knockoutRound?.trim(), r.dateStr !== "—" ? r.dateStr : ""].filter(Boolean);
+        const meta = metaParts.length > 0 ? metaParts.join(" · ") : "—";
         const statusLabel = (r.status || "upcoming").toLowerCase();
         const badge = badgeColors(statusLabel);
         const lineupSource = r.lineups === "—" ? "" : r.lineups;

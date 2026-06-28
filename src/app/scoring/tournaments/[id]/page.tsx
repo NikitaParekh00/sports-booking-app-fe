@@ -24,6 +24,18 @@ import {
     theoreticalDoublesMatchCountIfFullyMet,
     collectDoublesCategoryGroupOptions,
     matchPassesDoublesCategoryGroupFilter,
+    collectKnockoutRoundFilterOptions,
+    matchPassesKnockoutRoundFilter,
+    formatKnockoutRoundLabel,
+    formatEventCategoryDisplayLabel,
+    resolvePrimaryPoolEventCategory,
+    KNOCKOUT_EVENT_CATEGORY_OPTIONS,
+    KNOCKOUT_ROUND_MAX,
+    getDoublesMatchKnockoutRound,
+    getDoublesMatchKnockoutRoundEventCategory,
+    getDoublesMatchKnockoutRoundLabel,
+    type KnockoutRoundFilterOption,
+    type PoolEventCategory,
 } from "@/lib/generateBalancedDoublesSchedule";
 import {
     assignMatchTimesByCourt,
@@ -151,6 +163,21 @@ function setUmpireInNotes(
         .filter(Boolean)
         .join("\n")
         .trim();
+    return assembled || null;
+}
+
+function rewriteDoublesPayloadInNotes(
+    notes: string | null | undefined,
+    mutator: (payload: DoublesLinePayload) => DoublesLinePayload,
+): string | null {
+    const parsed = parseDoublesMatchNotes(notes);
+    if (!parsed) return notes ?? null;
+    const next = mutator({ ...parsed });
+    const raw = (notes || "").trim();
+    const idx = raw.indexOf(NOTES_JSON_MARK);
+    const textPart = idx >= 0 ? raw.slice(0, idx).trim() : "";
+    const jsonPart = `${NOTES_JSON_MARK}${JSON.stringify(next)}`;
+    const assembled = [textPart, jsonPart].filter(Boolean).join("\n").trim();
     return assembled || null;
 }
 
@@ -2285,8 +2312,10 @@ function IndividualScheduleTab({
     const [scheduleFilterPlayer, setScheduleFilterPlayer] = useState("");
     const [scheduleFilterCategory, setScheduleFilterCategory] = useState("");
     const [scheduleFilterGroup, setScheduleFilterGroup] = useState("");
+    const [scheduleFilterKnockoutRound, setScheduleFilterKnockoutRound] = useState("");
     const [showAdd, setShowAdd] = useState(false);
     const [deletingMatchId, setDeletingMatchId] = useState<string | null>(null);
+    const [savingMatchId, setSavingMatchId] = useState<string | null>(null);
     const [newMatch, setNewMatch] = useState({
         lineup_a1: "",
         lineup_a2: "",
@@ -2296,6 +2325,8 @@ function IndividualScheduleTab({
         match_date: "",
         match_number: "",
         umpire_name: "",
+        knockout_round: "",
+        knockout_category: "" as PoolEventCategory | "",
     });
     const supabase = createClient();
 
@@ -2321,6 +2352,18 @@ function IndividualScheduleTab({
         () => collectDoublesCategoryGroupOptions(drawMatches),
         [drawMatches],
     );
+
+    const scheduleKnockoutRoundOptions = useMemo(
+        () => collectKnockoutRoundFilterOptions(drawMatches),
+        [drawMatches],
+    );
+
+    useEffect(() => {
+        if (!scheduleFilterKnockoutRound) return;
+        if (!scheduleKnockoutRoundOptions.some((o) => o.value === scheduleFilterKnockoutRound)) {
+            setScheduleFilterKnockoutRound("");
+        }
+    }, [scheduleFilterKnockoutRound, scheduleKnockoutRoundOptions]);
 
     const scheduleGroupOptions = useMemo(() => {
         if (scheduleFilterCategory) {
@@ -2352,6 +2395,9 @@ function IndividualScheduleTab({
             ) {
                 return false;
             }
+            if (!matchPassesKnockoutRoundFilter(tm.notes, scheduleFilterKnockoutRound)) {
+                return false;
+            }
             const q = scheduleFilterPlayer.trim().toLowerCase();
             if (!q) return true;
             const names = (tm.match_players || []).map((x) => (x.player_name || "").toLowerCase());
@@ -2363,21 +2409,28 @@ function IndividualScheduleTab({
             }
             return names.some((n) => n.includes(q));
         });
-    }, [drawMatches, scheduleFilterPlayer, scheduleFilterCategory, scheduleFilterGroup]);
+    }, [drawMatches, scheduleFilterPlayer, scheduleFilterCategory, scheduleFilterGroup, scheduleFilterKnockoutRound]);
 
     const hasScheduleFilters =
         Boolean(scheduleFilterPlayer.trim()) ||
         Boolean(scheduleFilterCategory) ||
-        Boolean(scheduleFilterGroup);
+        Boolean(scheduleFilterGroup) ||
+        Boolean(scheduleFilterKnockoutRound);
 
     const scheduleExportFilterNote = useMemo(() => {
         if (!hasScheduleFilters) return undefined;
         const bits: string[] = [];
-        if (scheduleFilterCategory) bits.push(`Category: ${scheduleFilterCategory}`);
+        if (scheduleFilterCategory) {
+            bits.push(`Category: ${formatEventCategoryDisplayLabel(scheduleFilterCategory)}`);
+        }
         if (scheduleFilterGroup) bits.push(`Group: ${scheduleFilterGroup}`);
+        if (scheduleFilterKnockoutRound) {
+            const opt = scheduleKnockoutRoundOptions.find((o) => o.value === scheduleFilterKnockoutRound);
+            bits.push(opt?.label || scheduleFilterKnockoutRound);
+        }
         if (scheduleFilterPlayer.trim()) bits.push(`Player contains: ${scheduleFilterPlayer.trim()}`);
         return bits.join(" • ");
-    }, [hasScheduleFilters, scheduleFilterCategory, scheduleFilterGroup, scheduleFilterPlayer]);
+    }, [hasScheduleFilters, scheduleFilterCategory, scheduleFilterGroup, scheduleFilterKnockoutRound, scheduleFilterPlayer, scheduleKnockoutRoundOptions]);
 
     const resolveCourtExport = useCallback((raw: string) => formatStoredCourtForDisplay(tournament, raw), [tournament]);
 
@@ -2517,6 +2570,15 @@ function IndividualScheduleTab({
         [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2],
     );
 
+    const addFormEventCategory = useMemo((): PoolEventCategory | "" => {
+        const firstId = newMatch.lineup_a1 || newMatch.lineup_a2 || newMatch.lineup_b1 || newMatch.lineup_b2;
+        if (!firstId) return "";
+        const p = participants.find((x) => x.id === firstId);
+        return resolvePrimaryPoolEventCategory(p?.category ? String(p.category) : "");
+    }, [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2, participants]);
+
+    const addFormKnockoutCategory = newMatch.knockout_category || addFormEventCategory;
+
     const handleAddMatch = async () => {
         const lineupIds = [newMatch.lineup_a1, newMatch.lineup_a2, newMatch.lineup_b1, newMatch.lineup_b2];
         if (lineupIds.some((id) => !id)) {
@@ -2535,7 +2597,21 @@ function IndividualScheduleTab({
         };
         const sideA = [participantToSide(newMatch.lineup_a1), participantToSide(newMatch.lineup_a2)];
         const sideB = [participantToSide(newMatch.lineup_b1), participantToSide(newMatch.lineup_b2)];
-        const categoryKey = normalizeCategoryLabel(sideA[0].category) || "mixed";
+        const koRound = newMatch.knockout_round.trim()
+            ? parseInt(newMatch.knockout_round, 10)
+            : NaN;
+        const isKnockout = Number.isFinite(koRound) && koRound >= 1 && koRound <= KNOCKOUT_ROUND_MAX;
+        const knockoutCategory =
+            (newMatch.knockout_category as PoolEventCategory | "") ||
+            resolvePrimaryPoolEventCategory(sideA[0].category) ||
+            "";
+        if (isKnockout && !knockoutCategory) {
+            alert("Select a knockout category (Mens Doubles, Womens, or Mix).");
+            return;
+        }
+        const categoryKey =
+            (isKnockout ? knockoutCategory : resolvePrimaryPoolEventCategory(sideA[0].category)) ||
+            "Mixed Doubles";
         const payload: DoublesLinePayload = {
             type: "doubles_line",
             categoryKey,
@@ -2543,6 +2619,7 @@ function IndividualScheduleTab({
             teamBId: "side_b",
             sideA,
             sideB,
+            ...(isKnockout ? { knockoutRound: koRound } : {}),
         };
         const notesOut = setUmpireInNotes(`${NOTES_JSON_MARK}${JSON.stringify(payload)}`, newMatch.umpire_name);
         const addCount = matches.filter((m) => (m.match_number || "").startsWith("ADD-")).length;
@@ -2571,6 +2648,8 @@ function IndividualScheduleTab({
                 match_date: "",
                 match_number: "",
                 umpire_name: "",
+                knockout_round: "",
+                knockout_category: "",
             });
             setShowAdd(false);
             onRefresh();
@@ -2597,6 +2676,44 @@ function IndividualScheduleTab({
             alert("Failed to delete match");
         } finally {
             setDeletingMatchId(null);
+        }
+    };
+
+    const handleSaveMatchLabel = async (
+        matchId: string,
+        updates: { knockoutRound: number | null; categoryKey: PoolEventCategory | null },
+    ) => {
+        const match = matches.find((m) => m.id === matchId);
+        if (!match) return;
+        if (!parseDoublesMatchNotes(match.notes)) {
+            alert("Only doubles lineup matches can be labeled.");
+            return;
+        }
+        if (updates.knockoutRound != null && !updates.categoryKey) {
+            alert("Select a category (Mens Doubles, Womens, or Mix) for the knockout label.");
+            return;
+        }
+        setSavingMatchId(matchId);
+        try {
+            const nextNotes = rewriteDoublesPayloadInNotes(match.notes, (payload) => {
+                const next = { ...payload };
+                if (updates.categoryKey) next.categoryKey = updates.categoryKey;
+                if (updates.knockoutRound != null && updates.knockoutRound >= 1) {
+                    next.knockoutRound = updates.knockoutRound;
+                } else {
+                    delete next.knockoutRound;
+                }
+                return next;
+            });
+            const { error } = await supabase.from("matches").update({ notes: nextNotes }).eq("id", matchId);
+            if (error) throw error;
+            onRefresh();
+            refreshMatches();
+        } catch (e) {
+            console.error(e);
+            alert("Failed to update match label");
+        } finally {
+            setSavingMatchId(null);
         }
     };
 
@@ -2710,7 +2827,49 @@ function IndividualScheduleTab({
                             </div>
                         </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Knockout round</label>
+                            <select
+                                value={newMatch.knockout_round}
+                                onChange={(e) =>
+                                    setNewMatch((m) => ({
+                                        ...m,
+                                        knockout_round: e.target.value,
+                                        knockout_category: e.target.value ? m.knockout_category : "",
+                                    }))
+                                }
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            >
+                                <option value="">Pool / no round label</option>
+                                {Array.from({ length: KNOCKOUT_ROUND_MAX }, (_, i) => i + 1).map((r) => (
+                                    <option key={r} value={String(r)}>
+                                        {formatKnockoutRoundLabel(r, addFormKnockoutCategory)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        {newMatch.knockout_round ? (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                                <select
+                                    value={newMatch.knockout_category || addFormEventCategory}
+                                    onChange={(e) =>
+                                        setNewMatch((m) => ({
+                                            ...m,
+                                            knockout_category: e.target.value as PoolEventCategory,
+                                        }))
+                                    }
+                                    className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                                >
+                                    {KNOCKOUT_EVENT_CATEGORY_OPTIONS.map((opt) => (
+                                        <option key={opt.value} value={opt.value}>
+                                            {opt.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        ) : null}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">Court</label>
                             <select
@@ -2773,7 +2932,9 @@ function IndividualScheduleTab({
                 hideCourtsNote
                 canEdit={canEdit}
                 onDeleteMatch={canEdit ? handleDeleteMatch : undefined}
+                onSaveMatchLabel={canEdit ? handleSaveMatchLabel : undefined}
                 deletingMatchId={deletingMatchId}
+                savingMatchId={savingMatchId}
                 toolbar={
                     <DoublesPoolFilterBar
                         idPrefix="indiv-sched"
@@ -2782,6 +2943,9 @@ function IndividualScheduleTab({
                         categoryValue={scheduleFilterCategory}
                         groupValue={scheduleFilterGroup}
                         playerValue={scheduleFilterPlayer}
+                        knockoutRoundOptions={scheduleKnockoutRoundOptions}
+                        knockoutRoundValue={scheduleFilterKnockoutRound}
+                        onKnockoutRoundChange={setScheduleFilterKnockoutRound}
                         onCategoryChange={(v) => {
                             setScheduleFilterCategory(v);
                             setScheduleFilterGroup("");
@@ -2792,6 +2956,7 @@ function IndividualScheduleTab({
                             setScheduleFilterPlayer("");
                             setScheduleFilterCategory("");
                             setScheduleFilterGroup("");
+                            setScheduleFilterKnockoutRound("");
                         }}
                         hasActiveFilters={hasScheduleFilters}
                         showingCount={filteredMatches.length}
@@ -3578,6 +3743,14 @@ function formatPlayerNameWithCategory(name: string, category?: string | null): s
     return cat ? `${nm} (${cat})` : nm;
 }
 
+function KnockoutRoundBadge({ label }: { label: string }) {
+    return (
+        <span className="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-purple-800">
+            {label}
+        </span>
+    );
+}
+
 function normalizeSetScoreToWinner(setScore: string, winnerOnSecondSide: boolean): string {
     const parts = setScore.split("-").map((n) => parseInt(n.trim(), 10));
     if (parts.length < 2 || Number.isNaN(parts[0]) || Number.isNaN(parts[1])) return setScore.trim();
@@ -3731,7 +3904,9 @@ function IndividualScheduleMatchCard({
     tournament,
     canEdit = false,
     onDeleteMatch,
+    onSaveMatchLabel,
     deletingMatchId,
+    savingMatchId,
 }: {
     match: TournamentMatch;
     participants: Participant[];
@@ -3739,10 +3914,19 @@ function IndividualScheduleMatchCard({
     tournament: Tournament;
     canEdit?: boolean;
     onDeleteMatch?: (matchId: string) => void;
+    onSaveMatchLabel?: (
+        matchId: string,
+        updates: { knockoutRound: number | null; categoryKey: PoolEventCategory | null },
+    ) => void | Promise<void>;
     deletingMatchId?: string | null;
+    savingMatchId?: string | null;
 }) {
     const m = match;
     const doublesPayload = parseDoublesMatchNotes(m.notes);
+    const knockoutRoundLabel = getDoublesMatchKnockoutRoundLabel(m.notes);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editKnockoutRound, setEditKnockoutRound] = useState("");
+    const [editKnockoutCategory, setEditKnockoutCategory] = useState<PoolEventCategory | "">("");
     const p1 = m.match_players?.find((x) => x.team === "player_1");
     const p2 = m.match_players?.find((x) => x.team === "player_2");
     const n1 = p1?.player_name ?? "TBD";
@@ -3752,9 +3936,119 @@ function IndividualScheduleMatchCard({
         .split("\n")
         .map((s) => s.trim())
         .find((s) => /^resting\s*:/i.test(s));
+
+    const inferredCategory = useMemo((): PoolEventCategory | "" => {
+        if (doublesPayload?.categoryKey) {
+            return resolvePrimaryPoolEventCategory(getDoublesMatchKnockoutRoundEventCategory(m.notes)) || "";
+        }
+        const firstSide = doublesPayload?.sideA?.[0];
+        if (firstSide?.category) {
+            return resolvePrimaryPoolEventCategory(firstSide.category) || "";
+        }
+        return "";
+    }, [doublesPayload, m.notes]);
+
+    const startEditing = () => {
+        const round = getDoublesMatchKnockoutRound(m.notes);
+        setEditKnockoutRound(round != null ? String(round) : "");
+        setEditKnockoutCategory(
+            (resolvePrimaryPoolEventCategory(getDoublesMatchKnockoutRoundEventCategory(m.notes)) ||
+                inferredCategory ||
+                "Mens Doubles") as PoolEventCategory,
+        );
+        setIsEditing(true);
+    };
+
+    const cancelEditing = () => {
+        setIsEditing(false);
+        setEditKnockoutRound("");
+        setEditKnockoutCategory("");
+    };
+
+    const editPreviewCategory = editKnockoutCategory || inferredCategory;
+    const isSaving = savingMatchId === m.id;
+
     return (
         <div className="p-3 flex gap-2 items-start bg-white min-w-0">
             <div className="min-w-0 flex-1 overflow-hidden space-y-2">
+                {isEditing ? (
+                    <div className="rounded-lg border border-purple-200 bg-purple-50/60 p-2.5 space-y-2">
+                        <p className="text-[11px] font-semibold text-purple-900 uppercase tracking-wide">Match label</p>
+                        <div className="space-y-2">
+                            <div>
+                                <label className="block text-xs text-gray-600 mb-1">Knockout round</label>
+                                <select
+                                    value={editKnockoutRound}
+                                    onChange={(e) => setEditKnockoutRound(e.target.value)}
+                                    disabled={isSaving}
+                                    className="w-full px-2 py-1.5 border border-gray-300 bg-white text-gray-900 rounded text-xs"
+                                >
+                                    <option value="">Pool / no label</option>
+                                    {Array.from({ length: KNOCKOUT_ROUND_MAX }, (_, i) => i + 1).map((r) => (
+                                        <option key={r} value={String(r)}>
+                                            {formatKnockoutRoundLabel(r, editPreviewCategory)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            {editKnockoutRound ? (
+                                <div>
+                                    <label className="block text-xs text-gray-600 mb-1">Category</label>
+                                    <select
+                                        value={editKnockoutCategory || inferredCategory || "Mens Doubles"}
+                                        onChange={(e) =>
+                                            setEditKnockoutCategory(e.target.value as PoolEventCategory)
+                                        }
+                                        disabled={isSaving}
+                                        className="w-full px-2 py-1.5 border border-gray-300 bg-white text-gray-900 rounded text-xs"
+                                    >
+                                        {KNOCKOUT_EVENT_CATEGORY_OPTIONS.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            ) : null}
+                        </div>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                            <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => {
+                                    if (!onSaveMatchLabel) return;
+                                    const koRound = editKnockoutRound.trim()
+                                        ? parseInt(editKnockoutRound, 10)
+                                        : null;
+                                    const categoryKey = editKnockoutRound
+                                        ? ((editKnockoutCategory ||
+                                              inferredCategory ||
+                                              "Mens Doubles") as PoolEventCategory)
+                                        : null;
+                                    void (async () => {
+                                        await onSaveMatchLabel(m.id, { knockoutRound: koRound, categoryKey });
+                                        cancelEditing();
+                                    })();
+                                }}
+                                className="text-xs font-medium text-green-700 hover:text-green-800 disabled:opacity-50"
+                            >
+                                {isSaving ? "Saving…" : "Save label"}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isSaving}
+                                onClick={cancelEditing}
+                                className="text-xs font-medium text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                ) : knockoutRoundLabel ? (
+                    <div>
+                        <KnockoutRoundBadge label={knockoutRoundLabel} />
+                    </div>
+                ) : null}
                 {doublesPayload ? (
                     <DoublesLineupBlocks payload={doublesPayload} />
                 ) : (
@@ -3783,6 +4077,15 @@ function IndividualScheduleMatchCard({
                     >
                         {m.status === "completed" ? "View results" : "Enter results"}
                     </Link>
+                    {canEdit && doublesPayload && onSaveMatchLabel && !isEditing ? (
+                        <button
+                            type="button"
+                            onClick={startEditing}
+                            className="block text-xs font-medium text-blue-600 hover:text-blue-800 mt-1"
+                        >
+                            Edit match
+                        </button>
+                    ) : null}
                     {canEdit && onDeleteMatch ? (
                         <button
                             type="button"
@@ -4172,6 +4475,9 @@ type DoublesPoolFilterBarProps = {
     hasActiveFilters: boolean;
     showingCount: number;
     totalCount: number;
+    knockoutRoundOptions?: KnockoutRoundFilterOption[];
+    knockoutRoundValue?: string;
+    onKnockoutRoundChange?: (value: string) => void;
     downloadButtons?: ReactNode;
     idPrefix?: string;
 };
@@ -4190,13 +4496,17 @@ function DoublesPoolFilterBar({
     hasActiveFilters,
     showingCount,
     totalCount,
+    knockoutRoundOptions = [],
+    knockoutRoundValue = "",
+    onKnockoutRoundChange,
     downloadButtons,
     idPrefix = "pool-filter",
 }: DoublesPoolFilterBarProps) {
     const showPoolFilters = categories.length > 0;
+    const showKnockoutRoundFilter = knockoutRoundOptions.length > 0 && onKnockoutRoundChange;
     return (
         <div className="rounded-xl border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(9rem,1fr)_minmax(7rem,0.75fr)_minmax(10rem,1.25fr)_auto_auto] md:items-end md:gap-x-3 md:gap-y-2">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] md:items-end md:gap-x-3 md:gap-y-2">
                 {showPoolFilters ? (
                     <>
                         <div className="min-w-0">
@@ -4212,7 +4522,7 @@ function DoublesPoolFilterBar({
                                 <option value="">All categories</option>
                                 {categories.map((cat) => (
                                     <option key={cat} value={cat}>
-                                        {cat}
+                                        {formatEventCategoryDisplayLabel(cat)}
                                     </option>
                                 ))}
                             </select>
@@ -4236,6 +4546,26 @@ function DoublesPoolFilterBar({
                             </select>
                         </div>
                     </>
+                ) : null}
+                {showKnockoutRoundFilter ? (
+                    <div className="min-w-0">
+                        <label htmlFor={`${idPrefix}-knockout-round`} className="block text-xs font-medium text-gray-600 mb-1">
+                            Knockout round
+                        </label>
+                        <select
+                            id={`${idPrefix}-knockout-round`}
+                            value={knockoutRoundValue}
+                            onChange={(e) => onKnockoutRoundChange!(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                        >
+                            <option value="">All rounds</option>
+                            {knockoutRoundOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                 ) : null}
                 <div className="min-w-0 md:col-span-1">
                     <label htmlFor={`${idPrefix}-player`} className="block text-xs font-medium text-gray-600 mb-1">
@@ -4285,7 +4615,9 @@ function IndividualCourtScheduleGrid({
     hideCourtsNote,
     canEdit = false,
     onDeleteMatch,
+    onSaveMatchLabel,
     deletingMatchId,
+    savingMatchId,
     toolbar,
 }: {
     matches: TournamentMatch[];
@@ -4296,7 +4628,12 @@ function IndividualCourtScheduleGrid({
     hideCourtsNote?: boolean;
     canEdit?: boolean;
     onDeleteMatch?: (matchId: string) => void;
+    onSaveMatchLabel?: (
+        matchId: string,
+        updates: { knockoutRound: number | null; categoryKey: PoolEventCategory | null },
+    ) => void | Promise<void>;
     deletingMatchId?: string | null;
+    savingMatchId?: string | null;
     /** Filters / actions rendered above the court grid (schedule tab). */
     toolbar?: ReactNode;
 }) {
@@ -4360,7 +4697,9 @@ function IndividualCourtScheduleGrid({
                             tournament={tournament}
                             canEdit={canEdit}
                             onDeleteMatch={onDeleteMatch}
+                            onSaveMatchLabel={onSaveMatchLabel}
                             deletingMatchId={deletingMatchId}
+                            savingMatchId={savingMatchId}
                         />
                     )}
                 />
@@ -4939,7 +5278,8 @@ function TeamScheduleTab({ tournament, onRefresh, canEdit = false }: { tournamen
                 rosterRowToSide(newMatch.team_b_id, newMatch.lineup_b1),
                 rosterRowToSide(newMatch.team_b_id, newMatch.lineup_b2),
             ];
-            const categoryKey = normalizeCategoryLabel(sideA[0].category) || "mixed";
+            const categoryKey =
+                resolvePrimaryPoolEventCategory(sideA[0].category) || "Mixed Doubles";
             const payload: DoublesLinePayload = {
                 type: "doubles_line",
                 categoryKey,
@@ -6036,11 +6376,24 @@ function BracketResultsTab({
     const [timeFilter, setTimeFilter] = useState("all");
     const [categoryFilter, setCategoryFilter] = useState("");
     const [groupFilter, setGroupFilter] = useState("");
+    const [knockoutRoundFilter, setKnockoutRoundFilter] = useState("");
 
     const resultsCategoryGroupOptions = useMemo(
         () => collectDoublesCategoryGroupOptions(bracketMatches),
         [bracketMatches],
     );
+
+    const resultsKnockoutRoundOptions = useMemo(
+        () => collectKnockoutRoundFilterOptions(bracketMatches),
+        [bracketMatches],
+    );
+
+    useEffect(() => {
+        if (!knockoutRoundFilter) return;
+        if (!resultsKnockoutRoundOptions.some((o) => o.value === knockoutRoundFilter)) {
+            setKnockoutRoundFilter("");
+        }
+    }, [knockoutRoundFilter, resultsKnockoutRoundOptions]);
 
     const resultsGroupOptions = useMemo(() => {
         if (categoryFilter) {
@@ -6121,6 +6474,7 @@ function BracketResultsTab({
             if (courtFilter !== "all" && courtKeyForMatch(m) !== courtFilter) return false;
             if (timeFilter !== "all" && timeKeyForMatch(m) !== timeFilter) return false;
             if (!matchPassesDoublesCategoryGroupFilter(m.notes, categoryFilter, groupFilter)) return false;
+            if (!matchPassesKnockoutRoundFilter(m.notes, knockoutRoundFilter)) return false;
             if (!normalizedSearch) return true;
 
             const tm = m as TournamentMatch;
@@ -6142,6 +6496,7 @@ function BracketResultsTab({
         timeKeyForMatch,
         categoryFilter,
         groupFilter,
+        knockoutRoundFilter,
         normalizedSearch,
     ]);
 
@@ -6152,7 +6507,8 @@ function BracketResultsTab({
         courtFilter !== "all" ||
         timeFilter !== "all" ||
         Boolean(categoryFilter) ||
-        Boolean(groupFilter);
+        Boolean(groupFilter) ||
+        Boolean(knockoutRoundFilter);
 
     return (
         <div className="space-y-4">
@@ -6190,7 +6546,7 @@ function BracketResultsTab({
                                     <option value="">All categories</option>
                                     {resultsCategoryGroupOptions.categories.map((cat) => (
                                         <option key={cat} value={cat}>
-                                            {cat}
+                                            {formatEventCategoryDisplayLabel(cat)}
                                         </option>
                                     ))}
                                 </select>
@@ -6208,6 +6564,21 @@ function BracketResultsTab({
                                     ))}
                                 </select>
                             </>
+                        ) : null}
+                        {resultsKnockoutRoundOptions.length > 0 ? (
+                            <select
+                                value={knockoutRoundFilter}
+                                onChange={(e) => setKnockoutRoundFilter(e.target.value)}
+                                aria-label="Knockout round"
+                                className="w-full px-3 py-2 border border-gray-300 bg-white text-gray-900 rounded-lg text-sm"
+                            >
+                                <option value="">All rounds</option>
+                                {resultsKnockoutRoundOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
                         ) : null}
                         <select
                             value={dayFilter}
@@ -6267,6 +6638,7 @@ function BracketResultsTab({
                                     setTimeFilter("all");
                                     setCategoryFilter("");
                                     setGroupFilter("");
+                                    setKnockoutRoundFilter("");
                                 }}
                                 className="w-full md:w-auto rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                             >
@@ -6289,6 +6661,7 @@ function BracketResultsTab({
                         const m = match as TournamentMatch;
                         const isEditing = editingId === match.id;
                         const doublesPayload = parseDoublesMatchNotes(m.notes);
+                        const resultKnockoutRoundLabel = getDoublesMatchKnockoutRoundLabel(m.notes);
                         const p1 = sidePlayer(m, "player_1");
                         const p2 = sidePlayer(m, "player_2");
                         const n1 = p1?.player_name ?? "TBD";
@@ -6306,6 +6679,11 @@ function BracketResultsTab({
                             <div key={match.id} className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 shadow-sm">
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                     <div className="min-w-0 flex-1">
+                                        {resultKnockoutRoundLabel ? (
+                                            <div className="mb-2">
+                                                <KnockoutRoundBadge label={resultKnockoutRoundLabel} />
+                                            </div>
+                                        ) : null}
                                         {doublesPayload ? (
                                             <DoublesLineupBlocks
                                                 payload={doublesPayload}
@@ -6989,6 +7367,7 @@ function TeamStatsTab({
     const [statsFilterCategory, setStatsFilterCategory] = useState("");
     const [statsFilterGroup, setStatsFilterGroup] = useState("");
     const [statsFilterPlayer, setStatsFilterPlayer] = useState("");
+    const [statsFilterKnockoutRound, setStatsFilterKnockoutRound] = useState("");
     const supabase = createClient();
 
     useEffect(() => {
@@ -7024,6 +7403,18 @@ function TeamStatsTab({
         [isIndividualPoolMode, matches],
     );
 
+    const statsKnockoutRoundOptions = useMemo(
+        () => (isIndividualPoolMode ? collectKnockoutRoundFilterOptions(matches) : []),
+        [isIndividualPoolMode, matches],
+    );
+
+    useEffect(() => {
+        if (!statsFilterKnockoutRound) return;
+        if (!statsKnockoutRoundOptions.some((o) => o.value === statsFilterKnockoutRound)) {
+            setStatsFilterKnockoutRound("");
+        }
+    }, [statsFilterKnockoutRound, statsKnockoutRoundOptions]);
+
     const statsGroupOptions = useMemo(() => {
         if (statsFilterCategory) {
             return statsCategoryGroupOptions.groupsByCategory.get(statsFilterCategory) ?? [];
@@ -7044,10 +7435,13 @@ function TeamStatsTab({
 
     const statsMatchesForCompute = useMemo(() => {
         if (!isIndividualPoolMode) return matches;
-        return matches.filter((m) =>
-            matchPassesDoublesCategoryGroupFilter(m.notes, statsFilterCategory, statsFilterGroup),
-        );
-    }, [isIndividualPoolMode, matches, statsFilterCategory, statsFilterGroup]);
+        return matches.filter((m) => {
+            if (!matchPassesDoublesCategoryGroupFilter(m.notes, statsFilterCategory, statsFilterGroup)) {
+                return false;
+            }
+            return matchPassesKnockoutRoundFilter(m.notes, statsFilterKnockoutRound);
+        });
+    }, [isIndividualPoolMode, matches, statsFilterCategory, statsFilterGroup, statsFilterKnockoutRound]);
 
     const individualPoolView = useMemo(() => {
         if (!isIndividualPoolMode) return null;
@@ -7140,7 +7534,10 @@ function TeamStatsTab({
     }, [sorted, statsPlayerQuery, isIndividualPoolMode]);
 
     const hasStatsFilters =
-        Boolean(statsFilterCategory) || Boolean(statsFilterGroup) || Boolean(statsPlayerQuery);
+        Boolean(statsFilterCategory) ||
+        Boolean(statsFilterGroup) ||
+        Boolean(statsFilterKnockoutRound) ||
+        Boolean(statsPlayerQuery);
 
     const byCategory: Record<string, typeof sorted> = {};
     sorted.forEach((row) => {
@@ -7226,7 +7623,7 @@ function TeamStatsTab({
                     </>
                 )}
             </p>
-            {isIndividualPoolMode && statsCategoryGroupOptions.categories.length > 0 ? (
+            {isIndividualPoolMode && (statsCategoryGroupOptions.categories.length > 0 || statsKnockoutRoundOptions.length > 0) ? (
                 <DoublesPoolFilterBar
                     idPrefix="team-stats"
                     categories={statsCategoryGroupOptions.categories}
@@ -7234,6 +7631,9 @@ function TeamStatsTab({
                     categoryValue={statsFilterCategory}
                     groupValue={statsFilterGroup}
                     playerValue={statsFilterPlayer}
+                    knockoutRoundOptions={statsKnockoutRoundOptions}
+                    knockoutRoundValue={statsFilterKnockoutRound}
+                    onKnockoutRoundChange={setStatsFilterKnockoutRound}
                     onCategoryChange={(v) => {
                         setStatsFilterCategory(v);
                         setStatsFilterGroup("");
@@ -7244,6 +7644,7 @@ function TeamStatsTab({
                         setStatsFilterCategory("");
                         setStatsFilterGroup("");
                         setStatsFilterPlayer("");
+                        setStatsFilterKnockoutRound("");
                     }}
                     hasActiveFilters={hasStatsFilters}
                     showingCount={filteredSorted.length}

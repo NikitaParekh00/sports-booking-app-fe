@@ -518,29 +518,37 @@ export function getDoublesMatchCategoryParts(
 ): { eventCategory: string; group: string } | null {
     const payload = parseDoublesMatchNotes(notes);
     if (!payload?.categoryKey) return null;
-    return parseMatchCategoryKey(payload.categoryKey);
+    const parsed = parseMatchCategoryKey(payload.categoryKey);
+    if (!parsed) return null;
+    const canon = resolvePrimaryPoolEventCategory(parsed.eventCategory);
+    return {
+        eventCategory: canon || parsed.eventCategory,
+        group: parsed.group,
+    };
 }
 
 export function collectDoublesCategoryGroupOptions(
     matches: { notes?: string | null }[],
 ): { categories: string[]; groupsByCategory: Map<string, string[]> } {
-    const categories = new Set<string>();
-    const groupsByCategory = new Map<string, Set<string>>();
+    const categories = new Set<PoolEventCategory>();
+    const groupsByCategory = new Map<PoolEventCategory, Set<string>>();
     for (const m of matches) {
         const parts = getDoublesMatchCategoryParts(m.notes);
-        if (!parts) continue;
-        categories.add(parts.eventCategory);
+        if (!parts?.eventCategory) continue;
+        const canon = resolvePrimaryPoolEventCategory(parts.eventCategory);
+        if (!canon) continue;
+        categories.add(canon);
         if (parts.group) {
-            if (!groupsByCategory.has(parts.eventCategory)) {
-                groupsByCategory.set(parts.eventCategory, new Set());
+            if (!groupsByCategory.has(canon)) {
+                groupsByCategory.set(canon, new Set());
             }
-            groupsByCategory.get(parts.eventCategory)!.add(parts.group);
+            groupsByCategory.get(canon)!.add(parts.group);
         }
     }
     const sortGroups = (a: string, b: string) =>
         a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
     return {
-        categories: [...categories].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })),
+        categories: POOL_EVENT_CATEGORIES.filter((c) => categories.has(c)),
         groupsByCategory: new Map(
             [...groupsByCategory.entries()].map(([cat, groups]) => [cat, [...groups].sort(sortGroups)]),
         ),
@@ -1242,7 +1250,154 @@ export type DoublesLinePayload = {
     sideB: { id: string; name: string; category: string }[];
     /** Individual-tournament doubles: winning side id (e.g. side_a) when winner_team_id FK is unused. */
     winnerSideTeamId?: string;
+    /** Knockout bracket round (1–6) when this match is not pool play. */
+    knockoutRound?: number;
 };
+
+export const KNOCKOUT_ROUND_MAX = 6;
+
+export const POOL_EVENT_CATEGORIES = ["Mens Doubles", "Females Doubles", "Mixed Doubles"] as const;
+export type PoolEventCategory = (typeof POOL_EVENT_CATEGORIES)[number];
+
+/** Pick one pool event from participant category (handles `Mens | Mixed` style values). */
+export function resolvePrimaryPoolEventCategory(raw: string | null | undefined): PoolEventCategory | "" {
+    const text = (raw ?? "").trim();
+    if (!text) return "";
+    const parts = text.split("|").map((s) => s.trim()).filter(Boolean);
+    const probe = parts.length > 0 ? parts : [text];
+    for (const p of probe) {
+        const lower = p.toLowerCase();
+        if (/\bmens\b|\bmale/i.test(lower)) return "Mens Doubles";
+        if (/\bfemale|\bwomen|\bwomens/i.test(lower)) return "Females Doubles";
+        if (/\bmixed|\bmix\b/i.test(lower)) return "Mixed Doubles";
+    }
+    return "";
+}
+
+/** Short display labels for knockout badges (Mens Doubles, Womens, Mix). */
+export function formatEventCategoryDisplayLabel(eventCategory: string | null | undefined): string {
+    const canon = resolvePrimaryPoolEventCategory(eventCategory || "");
+    if (canon === "Mens Doubles") return "Mens Doubles";
+    if (canon === "Females Doubles") return "Womens";
+    if (canon === "Mixed Doubles") return "Mix";
+    const t = (eventCategory || "").trim();
+    if (!t) return "";
+    const lower = t.toLowerCase();
+    if (/\bmens\b|\bmale/i.test(lower)) return "Mens Doubles";
+    if (/\bfemale|\bwomen/i.test(lower)) return "Womens";
+    if (/\bmixed|\bmix\b/i.test(lower)) return "Mix";
+    return t;
+}
+
+export const KNOCKOUT_EVENT_CATEGORY_OPTIONS: { value: PoolEventCategory; label: string }[] = [
+    { value: "Mens Doubles", label: "Mens Doubles" },
+    { value: "Females Doubles", label: "Womens" },
+    { value: "Mixed Doubles", label: "Mix" },
+];
+
+export function formatKnockoutRoundLabel(round: number, eventCategory?: string | null): string {
+    const base = `Knockout Round ${round}`;
+    const cat = formatEventCategoryDisplayLabel(eventCategory);
+    return cat ? `${cat} · ${base}` : base;
+}
+
+export function getDoublesMatchKnockoutRound(notes: string | null | undefined): number | null {
+    const payload = parseDoublesMatchNotes(notes);
+    if (payload?.knockoutRound == null) return null;
+    const r = Math.floor(Number(payload.knockoutRound));
+    if (!Number.isFinite(r) || r < 1 || r > KNOCKOUT_ROUND_MAX) return null;
+    return r;
+}
+
+export function getDoublesMatchKnockoutRoundEventCategory(notes: string | null | undefined): string {
+    const payload = parseDoublesMatchNotes(notes);
+    if (!payload?.categoryKey) return "";
+    const raw = parseMatchCategoryKey(payload.categoryKey)?.eventCategory || "";
+    return resolvePrimaryPoolEventCategory(raw) || raw;
+}
+
+export function getDoublesMatchKnockoutRoundLabel(notes: string | null | undefined): string | null {
+    const round = getDoublesMatchKnockoutRound(notes);
+    if (round == null) return null;
+    return formatKnockoutRoundLabel(round, getDoublesMatchKnockoutRoundEventCategory(notes));
+}
+
+export function knockoutRoundFilterKey(eventCategory: string, round: number): string {
+    const cat = (eventCategory || "").trim();
+    return cat ? `${cat}::${round}` : String(round);
+}
+
+export function parseKnockoutRoundFilterKey(key: string): { eventCategory: string; round: number } | null {
+    const idx = key.indexOf("::");
+    if (idx === -1) {
+        const r = parseInt(key, 10);
+        return Number.isFinite(r) ? { eventCategory: "", round: r } : null;
+    }
+    const eventCategory = key.slice(0, idx).trim();
+    const round = parseInt(key.slice(idx + 2), 10);
+    if (!Number.isFinite(round)) return null;
+    return { eventCategory, round };
+}
+
+export function getDoublesMatchKnockoutRoundFilterKey(notes: string | null | undefined): string | null {
+    const round = getDoublesMatchKnockoutRound(notes);
+    if (round == null) return null;
+    return knockoutRoundFilterKey(getDoublesMatchKnockoutRoundEventCategory(notes), round);
+}
+
+export type KnockoutRoundFilterOption = {
+    value: string;
+    label: string;
+    round: number;
+    eventCategory: string;
+};
+
+export function collectKnockoutRoundFilterOptions(
+    matches: { notes?: string | null }[],
+): KnockoutRoundFilterOption[] {
+    const seen = new Map<string, KnockoutRoundFilterOption>();
+    for (const m of matches) {
+        const key = getDoublesMatchKnockoutRoundFilterKey(m.notes);
+        if (!key) continue;
+        const parsed = parseKnockoutRoundFilterKey(key);
+        if (!parsed) continue;
+        if (!seen.has(key)) {
+            seen.set(key, {
+                value: key,
+                label: formatKnockoutRoundLabel(parsed.round, parsed.eventCategory || undefined),
+                round: parsed.round,
+                eventCategory: parsed.eventCategory,
+            });
+        }
+    }
+    return [...seen.values()].sort((a, b) => {
+        const catCmp = a.eventCategory.localeCompare(b.eventCategory, undefined, { sensitivity: "base" });
+        if (catCmp !== 0) return catCmp;
+        return a.round - b.round;
+    });
+}
+
+export function collectKnockoutRoundOptions(matches: { notes?: string | null }[]): number[] {
+    const rounds = new Set<number>();
+    for (const m of matches) {
+        const r = getDoublesMatchKnockoutRound(m.notes);
+        if (r != null) rounds.add(r);
+    }
+    return [...rounds].sort((a, b) => a - b);
+}
+
+export function matchPassesKnockoutRoundFilter(
+    notes: string | null | undefined,
+    roundFilter: string,
+): boolean {
+    if (!roundFilter) return true;
+    const matchKey = getDoublesMatchKnockoutRoundFilterKey(notes);
+    if (!matchKey) return false;
+    if (roundFilter.includes("::")) return matchKey === roundFilter;
+    const want = parseInt(roundFilter, 10);
+    if (!Number.isFinite(want)) return true;
+    return getDoublesMatchKnockoutRound(notes) === want;
+}
 
 export function parseDoublesMatchNotes(notes: string | null | undefined): DoublesLinePayload | null {
     if (!notes?.trim()) return null;
