@@ -5204,16 +5204,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Category */}
+                                            {/* Age, skill, category */}
                                             <div className="mb-3 overflow-x-auto">
                                                 <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
                                                             <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
                                                             <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
                                                         </tr>
                                                     </tbody>
@@ -5513,16 +5517,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Category */}
+                                            {/* Age, skill, category */}
                                             <div className="mb-3 overflow-x-auto">
                                                 <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
+                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
                                                             <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
+                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
                                                             <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
                                                         </tr>
                                                     </tbody>
