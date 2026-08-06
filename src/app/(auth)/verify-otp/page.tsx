@@ -55,9 +55,9 @@ function VerifyOtpContent() {
 
             // Hardcoded OTP validation
             // For phone 7506256356, use code 90123
-            // For all other phones, use code 654321 (first 5 digits: 65432)
+            // For all other phones, use code 234556 (first 5 digits: 23455)
             const phoneNumber = phone.replace(/\D/g, ''); // Remove all non-digits
-            const expectedCode = phoneNumber.includes('7506256356') ? '90123' : '65432';
+            const expectedCode = phoneNumber.includes('7506256356') ? '90123' : '23455';
 
             if (otpString !== expectedCode) {
                 alert('Invalid code. Please try again.');
