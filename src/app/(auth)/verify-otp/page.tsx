@@ -110,7 +110,8 @@ function VerifyOtpContent() {
             localStorage.setItem('sf:user', JSON.stringify({
                 user_id: userData.user_id,
                 full_name: userData.full_name,
-                email: ''
+                email: '',
+                phone: phone,
             }));
 
             // Success! Land on return URL or homepage

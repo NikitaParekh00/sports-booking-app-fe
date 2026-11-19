@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import Image from 'next/image';
 import { processImageUrl } from '@/lib/imageUrlHelper';
+import { sportRatingsForDb, sportRatingsForDbFromCsvRow } from '@/lib/sportRatings';
 
 type Tab = 'sessions' | 'teams' | 'players' | 'settings';
 
@@ -41,6 +42,7 @@ interface Player {
   played_s1?: string;
   experience?: string;
   active_sport?: string;
+  sport_ratings?: Record<string, number>;
   player_order: number;
   session_id: string;
 }
@@ -71,7 +73,7 @@ export default function AuctionAdminPage() {
   const [showPlayerForm, setShowPlayerForm] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
   const [playerFormData, setPlayerFormData] = useState({
-    name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: ''
+    name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', sport_ratings: '', player_order: ''
   });
   const [uploadingPlayers, setUploadingPlayers] = useState(false);
   const [uploadingTeams, setUploadingTeams] = useState(false);
@@ -434,13 +436,14 @@ export default function AuctionAdminPage() {
           played_s1: playerFormData.played_s1 || null,
           experience: playerFormData.experience || null,
           active_sport: playerFormData.active_sport || null,
+          sport_ratings: sportRatingsForDb(playerFormData.sport_ratings),
           player_order: playerFormData.player_order ? parseInt(playerFormData.player_order) : nextPlayerOrder
         }]);
 
       if (error) throw error;
       alert('Player created successfully!');
       setShowPlayerForm(false);
-      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', sport_ratings: '', player_order: '' });
       loadPlayers(selectedSessionForPlayers);
     } catch (error: any) {
       console.error('Error creating player:', error);
@@ -463,6 +466,7 @@ export default function AuctionAdminPage() {
           played_s1: playerFormData.played_s1 || null,
           experience: playerFormData.experience || null,
           active_sport: playerFormData.active_sport || null,
+          sport_ratings: sportRatingsForDb(playerFormData.sport_ratings),
           player_order: playerFormData.player_order ? parseInt(playerFormData.player_order) : editingPlayer.player_order
         })
         .eq('id', editingPlayer.id);
@@ -471,7 +475,7 @@ export default function AuctionAdminPage() {
       alert('Player updated successfully!');
       setEditingPlayer(null);
       setShowPlayerForm(false);
-      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+      setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', sport_ratings: '', player_order: '' });
       loadPlayers(selectedSessionForPlayers);
     } catch (error: any) {
       console.error('Error updating player:', error);
@@ -957,6 +961,7 @@ export default function AuctionAdminPage() {
           played_s1: normalizedPlayedS1,
           experience: player.experience || null,
           active_sport: player.active_sport || null,
+          sport_ratings: sportRatingsForDbFromCsvRow(player),
           player_order: playerOrder
         };
       });
@@ -1606,6 +1611,7 @@ export default function AuctionAdminPage() {
                       download="player_upload_template.csv"
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
                       style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
+                      title="Includes rating_chess … rating_carrom (1–5). Optional sport_ratings column: cricket:4,pickleball:5"
                     >
                       Download Template
                     </a>
@@ -1625,7 +1631,7 @@ export default function AuctionAdminPage() {
                     <button
                       onClick={() => {
                         setEditingPlayer(null);
-                        setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+                        setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', sport_ratings: '', player_order: '' });
                         setShowPlayerForm(true);
                       }}
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
@@ -1668,6 +1674,17 @@ export default function AuctionAdminPage() {
                     )}
                   </div>
                 </div>
+                <p className="text-xs md:text-sm mb-4" style={{ color: '#9CA3AF' }}>
+                  CSV template includes star ratings (1–5) as columns:{' '}
+                  <span style={{ color: '#D1D5DB' }}>
+                    rating_chess, rating_pickleball, rating_badminton, rating_cricket, rating_carrom
+                  </span>
+                  . Upload saves them in{' '}
+                  <code className="text-xs" style={{ color: '#E5E7EB' }}>sport_ratings</code> (JSON). Optional{' '}
+                  <code className="text-xs" style={{ color: '#E5E7EB' }}>sport_ratings</code> column:{' '}
+                  <span style={{ color: '#D1D5DB' }}>cricket:4,pickleball:5</span> for other sports. Re-download if
+                  your file is an older template.
+                </p>
 
                 {showPlayerForm && (
                   <div className="mb-6 p-4 md:p-6 rounded-lg border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
@@ -1824,6 +1841,20 @@ export default function AuctionAdminPage() {
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
                         />
                       </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Sport ratings (1–5 stars)</label>
+                        <input
+                          type="text"
+                          value={playerFormData.sport_ratings}
+                          onChange={(e) => setPlayerFormData({ ...playerFormData, sport_ratings: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                          placeholder='cricket:4,pickleball:5,badminton:3,carrom:2,chess:5'
+                        />
+                        <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
+                          Top 5 by rating show on the auction card. Use sport:rating pairs or JSON.
+                        </p>
+                      </div>
                       <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Player Order (optional)</label>
                         <input
@@ -1848,7 +1879,7 @@ export default function AuctionAdminPage() {
                         onClick={() => {
                           setShowPlayerForm(false);
                           setEditingPlayer(null);
-                          setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', player_order: '' });
+                          setPlayerFormData({ name: '', photo: '', age: '', skill: '', batting_hand: '', bowling_hand: '', wing: '', flat_no: '', phone: '', category: '', played_s1: '', experience: '', active_sport: '', sport_ratings: '', player_order: '' });
                         }}
                         className="px-4 py-2 rounded-lg font-semibold transition-colors"
                         style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
@@ -1935,6 +1966,11 @@ export default function AuctionAdminPage() {
                               played_s1: player.played_s1 || '',
                               experience: player.experience || '',
                               active_sport: player.active_sport || '',
+                              sport_ratings: player.sport_ratings
+                                ? Object.entries(player.sport_ratings)
+                                      .map(([sport, rating]) => `${sport}:${rating}`)
+                                      .join(',')
+                                : '',
                               player_order: player.player_order.toString()
                             });
                             setShowPlayerForm(true);

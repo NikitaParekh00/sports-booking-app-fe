@@ -7,6 +7,7 @@ import LocationInput from "@/components/LocationInput";
 import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
+import { isAuctionAdminPhone } from "@/lib/auctionAccess";
 
 interface User {
   id: string;
@@ -29,6 +30,7 @@ export default function Dashboard() {
   const [isLocationSheetOpen, setIsLocationSheetOpen] = useState<boolean>(false);
   const [showAuctionBanner, setShowAuctionBanner] = useState(true);
   const [auctionSessions, setAuctionSessions] = useState<Array<{ id: string; session_name: string; is_complete: boolean }>>([]);
+  const [canViewLiveAuction, setCanViewLiveAuction] = useState(false);
 
   const handleLocationChange = (location: string) => {
     console.log('Dashboard received location change:', location);
@@ -52,6 +54,16 @@ export default function Dashboard() {
             full_name: userData.full_name,
             email: userData.email || ''
           });
+          let phone = userData.phone as string | undefined;
+          if (!phone && userData.user_id) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('phone')
+              .eq('user_id', userData.user_id)
+              .maybeSingle();
+            phone = profile?.phone ?? undefined;
+          }
+          setCanViewLiveAuction(isAuctionAdminPhone(phone));
         } catch (error) {
           console.error('Error parsing stored user:', error);
           setUser(null);
@@ -76,6 +88,7 @@ export default function Dashboard() {
             full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
             email: authUser.email || ''
           });
+          setCanViewLiveAuction(isAuctionAdminPhone(profile?.phone));
         } else {
           console.log('No authenticated user found');
           // No user found
@@ -171,11 +184,19 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => router.push(`/auction?session=${session.id}`)}
-                      className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
+                      onClick={() => router.push(`/auction/confirm?session=${session.id}`)}
+                      className="px-3 py-1.5 bg-red-800 text-white rounded-lg font-semibold text-sm hover:bg-red-900 transition-colors"
                     >
-                      View
+                      My profile
                     </button>
+                    {canViewLiveAuction && (
+                      <button
+                        onClick={() => router.push(`/auction?session=${session.id}`)}
+                        className="px-4 py-1.5 bg-white text-red-600 rounded-lg font-semibold text-sm hover:bg-gray-100 transition-colors"
+                      >
+                        View
+                      </button>
+                    )}
                     {auctionSessions.length === 1 && (
                       <button
                         onClick={() => setShowAuctionBanner(false)}

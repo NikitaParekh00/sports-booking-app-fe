@@ -6,6 +6,9 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import BottomSheet from './BottomSheet';
 import { processImageUrl } from '@/lib/imageUrlHelper';
+import { mapSportRatingsField } from '@/lib/sportRatings';
+import PlayerSportRatings from './PlayerSportRatings';
+import { isAuctionAdminPhone } from '@/lib/auctionAccess';
 
 interface Player {
     name: string;
@@ -22,8 +25,18 @@ interface Player {
     flat_no?: string; // Flat number
     phone?: string; // Player phone number
     category?: string; // Player category
+    sport_ratings?: Record<string, number>; // Sport name → 1–5 stars (top 5 shown on card)
     player_order?: number; // Player order in the auction
 }
+
+const AUCTION_PLAYER_POOL_FIELDS =
+    'id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, sport_ratings';
+
+const AUCTION_PLAYER_POOL_FIELDS_ALT =
+    'id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, sport_ratings, player_order';
+
+const AUCTION_PLAYER_POOL_FIELDS_NO_ORDER =
+    'id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, sport_ratings';
 
 interface Team {
     id: number;
@@ -140,11 +153,12 @@ interface DbPlayerPool {
     flat_no?: string;
     phone?: string;
     category?: string;
+    sport_ratings?: unknown;
 }
 
 // Flag to control public auction access
 // Set to true to allow everyone to view auctions, false to restrict to specific phone number
-const PUBLIC_AUCTION_ACCESS = true; // Change to true when auctions start for everyone
+const PUBLIC_AUCTION_ACCESS = false; // false = only admin can view live auction; players use /auction/confirm
 
 // Configure the allowed user for auction access (when PUBLIC_AUCTION_ACCESS is false)
 // Use the EXACT format as stored in database: +91-XXXXXXXXXX
@@ -207,11 +221,82 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const isUpdatingBidRef = useRef<boolean>(false); // Track if we're updating bid ourselves
     const isUpdatingIndexRef = useRef<boolean>(false); // Track if we're updating player index ourselves (mode switches)
 
-    // Resizable divider state
+    // Resizable divider state (desktop xl layout)
+    type DesktopLayoutMode = 'split' | 'teams' | 'player';
+    const [desktopLayoutMode, setDesktopLayoutMode] = useState<DesktopLayoutMode>('split');
     const [leftPanelWidth, setLeftPanelWidth] = useState<number | null>(null); // null means use default
     const [isDragging, setIsDragging] = useState(false);
     const dividerRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const savedSplitLeftWidthRef = useRef<number | null>(null);
+    const leftPanelWidthRef = useRef<number | null>(null);
+
+    const defaultSplitLeftWidth = teams.length > 10 ? 60 : 33.333;
+    const effectiveLeftPanelWidth =
+        desktopLayoutMode === 'teams'
+            ? 100
+            : desktopLayoutMode === 'player'
+              ? 0
+              : leftPanelWidth ?? defaultSplitLeftWidth;
+
+    const teamsGridFullWidth = desktopLayoutMode === 'teams';
+    const useCompactTeamCards = teams.length > 16;
+    const teamGridColumnCount =
+        teams.length <= 10
+            ? 2
+            : teamsGridFullWidth && teams.length > 24
+              ? 8
+              : teamsGridFullWidth && teams.length > 16
+                ? 6
+                : teams.length > 20
+                  ? 4
+                  : teams.length > 10
+                    ? 5
+                    : 2;
+    const teamGridColsClass =
+        (
+            {
+                2: 'grid-cols-2',
+                3: 'grid-cols-3',
+                4: 'grid-cols-4',
+                5: 'grid-cols-5',
+                6: 'grid-cols-6',
+                8: 'grid-cols-8',
+            } as const
+        )[teamGridColumnCount as 2 | 3 | 4 | 5 | 6 | 8] ?? 'grid-cols-2';
+    const teamGridRowCount = Math.max(1, Math.ceil(teams.length / teamGridColumnCount));
+    const fitTeamsGridOnePage = teamsGridFullWidth && teams.length > 16;
+    const teamGridScrollClass = fitTeamsGridOnePage ? 'overflow-hidden' : 'overflow-y-auto';
+    const teamGridContainerStyle: React.CSSProperties | undefined = fitTeamsGridOnePage
+        ? { gridTemplateRows: `repeat(${teamGridRowCount}, minmax(0, 1fr))` }
+        : undefined;
+    const teamCardPaddingClass = useCompactTeamCards
+        ? 'p-1 md:p-1.5'
+        : teams.length > 10
+          ? 'p-1.5 md:p-2'
+          : 'p-2 md:p-2.5';
+    const teamLogoSize = useCompactTeamCards ? 24 : teams.length > 10 ? 28 : 32;
+    const teamNameTextClass = useCompactTeamCards
+        ? 'text-xs md:text-sm'
+        : 'text-base md:text-lg';
+    const teamStatTextClass = useCompactTeamCards
+        ? 'text-xs md:text-sm'
+        : 'text-lg md:text-xl';
+    const teamCategoryTextClass = useCompactTeamCards ? 'text-[10px] md:text-xs' : 'text-xs';
+    const teamStatsStackClass = useCompactTeamCards
+        ? 'flex flex-col flex-1 justify-evenly gap-1.5 leading-snug min-h-0'
+        : 'flex flex-col gap-1';
+    const teamStatLineClass = 'font-bold';
+
+    const setDesktopLayout = (mode: DesktopLayoutMode) => {
+        if (desktopLayoutMode === 'split') {
+            savedSplitLeftWidthRef.current = leftPanelWidth ?? defaultSplitLeftWidth;
+        }
+        setDesktopLayoutMode(mode);
+        if (mode === 'split' && savedSplitLeftWidthRef.current !== null) {
+            setLeftPanelWidth(savedSplitLeftWidthRef.current);
+        }
+    };
 
     // Header minimize/expand state
     const [isHeaderOpen, setIsHeaderOpen] = useState(true);
@@ -396,40 +481,27 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     .eq('user_id', userData.user_id)
                     .single();
 
-                // Check if user can view the auction
+                const isAdminUser =
+                    isAuctionAdminPhone(profile?.phone) ||
+                    isAuctionAdminPhone(userData.phone as string | undefined);
+
                 let canUserView = false;
                 let canUserEdit = false;
 
                 if (PUBLIC_AUCTION_ACCESS) {
-                    // Public access enabled - everyone can view
                     canUserView = true;
-                    // Check if user can edit (matches allowed user)
                     if (!ALLOWED_AUCTION_USER.phone && !ALLOWED_AUCTION_USER.user_id && !ALLOWED_AUCTION_USER.email) {
-                        // No restriction - all users can edit
                         canUserEdit = true;
-                    } else {
-                        if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
-                            canUserEdit = true;
-                        } else if (ALLOWED_AUCTION_USER.phone && profile?.phone === ALLOWED_AUCTION_USER.phone) {
-                            // Simple exact match - phone must be in format: +91-XXXXXXXXXX
-                            canUserEdit = true;
-                        } else if (ALLOWED_AUCTION_USER.email && (userData.email === ALLOWED_AUCTION_USER.email || profile?.email === ALLOWED_AUCTION_USER.email)) {
-                            canUserEdit = true;
-                        }
-                    }
-                } else {
-                    // Restricted access - only allowed user can view
-                    if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
-                        canUserView = true;
+                    } else if (isAdminUser) {
                         canUserEdit = true;
-                    } else if (ALLOWED_AUCTION_USER.phone && profile?.phone === ALLOWED_AUCTION_USER.phone) {
-                        // Simple exact match - phone must be in format: +91-XXXXXXXXXX
-                        canUserView = true;
+                    } else if (ALLOWED_AUCTION_USER.user_id && userData.user_id === ALLOWED_AUCTION_USER.user_id) {
                         canUserEdit = true;
                     } else if (ALLOWED_AUCTION_USER.email && (userData.email === ALLOWED_AUCTION_USER.email || profile?.email === ALLOWED_AUCTION_USER.email)) {
-                        canUserView = true;
                         canUserEdit = true;
                     }
+                } else {
+                    canUserView = isAdminUser;
+                    canUserEdit = isAdminUser;
                 }
 
                 setCanView(canUserView);
@@ -437,6 +509,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             } catch (error) {
                 console.error('Error checking access:', error);
                 setCanEdit(false);
+                setCanView(false);
             } finally {
                 setAuthLoading(false);
             }
@@ -563,7 +636,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 // Load player pool from database - only select fields we actually use
                 const { data: playerPoolData, error: poolError } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                    .select(AUCTION_PLAYER_POOL_FIELDS)
                     .eq('session_id', finalSession.id)
                     .order('player_order', { ascending: true });
 
@@ -588,6 +661,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     flat_no: p.flat_no || undefined,
                     phone: p.phone || undefined,
                     category: p.category || undefined,
+                    sport_ratings: mapSportRatingsField(p.sport_ratings),
                     player_order: p.player_order || undefined
                 }));
 
@@ -675,6 +749,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             flat_no: poolPlayer.flat_no || undefined,
                             phone: poolPlayer.phone || undefined,
                             category: poolPlayer.category || undefined,
+                            sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings),
                             player_order: poolPlayer.player_order || undefined
                         } as Player;
                     })
@@ -1001,12 +1076,26 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             const containerRect = containerRef.current.getBoundingClientRect();
             const newLeftWidth = ((e.clientX - containerRect.left) / containerRect.width) * 100;
 
-            // Constrain between 20% and 70% of container width
-            const constrainedWidth = Math.max(20, Math.min(70, newLeftWidth));
+            // Constrain between 5% and 95% — drag near edges to maximize a panel
+            const constrainedWidth = Math.max(5, Math.min(95, newLeftWidth));
+            leftPanelWidthRef.current = constrainedWidth;
             setLeftPanelWidth(constrainedWidth);
         };
 
         const handleMouseUp = () => {
+            const w = leftPanelWidthRef.current;
+            if (w !== null) {
+                if (w <= 12) {
+                    savedSplitLeftWidthRef.current = w;
+                    setDesktopLayoutMode('player');
+                } else if (w >= 88) {
+                    savedSplitLeftWidthRef.current = w;
+                    setDesktopLayoutMode('teams');
+                } else {
+                    savedSplitLeftWidthRef.current = w;
+                    setDesktopLayoutMode('split');
+                }
+            }
             setIsDragging(false);
         };
 
@@ -1024,6 +1113,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             document.body.style.userSelect = '';
         };
     }, [isDragging]);
+
+    useEffect(() => {
+        leftPanelWidthRef.current = leftPanelWidth;
+    }, [leftPanelWidth]);
 
     // Reset bid to minimum when player index changes
     useEffect(() => {
@@ -1138,7 +1231,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     player_name,
                                     player_order,
                                     auction_player_pool!inner(
-                                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                        ${AUCTION_PLAYER_POOL_FIELDS_ALT}
                                     )
                                 `)
                                 .eq('session_id', sessionId)
@@ -1168,6 +1261,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 flat_no: poolPlayer.flat_no || undefined,
                                                 phone: poolPlayer.phone || undefined,
                                                 category: poolPlayer.category || undefined,
+                                                sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings),
                                                 player_order: poolPlayer.player_order || undefined
                                             };
                                         });
@@ -1199,7 +1293,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             // Switch back to all players - reload from original player pool
                             supabase
                                 .from('auction_player_pool')
-                                .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                                .select(AUCTION_PLAYER_POOL_FIELDS)
                                 .eq('session_id', sessionId)
                                 .order('player_order', { ascending: true })
                                 .then(({ data: playerPoolData }) => {
@@ -1226,6 +1320,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             flat_no: p.flat_no || undefined,
                                             phone: p.phone || undefined,
                                             category: p.category || undefined,
+                                            sport_ratings: mapSportRatingsField(p.sport_ratings),
                                             player_order: p.player_order || undefined
                                         }));
                                         
@@ -1625,7 +1720,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Just update the original player pool for when we switch back
                     const { data: playerPoolData } = await supabase
                         .from('auction_player_pool')
-                        .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                        .select(AUCTION_PLAYER_POOL_FIELDS)
                         .eq('session_id', sessionId)
                         .order('player_order', { ascending: true });
 
@@ -1644,6 +1739,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             flat_no: p.flat_no || undefined,
                             phone: p.phone || undefined,
                             category: p.category || undefined,
+                            sport_ratings: mapSportRatingsField(p.sport_ratings),
                             player_order: p.player_order || undefined
                         }));
                         // Only update originalPlayerPool, don't change the current players list
@@ -1655,7 +1751,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 // Reload player pool when it changes - only select fields we actually use
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                    .select(AUCTION_PLAYER_POOL_FIELDS)
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
 
@@ -1677,6 +1773,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             flat_no: p.flat_no || undefined,
                             phone: p.phone || undefined,
                             category: p.category || undefined,
+                            sport_ratings: mapSportRatingsField(p.sport_ratings),
                             player_order: p.player_order || undefined
                         })));
                         return;
@@ -1697,6 +1794,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         flat_no: p.flat_no || undefined,
                         phone: p.phone || undefined,
                         category: p.category || undefined,
+                        sport_ratings: mapSportRatingsField(p.sport_ratings),
                         player_order: p.player_order || undefined
                     }));
                     // Double-check we're still not in skipped mode before setting all players
@@ -1900,7 +1998,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 // Reload original player pool if it's empty
                 const { data: playerPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, player_order, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                    .select(AUCTION_PLAYER_POOL_FIELDS)
                     .eq('session_id', sessionId)
                     .order('player_order', { ascending: true });
                 
@@ -1919,6 +2017,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         flat_no: p.flat_no || undefined,
                         phone: p.phone || undefined,
                         category: p.category || undefined,
+                        sport_ratings: mapSportRatingsField(p.sport_ratings),
                         player_order: p.player_order || undefined
                     }));
                     setOriginalPlayerPool(mappedPlayers);
@@ -2052,7 +2151,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     player_name,
                     player_order,
                     auction_player_pool!inner(
-                        id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                        ${AUCTION_PLAYER_POOL_FIELDS_ALT}
                     )
                 `)
                 .eq('session_id', sessionId)
@@ -2086,6 +2185,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     flat_no: poolPlayer.flat_no || undefined,
                     phone: poolPlayer.phone || undefined,
                     category: poolPlayer.category || undefined,
+                    sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings),
                     player_order: poolPlayer.player_order || undefined
                 };
             });
@@ -2772,7 +2872,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     // Get player pool data to map skipped players
                     const { data: allPoolData } = await supabase
                         .from('auction_player_pool')
-                        .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                        .select(AUCTION_PLAYER_POOL_FIELDS_NO_ORDER)
                         .eq('session_id', sessionId);
 
                     const poolMap = new Map(
@@ -2796,7 +2896,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 wing: poolPlayer.wing || undefined,
                                 flat_no: poolPlayer.flat_no || undefined,
                                 phone: poolPlayer.phone || undefined,
-                                category: poolPlayer.category || undefined
+                                category: poolPlayer.category || undefined,
+                                sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings)
                             } as Player;
                         })
                         .filter((p): p is Player => p !== null);
@@ -3208,7 +3309,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 player_name,
                                 player_order,
                                 auction_player_pool!inner(
-                                    id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, player_order
+                                    ${AUCTION_PLAYER_POOL_FIELDS_ALT}
                                 )
                             `)
                     .eq('session_id', sessionId)
@@ -3236,7 +3337,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 wing: poolPlayer.wing || undefined,
                                 flat_no: poolPlayer.flat_no || undefined,
                                 phone: poolPlayer.phone || undefined,
-                                category: poolPlayer.category || undefined
+                                category: poolPlayer.category || undefined,
+                                sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings)
                             } as Player;
                         })
                         .filter((p): p is Player => p !== null);
@@ -3484,7 +3586,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 // Get player pool data to map skipped players
                 const { data: allPoolData } = await supabase
                     .from('auction_player_pool')
-                    .select('id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category')
+                    .select(AUCTION_PLAYER_POOL_FIELDS_NO_ORDER)
                     .eq('session_id', sessionId);
 
                 const poolMap = new Map(
@@ -3508,7 +3610,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             wing: poolPlayer.wing || undefined,
                             flat_no: poolPlayer.flat_no || undefined,
                             phone: poolPlayer.phone || undefined,
-                            category: poolPlayer.category || undefined
+                            category: poolPlayer.category || undefined,
+                            sport_ratings: mapSportRatingsField(poolPlayer.sport_ratings)
                         } as Player;
                     })
                     .filter((p): p is Player => p !== null);
@@ -4468,13 +4571,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     <div className="text-6xl mb-4">⏰</div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-3">Stay Tuned!</h2>
                     <p className="text-gray-600 mb-6">
-                        The auction is not yet live. Please check back soon!
+                        Live auction is for organisers only. Use &quot;My profile&quot; on the dashboard to confirm your
+                        player details.
                     </p>
                     <button
-                        onClick={() => router.back()}
-                        className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+                        onClick={() => router.push(initialSessionId ? `/auction/confirm?session=${initialSessionId}` : '/auction/confirm')}
+                        className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors mb-3"
                     >
-                        Go Back
+                        My auction profile
+                    </button>
+                    <button
+                        onClick={() => router.push('/dashboard')}
+                        className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
+                    >
+                        Dashboard
                     </button>
                 </div>
             </div>
@@ -4763,7 +4873,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         >
                             <span className="hidden sm:inline">Back</span>
                         </button>
-                        <h1 className="text-lg md:text-xl lg:text-2xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
+                        <h1 className="text-xl md:text-2xl lg:text-3xl font-bold flex-shrink-0" style={{ color: '#E5E7EB' }}>
                             <span className="md:hidden">Auction</span>
                             <span className="hidden md:inline">{sessionName ? `${sessionName} Auction` : 'Auction'}</span>
                         </h1>
@@ -4777,7 +4887,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         >
                             <button
                                 onClick={() => setIsTopPlayersSheetOpen(true)}
-                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-sm md:text-base transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#F59E0B',
                                     borderColor: '#F59E0B',
@@ -4790,7 +4900,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             </button>
                             <button
                                 onClick={() => setIsTeamDynamicsSheetOpen(true)}
-                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-sm md:text-base transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#3B82F6',
                                     borderColor: '#3B82F6',
@@ -4803,16 +4913,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             </button>
                             <button
                                 onClick={() => setIsSkippedPlayersSheetOpen(true)}
-                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-sm md:text-base transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#F97316',
                                     borderColor: '#F97316',
                                     color: '#FFFFFF'
                                 }}
-                                title={`Skipped Players (${skippedPlayersCount})`}
+                                title={`Skipped (${skippedPlayersCount})`}
                             >
-                                <span className="sm:hidden">Skip ({skippedPlayersCount})</span>
-                                <span className="hidden sm:inline">Skipped Players ({skippedPlayersCount})</span>
+                                <span className="sm:hidden">Skipped ({skippedPlayersCount})</span>
+                                <span className="hidden sm:inline">Skipped ({skippedPlayersCount})</span>
                             </button>
                             {/* Mode switcher buttons - show when in skipped mode or auction is complete */}
                             {(isSkippedPlayersMode || auctionComplete) && canEdit && (
@@ -4843,7 +4953,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             )}
                             <button
                                 onClick={() => setIsPlayerListSheetOpen(true)}
-                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-xs md:text-sm transition-colors whitespace-nowrap flex-shrink-0"
+                                className="px-2 py-1 md:px-4 md:py-2 rounded-lg border-2 font-medium text-sm md:text-base transition-colors whitespace-nowrap flex-shrink-0"
                                 style={{
                                     backgroundColor: '#10B981',
                                     borderColor: '#10B981',
@@ -4854,6 +4964,32 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <span className="hidden sm:inline">Players List</span>
                                 <span className="sm:hidden">List</span>
                             </button>
+                            <div
+                                className="hidden xl:flex items-center rounded-lg border-2 overflow-hidden flex-shrink-0"
+                                style={{ borderColor: '#374151' }}
+                                title="Desktop layout: teams only, split, or player only"
+                            >
+                                {(
+                                    [
+                                        { mode: 'teams' as const, label: 'Teams' },
+                                        { mode: 'split' as const, label: 'Split' },
+                                        { mode: 'player' as const, label: 'Player' },
+                                    ] as const
+                                ).map(({ mode, label }) => (
+                                    <button
+                                        key={mode}
+                                        type="button"
+                                        onClick={() => setDesktopLayout(mode)}
+                                        className="px-2.5 py-1.5 text-xs font-semibold transition-colors whitespace-nowrap"
+                                        style={{
+                                            backgroundColor: desktopLayoutMode === mode ? '#E11D48' : '#1F2937',
+                                            color: desktopLayoutMode === mode ? '#FFFFFF' : '#9CA3AF',
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
                             {canEdit && !auctionComplete && (
                                 <button
                                     onClick={handleEndAuction}
@@ -4899,20 +5035,20 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     className="hidden xl:flex items-stretch gap-3 h-full"
                 >
                     {/* Left Sidebar - Team Selection (Desktop) */}
+                    {desktopLayoutMode !== 'player' && (
                     <div
-                        className="flex-shrink-0 overflow-hidden"
+                        className="flex-shrink-0 overflow-hidden min-h-0"
                         style={{
-                            width: leftPanelWidth !== null
-                                ? `${leftPanelWidth}%`
-                                : teams.length > 10
-                                    ? '60%'
-                                    : '33.333%'
+                            width: `${effectiveLeftPanelWidth}%`,
                         }}
                     >
-                        <div className="rounded-xl border-2 p-4 md:p-5 h-full flex flex-col" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className={`rounded-xl border-2 h-full flex flex-col text-base md:text-lg ${useCompactTeamCards ? 'p-2 md:p-2.5' : 'p-4 md:p-5'}`} style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {/* Select Team Section */}
-                            <div className="flex-1 overflow-hidden">
-                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 h-full overflow-y-auto pr-2`}>
+                            <div className="flex-1 overflow-hidden min-h-0">
+                                <div
+                                    className={`grid ${teamGridColsClass} ${useCompactTeamCards ? 'gap-1' : 'gap-2 md:gap-3'} h-full min-h-0 ${teamGridScrollClass} pr-1`}
+                                    style={teamGridContainerStyle}
+                                >
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // They need to reserve minimum bid for remaining players
@@ -5003,7 +5139,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`${teams.length > 10 ? 'p-2 md:p-2.5' : 'p-2 md:p-2.5'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                className={`${teamCardPaddingClass} rounded-lg border-2 text-left transition-all min-w-0 w-full min-h-0 overflow-hidden ${useCompactTeamCards ? 'flex flex-col h-full' : ''} ${selectedTeamId === team.id
                                                     ? 'shadow-md' // Active - will add custom style
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -5011,11 +5147,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     }`}
                                                 style={{ backgroundColor, borderColor }}
                                             >
-                                                <div className="flex items-start gap-1.5 mb-2 w-full">
+                                                <div className={`flex items-start gap-1 w-full shrink-0 ${useCompactTeamCards ? 'mb-1' : 'mb-1.5'}`}>
                                                     {(() => {
                                                         const logoUrl = getTeamLogo(team.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
-                                                        const logoSize = teams.length > 10 ? 36 : 32;
+                                                        const logoSize = teamLogoSize;
                                                         if (isProxyUrl) {
                                                             return (
                                                                 <img
@@ -5040,17 +5176,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                             />
                                                         );
                                                     })()}
-                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teamNameTextClass}${useCompactTeamCards ? ' line-clamp-2' : ''}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={teamStatsStackClass}>
+                                                <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                     Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {/* Display category limits below Players */}
                                                 {auctionSettings?.category_limits && Object.keys(auctionSettings.category_limits).length > 0 && (
-                                                    <div className={`${teams.length > 10 ? 'text-xs' : 'text-xs'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                    <div className={`${teamCategoryTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                         {Object.entries(auctionSettings.category_limits).map(([category, limit], index) => {
                                                             // Count how many players of this category the team already has
                                                             // Use originalPlayerPool to get category info, not the current players array
@@ -5069,10 +5206,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     </div>
                                                 )}
                                                 {maxBid >= getMinimumBid() && (
-                                                    <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
+                                                    <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{formatIndianNumber(maxBid)}
                                                     </div>
                                                 )}
+                                                </div>
                                                 {!hasSpace && (
                                                     <div className="text-xs mt-1" style={{ color: '#E11D48' }}>Team full</div>
                                                 )}
@@ -5094,12 +5232,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             </div>
                         </div>
                     </div>
+                    )}
 
                     {/* Resizable Divider */}
+                    {desktopLayoutMode === 'split' && (
                     <div
                         ref={dividerRef}
                         onMouseDown={(e) => {
                             e.preventDefault();
+                            setDesktopLayoutMode('split');
                             setIsDragging(true);
                         }}
                         className="w-1 bg-gray-600 hover:bg-gray-500 cursor-col-resize flex-shrink-0 transition-colors"
@@ -5107,19 +5248,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             minWidth: '4px',
                             cursor: isDragging ? 'col-resize' : 'col-resize'
                         }}
-                        title="Drag to resize panels"
+                        title="Drag to resize. Drag far left for player only, far right for teams only."
                     />
+                    )}
 
                     {/* Main Content Area */}
+                    {desktopLayoutMode !== 'teams' && (
                     <div
-                        className="flex-1 overflow-auto space-y-4"
+                        className="flex-1 overflow-auto space-y-1.5 md:space-y-2 min-h-0 min-w-0 text-lg md:text-xl"
                         style={{
-                            minWidth: '30%'
+                            width: desktopLayoutMode === 'player' ? '100%' : undefined,
                         }}
                     >
                         {/* Progress */}
-                        <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex justify-between text-base md:text-lg font-medium mb-2" style={{ color: '#9CA3AF' }}>
+                        <div className="rounded-xl border-2 p-1.5 md:p-2 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div className="flex justify-between text-lg md:text-xl font-medium mb-1" style={{ color: '#9CA3AF' }}>
                                 <span>Player {originalIndex} of {totalPlayers}</span>
                                 <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
@@ -5141,12 +5284,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             const borderColor = hasColorMapping ? categoryColor : '#1F2937';
 
                             return (
-                                <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
-                                    <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
+                                <div className="rounded-xl p-1.5 md:p-2 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
+                                    <div className="flex flex-col md:flex-row md:items-start gap-1.5 md:gap-2 mb-0">
                                         {/* Player Photo - Top on mobile, Left on desktop */}
-                                        <div className="flex-shrink-0 flex justify-center md:justify-start">
+                                        <div className="w-full md:w-[34%] lg:w-[32%] md:shrink-0 flex justify-center md:justify-start">
                                             {currentPlayer.photo && (
-                                                <div key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-64 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                                <div
+                                                    key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`}
+                                                    className={`relative w-full max-w-[17.5rem] mx-auto md:mx-0 h-96 md:h-[27rem] rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100 ${
+                                                        desktopLayoutMode === 'player' ? 'md:max-w-none md:w-full' : ''
+                                                    }`}
+                                                >
                                                     {/* Automatically converts Google Drive links to direct image URLs */}
                                                     {(() => {
                                                         const imageUrl = processImageUrl(currentPlayer.photo);
@@ -5189,10 +5337,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </div>
 
                                         {/* Player Info - Below image on mobile, Right side on desktop */}
-                                        <div className="flex-1 flex flex-col">
+                                        <div className="w-full md:flex-1 md:min-w-[300px] flex flex-col">
                                             {/* Header: Name and Logo */}
-                                            <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
-                                                <h2 className="text-3xl md:text-5xl font-bold" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
+                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-1">
+                                                <h2 className="text-4xl md:text-6xl font-bold leading-tight" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
                                                 <div className="flex-shrink-0">
                                                     <Image
                                                         src="/logo.jpeg"
@@ -5205,48 +5353,65 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             </div>
 
                                             {/* Age, skill, category */}
-                                            <div className="mb-3 overflow-x-auto">
-                                                <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                            <div className="mb-2 md:mb-3 overflow-x-auto">
+                                                <table className="w-full border-collapse table-fixed" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
                                             </div>
 
+                                            <PlayerSportRatings
+                                                ratings={currentPlayer.sport_ratings}
+                                                textColor={hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB'}
+                                                panelStyle={{
+                                                    backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937',
+                                                    border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151',
+                                                }}
+                                                filledStarColor="#FACC15"
+                                                emptyStarColor={
+                                                    hasColorMapping
+                                                        ? getContrastColor(categoryColor) === '#000000'
+                                                            ? 'rgba(0, 0, 0, 0.25)'
+                                                            : 'rgba(255, 255, 255, 0.35)'
+                                                        : 'rgba(156, 163, 175, 0.45)'
+                                                }
+                                            />
+
                                             {/* Player Details - Additional Info */}
-                                            <div className="flex flex-wrap gap-1.5 md:gap-2">
+                                            <div className="flex flex-wrap gap-1 md:gap-1.5">
                                                 {/* Membership No (was Experience) */}
                                                 {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 w-auto inline-block" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2 w-auto inline-block" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Membership No</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.experience}</div>
                                                     </div>
                                                 )}
 
                                                 {/* Profession */}
                                                 {currentPlayer.active_sport && (
-                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Profession</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Profession</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                                     </div>
                                                 )}
 
                                                 {/* Played Previous MBBL Season - Only for Men's auction */}
                                                 {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                                    <div className="rounded-lg p-2 md:p-2.5" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Played S1</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Played S1</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.played_s1}</div>
                                                     </div>
                                                 )}
                                             </div>
@@ -5257,16 +5422,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         })()}
 
                         {/* Bid Amount */}
-                        <div className="border-2 rounded-xl p-4 md:p-6 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className="border-2 rounded-xl p-2 md:p-3 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {!canEdit && (
                                 <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
                                     View-only mode - You can watch the auction live
                                 </div>
                             )}
-                            <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                            <div className="flex flex-col md:flex-row gap-2 md:gap-3">
                                 {/* Left side - Bid Amount controls */}
                                 <div className="flex-1">
-                                    <div className="flex items-center justify-center gap-6 mb-3">
+                                    <div className="flex items-center justify-center gap-2 mb-1">
                                         <button
                                             onClick={handleBidDecrease}
                                             disabled={!canEdit || currentBid <= currentMinimumBid}
@@ -5289,8 +5454,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         >
                                             −
                                         </button>
-                                        <div className="flex flex-col items-center gap-2">
-                                            <div className="text-6xl md:text-7xl font-bold tracking-tight" style={{ color: '#22C55E' }}>₹{formatIndianNumber(currentBid)}</div>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <div className="text-7xl md:text-8xl font-bold tracking-tight" style={{ color: '#22C55E' }}>₹{formatIndianNumber(currentBid)}</div>
                                             {(() => {
                                                 const bidInfo = playerBids.get(currentBid);
                                                 if (bidInfo) {
@@ -5324,7 +5489,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                                     />
                                                                 );
                                                             })()}
-                                                            <span className="text-sm font-semibold" style={{ color: '#E5E7EB' }}>
+                                                            <span className="text-base md:text-lg font-semibold" style={{ color: '#E5E7EB' }}>
                                                                 Bid by: {bidInfo.teamName}
                                                             </span>
                                                         </div>
@@ -5358,8 +5523,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     </div>
 
                                     {/* Custom Bid Input */}
-                                    <div className="mb-3">
-                                        <label className="block text-sm font-medium mb-1.5" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
+                                    <div className="mb-2">
+                                        <label className="block text-base md:text-lg font-medium mb-1" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
                                         <div className="flex items-center gap-2">
                                             <span style={{ color: '#E5E7EB' }}>₹</span>
                                             <input
@@ -5371,7 +5536,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     handleBidInputBlur();
                                                 }}
                                                 disabled={!canEdit}
-                                                className="flex-1 px-4 py-2 border-2 rounded-lg text-lg font-semibold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="flex-1 px-4 py-2 border-2 rounded-lg text-xl font-semibold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 style={{
                                                     backgroundColor: '#111827',
                                                     borderColor: '#1F2937',
@@ -5386,17 +5551,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </div>
                                     </div>
 
-                                    <div className="text-lg md:text-xl text-center font-semibold mb-2" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-xl md:text-2xl text-center font-semibold mb-1" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                 </div>
 
                                 {/* Right side - Action Buttons */}
-                                <div className="flex flex-col gap-3 md:gap-4 justify-start md:min-w-[200px]">
+                                <div className="flex flex-col gap-1.5 md:gap-2 justify-start md:min-w-[200px]">
                                     <button
                                         onClick={handleBuyPlayer}
                                         disabled={!canEdit || !selectedTeamId}
-                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        className="w-full py-2.5 md:py-3 px-3 md:px-5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg md:text-xl"
                                         style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
                                         onMouseEnter={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
                                         onMouseLeave={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
@@ -5406,7 +5571,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     <button
                                         onClick={handleSkip}
                                         disabled={!canEdit}
-                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        className="w-full py-2.5 md:py-3 px-3 md:px-5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg md:text-xl"
                                         style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
                                         onMouseEnter={(e) => !canEdit || (e.currentTarget.style.backgroundColor = '#374151')}
                                         onMouseLeave={(e) => !canEdit || (e.currentTarget.style.backgroundColor = '#1F2937')}
@@ -5416,7 +5581,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     <button
                                         onClick={handleUndo}
                                         disabled={!canEdit || !lastAction}
-                                        className="w-full py-3 md:py-4 px-4 md:px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-base md:text-lg"
+                                        className="w-full py-2.5 md:py-3 px-3 md:px-5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg md:text-xl"
                                         style={{ 
                                             backgroundColor: lastAction ? '#6B7280' : '#1F2937', 
                                             color: '#FFFFFF',
@@ -5432,15 +5597,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             </div>
                         </div>
                     </div>
+                    )}
                 </div>
 
                 {/* Mobile Layout - Keep original grid for mobile/tablet */}
-                <div className={`xl:hidden flex flex-col gap-3 md:gap-4 overflow-y-auto flex-1 min-h-0`}>
+                <div className={`xl:hidden flex flex-col gap-2 md:gap-3 overflow-y-auto flex-1 min-h-0`}>
                     {/* Main Content Area (Mobile) - Player info only, teams hidden */}
-                    <div className="space-y-4 pb-4">
+                    <div className="space-y-1.5 md:space-y-2 pb-2 text-lg md:text-xl">
                         {/* Progress */}
-                        <div className="rounded-xl border-2 p-3 md:p-4 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
-                            <div className="flex justify-between text-base md:text-lg font-medium mb-2" style={{ color: '#9CA3AF' }}>
+                        <div className="rounded-xl border-2 p-1.5 md:p-2 lg:mt-0" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                            <div className="flex justify-between text-lg md:text-xl font-medium mb-1" style={{ color: '#9CA3AF' }}>
                                 <span>Player {originalIndex} of {totalPlayers}</span>
                                 <span>{totalPlayers - originalIndex} remaining</span>
                             </div>
@@ -5462,12 +5628,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             const borderColor = hasColorMapping ? categoryColor : '#1F2937';
 
                             return (
-                                <div className="rounded-xl p-3 md:p-4 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
-                                    <div className="flex flex-col md:flex-row gap-3 md:gap-4 mb-3">
+                                <div className="rounded-xl p-1.5 md:p-2 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
+                                    <div className="flex flex-col md:flex-row md:items-start gap-1.5 md:gap-2 mb-0">
                                         {/* Player Photo - Top on mobile, Left on desktop */}
-                                        <div className="flex-shrink-0 flex justify-center md:justify-start">
+                                        <div className="w-full md:w-[34%] lg:w-[32%] md:shrink-0 flex justify-center md:justify-start">
                                             {currentPlayer.photo && (
-                                                <div key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`} className="relative w-full max-w-xs h-80 md:w-56 md:h-80 rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100">
+                                                <div
+                                                    key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`}
+                                                    className="relative w-full max-w-[17.5rem] mx-auto md:mx-0 h-96 md:h-[27rem] md:max-w-none md:w-full rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100"
+                                                >
                                                     {(() => {
                                                         const imageUrl = processImageUrl(currentPlayer.photo);
                                                         if (!imageUrl) return null;
@@ -5502,10 +5671,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         </div>
 
                                         {/* Player Info - Below image on mobile, Right side on desktop */}
-                                        <div className="flex-1 flex flex-col">
+                                        <div className="w-full md:flex-1 md:min-w-[300px] flex flex-col">
                                             {/* Header: Name and Logo */}
-                                            <div className="flex items-center justify-center md:justify-between gap-2 md:gap-3 mb-2">
-                                                <h2 className="text-3xl md:text-5xl font-bold" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
+                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-1">
+                                                <h2 className="text-4xl md:text-6xl font-bold leading-tight" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
                                                 <div className="flex-shrink-0">
                                                     <Image
                                                         src="/logo.jpeg"
@@ -5518,43 +5687,60 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             </div>
 
                                             {/* Age, skill, category */}
-                                            <div className="mb-3 overflow-x-auto">
-                                                <table className="w-full border-collapse" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
+                                            <div className="mb-2 md:mb-3 overflow-x-auto">
+                                                <table className="w-full border-collapse table-fixed" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
                                                     <thead>
                                                         <tr>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
-                                                            <th className="p-3 md:p-3.5 text-sm md:text-base font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
+                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
                                                         <tr>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
-                                                            <td className="p-3 md:p-3.5 text-base md:text-lg font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
+                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
                                                         </tr>
                                                     </tbody>
                                                 </table>
                                             </div>
 
+                                            <PlayerSportRatings
+                                                ratings={currentPlayer.sport_ratings}
+                                                textColor={hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB'}
+                                                panelStyle={{
+                                                    backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937',
+                                                    border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151',
+                                                }}
+                                                filledStarColor="#FACC15"
+                                                emptyStarColor={
+                                                    hasColorMapping
+                                                        ? getContrastColor(categoryColor) === '#000000'
+                                                            ? 'rgba(0, 0, 0, 0.25)'
+                                                            : 'rgba(255, 255, 255, 0.35)'
+                                                        : 'rgba(156, 163, 175, 0.45)'
+                                                }
+                                            />
+
                                             {/* Player Details - Additional Info */}
-                                            <div className="flex flex-wrap gap-1.5 md:gap-2">
+                                            <div className="flex flex-wrap gap-1 md:gap-1.5">
                                                 {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border w-auto inline-block" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2 border w-auto inline-block" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Membership No</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
                                                     </div>
                                                 )}
                                                 {currentPlayer.active_sport && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Profession</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Profession</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
                                                     </div>
                                                 )}
                                                 {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                                    <div className="rounded-lg p-2 md:p-2.5 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: '#9CA3AF' }}>Played S1</div>
-                                                        <div className="text-sm md:text-base font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
+                                                    <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
+                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Played S1</div>
+                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
                                                     </div>
                                                 )}
                                             </div>
@@ -5565,16 +5751,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         })()}
 
                         {/* Bid Amount */}
-                        <div className="border-2 rounded-xl p-4 md:p-6 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
+                        <div className="border-2 rounded-xl p-2 md:p-3 shadow-sm" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             {!canEdit && (
                                 <div className="mb-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800 text-center">
                                     View-only mode - You can watch the auction live
                                 </div>
                             )}
-                            <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                            <div className="flex flex-col md:flex-row gap-2 md:gap-3">
                                 {/* Left side - Bid Amount controls */}
                                 <div className="flex-1">
-                                    <div className="flex items-center justify-center gap-6 mb-3">
+                                    <div className="flex items-center justify-center gap-2 mb-1">
                                         <button
                                             onClick={handleBidDecrease}
                                             disabled={!canEdit || currentBid <= currentMinimumBid}
@@ -5597,8 +5783,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         >
                                             −
                                         </button>
-                                        <div className="flex flex-col items-center gap-2">
-                                            <div className="text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight" style={{ color: '#22C55E' }}>
+                                        <div className="flex flex-col items-center gap-1">
+                                            <div className="text-6xl md:text-7xl lg:text-8xl font-bold tracking-tight" style={{ color: '#22C55E' }}>
                                                 ₹{formatIndianNumber(currentBid)}
                                             </div>
                                             {(() => {
@@ -5666,12 +5852,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             +
                                         </button>
                                     </div>
-                                    <div className="text-center text-lg md:text-xl font-semibold mb-4" style={{ color: '#9CA3AF' }}>
+                                    <div className="text-center text-xl md:text-2xl font-semibold mb-2" style={{ color: '#9CA3AF' }}>
                                         Min: ₹{formatIndianNumber(currentMinimumBid)} | Increase: ₹{formatIndianNumber(getBidIncrement(currentBid))}
                                     </div>
                                     {/* Custom Bid Input - Hidden on mobile */}
                                     <div className="mb-4 hidden md:block">
-                                        <label className="block text-sm font-medium mb-2" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
+                                        <label className="block text-base md:text-lg font-medium mb-1" style={{ color: '#E5E7EB' }}>Enter Custom Bid Amount</label>
                                         <div className="flex items-center gap-2">
                                             <span style={{ color: '#E5E7EB' }}>₹</span>
                                             <input
@@ -5683,7 +5869,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     handleBidInputBlur();
                                                 }}
                                                 disabled={!canEdit}
-                                                className="flex-1 px-4 py-2 border-2 rounded-lg text-lg font-semibold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                className="flex-1 px-4 py-2 border-2 rounded-lg text-xl font-semibold focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 style={{
                                                     backgroundColor: '#111827',
                                                     borderColor: '#1F2937',
@@ -5699,7 +5885,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 </div>
 
                                 {/* Right side - Action buttons */}
-                                <div className="flex flex-col gap-3">
+                                <div className="flex flex-col gap-2">
                                     <button
                                         onClick={handleBuyPlayer}
                                         disabled={!canEdit || !selectedTeamId}
@@ -5746,7 +5932,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     <div className="hidden">
                         <div className="rounded-xl border-2 p-4 md:p-5" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                             <div>
-                                <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
+                                <div className={`grid ${teamGridColsClass} ${useCompactTeamCards ? 'gap-1' : 'gap-2 md:gap-3'} max-h-[calc(100vh-8rem)] overflow-y-auto pr-2`}>
                                     {teams.map(team => {
                                         // Calculate maximum bid this team can make for current player
                                         // Teams need: 1 ICON player (₹10,00,000) + 9 other players (regular minimum bid each) = 10 total players
@@ -5803,7 +5989,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     }
                                                 }}
                                                 disabled={finalDisabled}
-                                                className={`${teams.length > 10 ? 'p-2 md:p-2.5' : 'p-2 md:p-2.5'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                                className={`${teamCardPaddingClass} rounded-lg border-2 text-left transition-all min-w-0 w-full min-h-0 overflow-hidden ${useCompactTeamCards ? 'flex flex-col h-full' : ''} ${selectedTeamId === team.id
                                                     ? 'shadow-md'
                                                     : finalDisabled
                                                         ? 'opacity-50 cursor-not-allowed'
@@ -5811,11 +5997,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     }`}
                                                 style={{ backgroundColor, borderColor }}
                                             >
-                                                <div className="flex items-start gap-1.5 mb-2 w-full">
+                                                <div className={`flex items-start gap-1 w-full shrink-0 ${useCompactTeamCards ? 'mb-1' : 'mb-1.5'}`}>
                                                     {(() => {
                                                         const logoUrl = getTeamLogo(team.logoUrl);
                                                         const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
-                                                        const logoSize = teams.length > 10 ? 36 : 32;
+                                                        const logoSize = teamLogoSize;
                                                         if (isProxyUrl) {
                                                             return (
                                                                 <img
@@ -5840,19 +6026,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                             />
                                                         );
                                                     })()}
-                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                                    <div className={`font-semibold flex-1 leading-tight break-words ${teamNameTextClass}${useCompactTeamCards ? ' line-clamp-2' : ''}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={teamStatsStackClass}>
+                                                <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                     Budget: ₹{formatIndianNumber(team.budget)}
                                                 </div>
-                                                <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                                <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                     Players: {team.players.length}/{getPlayersPerTeam()}
                                                 </div>
                                                 {maxBid >= getMinimumBid() && (
-                                                    <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
+                                                    <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#22C55E' }}>
                                                         Max Bid: ₹{formatIndianNumber(maxBid)}
                                                     </div>
                                                 )}
+                                                </div>
                                             </button>
                                         );
                                     })}
@@ -6089,7 +6277,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         <div className="text-sm mb-2" style={{ color: '#9CA3AF' }}>
                             Select a team to bid on the current player
                         </div>
-                        <div className={`grid ${teams.length > 10 ? 'grid-cols-4' : 'grid-cols-2'} gap-2 md:gap-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2`}>
+                        <div className={`grid ${teams.length > 16 ? 'grid-cols-2 sm:grid-cols-4' : teamGridColsClass} ${useCompactTeamCards ? 'gap-1' : 'gap-2 md:gap-3'} max-h-[calc(100vh-12rem)] overflow-y-auto pr-2`}>
                             {teams.map(team => {
                                 // Calculate maximum bid this team can make for current player
                                 // They need to reserve minimum bid for remaining players
@@ -6180,7 +6368,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             }
                                         }}
                                         disabled={finalDisabled}
-                                        className={`${teams.length > 10 ? 'p-2 md:p-2.5' : 'p-2 md:p-2.5'} rounded-lg border-2 text-left transition-all min-w-0 w-full ${selectedTeamId === team.id
+                                        className={`${teamCardPaddingClass} rounded-lg border-2 text-left transition-all min-w-0 w-full min-h-0 overflow-hidden ${useCompactTeamCards ? 'flex flex-col h-full' : ''} ${selectedTeamId === team.id
                                             ? 'shadow-md' // Active - will add custom style
                                             : finalDisabled
                                                 ? 'opacity-50 cursor-not-allowed'
@@ -6188,11 +6376,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             }`}
                                         style={{ backgroundColor, borderColor }}
                                     >
-                                        <div className="flex items-start gap-1.5 mb-2 w-full">
+                                        <div className={`flex items-start gap-1 w-full shrink-0 ${useCompactTeamCards ? 'mb-1' : 'mb-1.5'}`}>
                                             {(() => {
                                                 const logoUrl = getTeamLogo(team.logoUrl);
                                                 const isProxyUrl = logoUrl.startsWith('/api/proxy-image');
-                                                const logoSize = teams.length > 10 ? 36 : 32;
+                                                const logoSize = teamLogoSize;
                                                 if (isProxyUrl) {
                                                     return (
                                                         <img
@@ -6217,17 +6405,18 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                     />
                                                 );
                                             })()}
-                                            <div className={`font-semibold flex-1 leading-tight break-words ${teams.length > 10 ? 'text-sm md:text-base' : 'text-sm md:text-base'}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
+                                            <div className={`font-semibold flex-1 leading-tight break-words ${teamNameTextClass}${useCompactTeamCards ? ' line-clamp-2' : ''}`} style={{ color: '#E5E7EB', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3' }} title={team.name}>{team.name}</div>
                                         </div>
-                                        <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                        <div className={teamStatsStackClass}>
+                                        <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                             Budget: ₹{formatIndianNumber(team.budget)}
                                         </div>
-                                        <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                        <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                             Players: {team.players.length}/{getPlayersPerTeam()}
                                         </div>
                                         {/* Display category limits below Players */}
                                         {auctionSettings?.category_limits && Object.keys(auctionSettings.category_limits).length > 0 && (
-                                            <div className={`${teams.length > 10 ? 'text-xs' : 'text-xs'} mb-1 font-bold`} style={{ color: '#FFFFFF' }}>
+                                            <div className={`${teamCategoryTextClass} ${teamStatLineClass}`} style={{ color: '#FFFFFF' }}>
                                                 {Object.entries(auctionSettings.category_limits).map(([category, limit], index) => {
                                                     // Count how many players of this category the team already has
                                                     // Use originalPlayerPool to get category info, not the current players array
@@ -6246,10 +6435,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                             </div>
                                         )}
                                         {maxBid >= getMinimumBid() && (
-                                            <div className={`${teams.length > 10 ? 'text-base md:text-lg' : 'text-base md:text-lg'} mb-1 font-bold`} style={{ color: '#22C55E' }}>
+                                            <div className={`${teamStatTextClass} ${teamStatLineClass}`} style={{ color: '#22C55E' }}>
                                                 Max Bid: ₹{formatIndianNumber(maxBid)}
                                             </div>
                                         )}
+                                        </div>
                                     </button>
                                 );
                             })}
