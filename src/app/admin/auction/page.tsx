@@ -77,6 +77,10 @@ export default function AuctionAdminPage() {
   });
   const [uploadingPlayers, setUploadingPlayers] = useState(false);
   const [uploadingTeams, setUploadingTeams] = useState(false);
+  const [profileApprovalsByPlayerId, setProfileApprovalsByPlayerId] = useState<
+    Record<string, { approver_name: string | null; approver_phone: string; approved_at: string }>
+  >({});
+  const [playerApprovalFilter, setPlayerApprovalFilter] = useState<'all' | 'approved' | 'pending'>('all');
 
   // Player assignment state
   const [selectedPlayersForAssignment, setSelectedPlayersForAssignment] = useState<string[]>([]);
@@ -216,9 +220,41 @@ export default function AuctionAdminPage() {
 
       if (error) throw error;
       setPlayers(data || []);
+      await loadProfileApprovals(sessionId);
     } catch (error) {
       console.error('Error loading players:', error);
       alert('Error loading players');
+    }
+  };
+
+  const loadProfileApprovals = async (sessionId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('auction_profile_approvals')
+        .select('player_pool_id, approver_name, approver_phone, approved_at')
+        .eq('session_id', sessionId);
+
+      if (error) {
+        if (error.code === '42P01' || error.message?.includes('auction_profile_approvals')) {
+          setProfileApprovalsByPlayerId({});
+          return;
+        }
+        throw error;
+      }
+
+      const map: Record<string, { approver_name: string | null; approver_phone: string; approved_at: string }> = {};
+      for (const row of data ?? []) {
+        const id = String(row.player_pool_id);
+        map[id] = {
+          approver_name: row.approver_name ?? null,
+          approver_phone: row.approver_phone,
+          approved_at: row.approved_at,
+        };
+      }
+      setProfileApprovalsByPlayerId(map);
+    } catch (error) {
+      console.error('Error loading profile approvals:', error);
+      setProfileApprovalsByPlayerId({});
     }
   };
 
@@ -1674,6 +1710,37 @@ export default function AuctionAdminPage() {
                     )}
                   </div>
                 </div>
+                {players.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    {(() => {
+                      const approvedCount = players.filter((p) => profileApprovalsByPlayerId[p.id]).length;
+                      const pendingCount = players.length - approvedCount;
+                      const btn = (id: 'all' | 'approved' | 'pending', label: string, active: boolean) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setPlayerApprovalFilter(id)}
+                          className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors"
+                          style={{
+                            backgroundColor: active ? '#E11D48' : '#1F2937',
+                            color: active ? '#FFFFFF' : '#9CA3AF',
+                            border: `1px solid ${active ? '#E11D48' : '#374151'}`,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                      return (
+                        <>
+                          {btn('all', `All (${players.length})`, playerApprovalFilter === 'all')}
+                          {btn('approved', `Approved (${approvedCount})`, playerApprovalFilter === 'approved')}
+                          {btn('pending', `Pending (${pendingCount})`, playerApprovalFilter === 'pending')}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 <p className="text-xs md:text-sm mb-4" style={{ color: '#9CA3AF' }}>
                   CSV template includes star ratings (1–5) as columns:{' '}
                   <span style={{ color: '#D1D5DB' }}>
@@ -1891,7 +1958,14 @@ export default function AuctionAdminPage() {
                 )}
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {players.map((player) => (
+                  {players
+                    .filter((player) => {
+                      const approved = Boolean(profileApprovalsByPlayerId[player.id]);
+                      if (playerApprovalFilter === 'approved') return approved;
+                      if (playerApprovalFilter === 'pending') return !approved;
+                      return true;
+                    })
+                    .map((player) => (
                     <div
                       key={player.id}
                       className="p-4 md:p-6 rounded-lg border flex flex-col md:flex-row md:justify-between md:items-center gap-4 hover:border-[#E11D48] transition-colors"
@@ -1946,6 +2020,23 @@ export default function AuctionAdminPage() {
                             {(player.age || player.skill) && <span> | </span>}
                             <span>Order: {player.player_order}</span>
                           </p>
+                          {profileApprovalsByPlayerId[player.id] ? (
+                            <p className="text-xs mt-2 font-medium" style={{ color: '#4ADE80' }}>
+                              Approved
+                              {profileApprovalsByPlayerId[player.id].approver_name
+                                ? ` by ${profileApprovalsByPlayerId[player.id].approver_name}`
+                                : ''}{' '}
+                              ·{' '}
+                              {new Date(profileApprovalsByPlayerId[player.id].approved_at).toLocaleDateString(
+                                undefined,
+                                { dateStyle: 'medium' }
+                              )}
+                            </p>
+                          ) : (
+                            <p className="text-xs mt-2" style={{ color: '#6B7280' }}>
+                              Not approved yet
+                            </p>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">

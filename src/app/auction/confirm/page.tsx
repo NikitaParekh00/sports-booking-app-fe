@@ -69,6 +69,8 @@ function AuctionConfirmContent() {
     const [issueText, setIssueText] = useState('');
     const [issueSubmitting, setIssueSubmitting] = useState(false);
     const [issueSent, setIssueSent] = useState(false);
+    const [approvedAt, setApprovedAt] = useState<string | null>(null);
+    const [approveSubmitting, setApproveSubmitting] = useState(false);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sf:user');
@@ -126,6 +128,7 @@ function AuctionConfirmContent() {
         setMessage(null);
         setPlayer(null);
         setSessionName(null);
+        setApprovedAt(null);
         try {
             const res = await fetch('/api/auction/my-profile', {
                 method: 'POST',
@@ -139,6 +142,8 @@ function AuctionConfirmContent() {
             }
             setSessionName(json.sessionName ?? null);
             setPlayer(json.player as MyPlayer);
+            const approval = json.approval as { approvedAt?: string } | null | undefined;
+            setApprovedAt(approval?.approvedAt ?? null);
         } catch {
             setMessage('Network error. Please try again.');
         } finally {
@@ -187,6 +192,36 @@ function AuctionConfirmContent() {
 
     const showIssueForm = Boolean(selectedSessionId && userPhone);
 
+    const approveProfile = async () => {
+        if (!userPhone || !player?.id || !selectedSessionId) return;
+        setApproveSubmitting(true);
+        try {
+            const res = await fetch('/api/auction/profile-approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId: selectedSessionId,
+                    phone: userPhone,
+                    playerPoolId: player.id,
+                    playerName: player.name,
+                    approverUserId: userId,
+                    approverName: userName,
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok) {
+                const detail = json.detail ? `\n\n(${json.detail})` : '';
+                alert((json.message || json.error || 'Could not save approval.') + detail);
+                return;
+            }
+            setApprovedAt(json.approvedAt ?? new Date().toISOString());
+        } catch {
+            alert('Network error. Please try again.');
+        } finally {
+            setApproveSubmitting(false);
+        }
+    };
+
     if (!ready) {
         return (
             <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0F172A' }}>
@@ -209,8 +244,7 @@ function AuctionConfirmContent() {
 
                 <h1 className="text-xl font-bold mb-1">My auction profile</h1>
                 <p className="text-sm mb-6" style={{ color: '#9CA3AF' }}>
-                    Only your row is shown, matched to the phone you logged in with. If anything is wrong, use Report an
-                    issue below — the auction admin will review it.
+                    If anything is wrong, use Report an issue below — the auction admin will review it.
                 </p>
 
                 {sessions.length > 0 && (
@@ -288,6 +322,29 @@ function AuctionConfirmContent() {
                                 </div>
                             </div>
                         </div>
+
+                        {approvedAt ? (
+                            <p
+                                className="mt-4 py-2.5 px-3 rounded-lg text-sm text-center font-medium"
+                                style={{ backgroundColor: '#14532D', color: '#86EFAC' }}
+                            >
+                                You approved this profile on{' '}
+                                {new Date(approvedAt).toLocaleString(undefined, {
+                                    dateStyle: 'medium',
+                                    timeStyle: 'short',
+                                })}
+                            </p>
+                        ) : (
+                            <button
+                                type="button"
+                                disabled={approveSubmitting}
+                                onClick={approveProfile}
+                                className="mt-4 w-full py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
+                                style={{ backgroundColor: '#22C55E', color: '#0F172A' }}
+                            >
+                                {approveSubmitting ? 'Saving…' : 'Approve — my details are correct'}
+                            </button>
+                        )}
                     </>
                 )}
 

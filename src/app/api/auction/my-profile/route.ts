@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { phoneLast10, phoneMatchVariants } from '@/lib/phoneNormalize';
+import { findAuctionPlayerPoolByPhone } from '@/lib/auctionPlayerByPhone';
 
 const POOL_FIELDS =
     'id, player_order, name, photo, age, skill, category, phone, experience, active_sport';
@@ -26,45 +26,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'sessionId and phone are required' }, { status: 400 });
         }
 
-        const variants = phoneMatchVariants(phone);
         const supabase = getServiceSupabase();
+        const match = await findAuctionPlayerPoolByPhone(supabase, sessionId, phone);
 
-        let rows: Record<string, unknown>[] | null = null;
-        let queryError: Error | null = null;
-
-        const exact = await supabase
-            .from('auction_player_pool')
-            .select(POOL_FIELDS)
-            .eq('session_id', sessionId)
-            .in('phone', variants)
-            .limit(2);
-
-        if (exact.error) {
-            queryError = exact.error;
-        } else if (exact.data && exact.data.length > 0) {
-            rows = exact.data as Record<string, unknown>[];
-        } else {
-            const last10 = phoneLast10(phone);
-            if (last10) {
-                const fuzzy = await supabase
-                    .from('auction_player_pool')
-                    .select(POOL_FIELDS)
-                    .eq('session_id', sessionId)
-                    .ilike('phone', `%${last10}`);
-                if (!fuzzy.error && fuzzy.data) {
-                    rows = fuzzy.data.filter(
-                        (p) => p.phone && phoneLast10(String(p.phone)) === last10
-                    ) as Record<string, unknown>[];
-                }
+        if (!match.ok) {
+            if (match.reason === 'query_error') {
+                return NextResponse.json({ error: 'Could not load profile' }, { status: 500 });
             }
-        }
-
-        if (queryError) {
-            console.error('my-profile query error:', queryError);
-            return NextResponse.json({ error: 'Could not load profile' }, { status: 500 });
-        }
-
-        if (!rows || rows.length === 0) {
+            if (match.reason === 'ambiguous') {
+                return NextResponse.json(
+                    {
+                        error: 'ambiguous',
+                        message: 'Multiple players match this phone. Contact the auction admin.',
+                    },
+                    { status: 409 }
+                );
+            }
             return NextResponse.json(
                 {
                     error: 'not_found',
@@ -74,14 +51,15 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        if (rows.length > 1) {
-            return NextResponse.json(
-                {
-                    error: 'ambiguous',
-                    message: 'Multiple players match this phone. Contact the auction admin.',
-                },
-                { status: 409 }
-            );
+        const { data: fullPlayer, error: playerError } = await supabase
+            .from('auction_player_pool')
+            .select(POOL_FIELDS)
+            .eq('id', match.player.id)
+            .single();
+
+        if (playerError || !fullPlayer) {
+            console.error('my-profile load player:', playerError);
+            return NextResponse.json({ error: 'Could not load profile' }, { status: 500 });
         }
 
         const { data: session } = await supabase
@@ -90,9 +68,23 @@ export async function POST(request: NextRequest) {
             .eq('id', sessionId)
             .maybeSingle();
 
+        let approval: { approved_at: string; approver_name: string | null } | null = null;
+        const approvalRes = await supabase
+            .from('auction_profile_approvals')
+            .select('approved_at, approver_name')
+            .eq('session_id', sessionId)
+            .eq('player_pool_id', match.player.id)
+            .maybeSingle();
+        if (!approvalRes.error && approvalRes.data) {
+            approval = approvalRes.data;
+        }
+
         return NextResponse.json({
             sessionName: session?.session_name ?? null,
-            player: rows[0],
+            player: fullPlayer,
+            approval: approval
+                ? { approvedAt: approval.approved_at, approverName: approval.approver_name }
+                : null,
         });
     } catch (e) {
         console.error('my-profile:', e);
