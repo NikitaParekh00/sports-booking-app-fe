@@ -5,6 +5,9 @@ import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import { processImageUrl } from '@/lib/imageUrlHelper';
+import PlayerSportRatings from '@/components/PlayerSportRatings';
+import { AUCTION_STATS_FIELD_LABELS } from '@/lib/auctionPlayerStatsFields';
+import type { SportRatingsMap } from '@/lib/sportRatings';
 
 interface SessionOption {
     id: string;
@@ -17,24 +20,80 @@ interface MyPlayer {
     photo?: string | null;
     age?: number | null;
     skill?: string | null;
-    category?: string | null;
-    player_order: number;
     experience?: string | null;
-    active_sport?: string | null;
+    player_order: number;
+    batting_hand?: string | null;
+    bowling_hand?: string | null;
+    wing?: string | null;
+    phone?: string | null;
+    sport_ratings?: SportRatingsMap;
+}
+
+const panelStyle = { backgroundColor: '#1F2937', border: '2px solid #374151' };
+const labelStyle = { color: '#9CA3AF' };
+const valueStyle = { color: '#E5E7EB' };
+
+function dash(value: string | number | null | undefined) {
+    if (value == null) return '—';
+    const text = String(value).trim();
+    return text ? text : '—';
+}
+
+function DetailTile({ label, value }: { label: string; value: string | number | null | undefined }) {
+    return (
+        <div className="rounded-lg p-2.5 border min-w-[7rem] flex-1" style={panelStyle}>
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={labelStyle}>
+                {label}
+            </div>
+            <div className="text-sm font-medium" style={valueStyle}>
+                {dash(value)}
+            </div>
+        </div>
+    );
+}
+
+function TournamentLogoSlot({ url, alt }: { url?: string | null; alt: string }) {
+    const processed = url ? processImageUrl(url) : null;
+    return (
+        <div
+            className="w-24 h-16 sm:w-32 sm:h-20 shrink-0 rounded-lg border flex items-center justify-center overflow-hidden"
+            style={{ borderColor: '#374151', backgroundColor: '#1F2937' }}
+        >
+            {processed ? (
+                processed.startsWith('/api/proxy-image') ? (
+                    <img src={processed} alt={alt} className="max-w-full max-h-full object-contain p-1" />
+                ) : (
+                    <Image
+                        src={processed}
+                        alt={alt}
+                        width={128}
+                        height={80}
+                        className="max-w-full max-h-full object-contain p-1"
+                        unoptimized
+                    />
+                )
+            ) : (
+                <span className="text-[10px] sm:text-xs text-center px-2 leading-tight" style={{ color: '#6B7280' }}>
+                    Tournament logo
+                </span>
+            )}
+        </div>
+    );
 }
 
 function PlayerPhoto({ name, photo }: { name: string; photo?: string | null }) {
     const photoUrl = photo ? processImageUrl(photo) : null;
     if (!photoUrl) return null;
     const isProxy = photoUrl.startsWith('/api/proxy-image');
+    const className = 'object-cover rounded-lg w-28 h-36 sm:w-32 sm:h-40 flex-shrink-0';
     if (isProxy) {
         return (
             <img
                 src={photoUrl}
                 alt={name}
-                width={80}
-                height={80}
-                className="object-cover rounded-lg flex-shrink-0"
+                width={128}
+                height={160}
+                className={className}
             />
         );
     }
@@ -42,9 +101,9 @@ function PlayerPhoto({ name, photo }: { name: string; photo?: string | null }) {
         <Image
             src={photoUrl}
             alt={name}
-            width={80}
-            height={80}
-            className="object-cover rounded-lg flex-shrink-0"
+            width={128}
+            height={160}
+            className={className}
             unoptimized
         />
     );
@@ -63,6 +122,7 @@ function AuctionConfirmContent() {
     const [loading, setLoading] = useState(false);
     const [player, setPlayer] = useState<MyPlayer | null>(null);
     const [sessionName, setSessionName] = useState<string | null>(null);
+    const [tournamentLogo, setTournamentLogo] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [userId, setUserId] = useState<string | null>(null);
     const [userName, setUserName] = useState<string | null>(null);
@@ -112,11 +172,28 @@ function AuctionConfirmContent() {
         supabase
             .from('auction_sessions')
             .select('id, session_name')
+            .eq('is_complete', false)
             .order('created_at', { ascending: false })
             .then(({ data }) => {
-                if (data) setSessions(data);
+                const active = data ?? [];
+                setSessions(active);
+                setSelectedSessionId((current) => {
+                    if (active.length === 1) {
+                        const onlyId = active[0].id;
+                        if (current !== onlyId) {
+                            router.replace(`/auction/confirm?session=${onlyId}`);
+                            return onlyId;
+                        }
+                        return current;
+                    }
+                    if (current && !active.some((s) => s.id === current)) {
+                        router.replace('/auction/confirm');
+                        return '';
+                    }
+                    return current;
+                });
             });
-    }, [ready, supabase]);
+    }, [ready, supabase, router]);
 
     useEffect(() => {
         if (sessionIdFromUrl) setSelectedSessionId(sessionIdFromUrl);
@@ -128,6 +205,7 @@ function AuctionConfirmContent() {
         setMessage(null);
         setPlayer(null);
         setSessionName(null);
+        setTournamentLogo(null);
         setApprovedAt(null);
         try {
             const res = await fetch('/api/auction/my-profile', {
@@ -141,6 +219,7 @@ function AuctionConfirmContent() {
                 return;
             }
             setSessionName(json.sessionName ?? null);
+            setTournamentLogo((json.tournamentLogo as string | null) ?? null);
             setPlayer(json.player as MyPlayer);
             const approval = json.approval as { approvedAt?: string } | null | undefined;
             setApprovedAt(approval?.approvedAt ?? null);
@@ -247,6 +326,13 @@ function AuctionConfirmContent() {
                     If anything is wrong, use Report an issue below — the auction admin will review it.
                 </p>
 
+                {ready && sessions.length === 0 && (
+                    <p className="text-sm mb-6 text-center" style={{ color: '#9CA3AF' }}>
+                        No active auction sessions right now. Check back when your league opens profile
+                        confirmation.
+                    </p>
+                )}
+
                 {sessions.length > 0 && (
                     <label className="block mb-6">
                         <span className="text-sm font-medium mb-1 block" style={{ color: '#E5E7EB' }}>
@@ -286,40 +372,93 @@ function AuctionConfirmContent() {
 
                 {!loading && player && (
                     <>
-                        {sessionName && (
-                            <p className="text-sm mb-3" style={{ color: '#9CA3AF' }}>
-                                {sessionName}
-                            </p>
-                        )}
                         <div
-                            className="p-4 md:p-6 rounded-lg border"
+                            className="p-4 md:p-6 rounded-lg border space-y-4"
                             style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
                         >
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center justify-between gap-3 pb-3 border-b" style={{ borderColor: '#374151' }}>
+                                <p className="text-sm sm:text-base font-semibold truncate min-w-0" style={{ color: '#E5E7EB' }}>
+                                    {sessionName ?? 'Auction session'}
+                                </p>
+                                <TournamentLogoSlot url={tournamentLogo} alt={sessionName ?? 'Tournament'} />
+                            </div>
+                            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
                                 <PlayerPhoto name={player.name} photo={player.photo} />
-                                <div className="flex-1 min-w-0">
-                                    <h2 className="text-lg md:text-xl font-semibold mb-1">{player.name}</h2>
-                                    <p className="text-sm md:text-base" style={{ color: '#9CA3AF' }}>
-                                        {player.age != null && <span>Age: {player.age}</span>}
-                                        {player.age != null && player.skill && <span> | </span>}
-                                        {player.skill && <span>Skill: {player.skill}</span>}
-                                        {player.category && (
-                                            <>
-                                                {(player.age != null || player.skill) && <span> | </span>}
-                                                <span>Category: {player.category}</span>
-                                            </>
-                                        )}
-                                        <span> | </span>
-                                        <span>Order: {player.player_order}</span>
-                                    </p>
-                                    {(player.experience || player.active_sport) && (
-                                        <p className="text-sm mt-2" style={{ color: '#9CA3AF' }}>
-                                            {player.experience && <span>Membership: {player.experience}</span>}
-                                            {player.experience && player.active_sport && <span> | </span>}
-                                            {player.active_sport && <span>Profession: {player.active_sport}</span>}
-                                        </p>
-                                    )}
+                                <div className="flex-1 w-full min-w-0 text-center sm:text-left">
+                                    <h2 className="text-xl md:text-2xl font-semibold mb-3">{player.name}</h2>
+                                    <div className="overflow-x-auto">
+                                        <table
+                                            className="w-full border-collapse table-fixed text-left"
+                                            style={panelStyle}
+                                        >
+                                            <colgroup>
+                                                <col className="w-[20%] min-w-[3.25rem]" />
+                                                <col className="w-[38%]" />
+                                                <col className="w-[42%]" />
+                                            </colgroup>
+                                            <thead>
+                                                <tr>
+                                                    {['Age', 'Skill', 'Federation'].map((h, i) => (
+                                                        <th
+                                                            key={h}
+                                                            className={`text-xs font-bold uppercase tracking-wide ${
+                                                                i === 0 ? 'px-1.5 py-2' : 'p-2'
+                                                            } ${i === 2 ? 'break-words leading-snug' : ''}`}
+                                                            style={{
+                                                                ...labelStyle,
+                                                                borderBottom: '1px solid #374151',
+                                                                borderRight: i < 2 ? '1px solid #374151' : undefined,
+                                                            }}
+                                                        >
+                                                            {h}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td
+                                                        className="px-1.5 py-2 text-sm font-semibold text-center sm:text-left"
+                                                        style={{ ...valueStyle, borderRight: '1px solid #374151' }}
+                                                    >
+                                                        {dash(player.age)}
+                                                    </td>
+                                                    <td
+                                                        className="p-2 text-sm font-semibold break-words leading-snug"
+                                                        style={{ ...valueStyle, borderRight: '1px solid #374151' }}
+                                                    >
+                                                        {dash(player.skill)}
+                                                    </td>
+                                                    <td
+                                                        className="p-2 text-sm font-semibold break-words leading-snug"
+                                                        style={valueStyle}
+                                                    >
+                                                        {dash(player.experience)}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.batting_hand} value={player.batting_hand} />
+                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.bowling_hand} value={player.bowling_hand} />
+                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.wing} value={player.wing} />
+                                <DetailTile label="Phone" value={player.phone} />
+                            </div>
+
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={labelStyle}>
+                                    Sport ratings
+                                </p>
+                                <PlayerSportRatings
+                                    ratings={player.sport_ratings}
+                                    textColor="#E5E7EB"
+                                    panelStyle={panelStyle}
+                                    showAllRatedSports
+                                />
                             </div>
                         </div>
 

@@ -1,6 +1,11 @@
 'use client';
 
-import { formatSportLabel, getTopSportRatings, type SportRatingsMap } from '@/lib/sportRatings';
+import {
+    AUCTION_RATED_SPORT_KEYS,
+    formatSportLabel,
+    getOrderedSportRatings,
+    type SportRatingsMap,
+} from '@/lib/sportRatings';
 
 const STAR_COUNT = 5;
 const STAR_STROKE = '#000000';
@@ -61,6 +66,8 @@ export interface PlayerSportRatingsProps {
     panelStyle: React.CSSProperties;
     filledStarColor?: string;
     emptyStarColor?: string;
+    /** List every canonical sport (Pickle … Chess), including unrated as empty stars */
+    showAllRatedSports?: boolean;
 }
 
 export default function PlayerSportRatings({
@@ -69,9 +76,15 @@ export default function PlayerSportRatings({
     panelStyle,
     filledStarColor = '#FACC15',
     emptyStarColor = 'rgba(156, 163, 175, 0.45)',
+    showAllRatedSports = false,
 }: PlayerSportRatingsProps) {
-    const topSports = getTopSportRatings(ratings);
-    if (topSports.length === 0) return null;
+    const topSports = showAllRatedSports
+        ? AUCTION_RATED_SPORT_KEYS.map((sport) => ({
+              sport,
+              rating: ratings?.[sport] ?? 0,
+          }))
+        : getOrderedSportRatings(ratings);
+    if (!showAllRatedSports && topSports.length === 0) return null;
 
     return (
         <div className="mb-1 rounded-lg p-1 md:p-1.5" style={panelStyle}>

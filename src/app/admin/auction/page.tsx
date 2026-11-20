@@ -5,7 +5,12 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import Image from 'next/image';
 import { processImageUrl } from '@/lib/imageUrlHelper';
-import { sportRatingsForDb, sportRatingsForDbFromCsvRow } from '@/lib/sportRatings';
+import { statsFromCsvRow } from '@/lib/auctionPlayerStatsFields';
+import {
+  PLAYER_CSV_RATING_COLUMNS_LABEL,
+  sportRatingsForDb,
+  sportRatingsForDbFromCsvRow,
+} from '@/lib/sportRatings';
 
 type Tab = 'sessions' | 'teams' | 'players' | 'settings';
 
@@ -982,15 +987,17 @@ export default function AuctionAdminPage() {
           // If it doesn't match any expected value, set to null
         }
 
+        const stats = statsFromCsvRow(player as Record<string, unknown>);
+
         return {
           session_id: selectedSessionForPlayers,
           name: player.name || '',
           photo: player.photo || null,
           age: player.age ? parseInt(player.age) : null,
           skill: player.skill || null,
-          batting_hand: player.batting_hand || null,
-          bowling_hand: player.bowling_hand || null,
-          wing: player.wing || null,
+          batting_hand: stats.batting_hand,
+          bowling_hand: stats.bowling_hand,
+          wing: stats.wing,
           flat_no: player.flat_no || null,
           phone: player.phone || null,
           category: player.category || null,
@@ -1647,7 +1654,7 @@ export default function AuctionAdminPage() {
                       download="player_upload_template.csv"
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors text-center w-full md:w-auto"
                       style={{ backgroundColor: '#1F2937', color: '#E5E7EB', border: '1px solid #1F2937' }}
-                      title="Includes rating_chess … rating_carrom (1–5). Optional sport_ratings column: cricket:4,pickleball:5"
+                      title={`Includes ${PLAYER_CSV_RATING_COLUMNS_LABEL} (1–5). Optional sport_ratings column: pickle:4,padel:5`}
                     >
                       Download Template
                     </a>
@@ -1742,15 +1749,16 @@ export default function AuctionAdminPage() {
                 )}
 
                 <p className="text-xs md:text-sm mb-4" style={{ color: '#9CA3AF' }}>
-                  CSV template includes star ratings (1–5) as columns:{' '}
-                  <span style={{ color: '#D1D5DB' }}>
-                    rating_chess, rating_pickleball, rating_badminton, rating_cricket, rating_carrom
-                  </span>
+                  Stats columns: <span style={{ color: '#D1D5DB' }}>matches, runs, wickets</span> (older files may use{' '}
+                  <code className="text-xs" style={{ color: '#E5E7EB' }}>batting_hand, bowling_hand, wing</code>).{' '}
+                  CSV template includes star ratings (1–5) for Pickle, Padel, Table tennis, Badminton, Carrom, Chess:{' '}
+                  <span style={{ color: '#D1D5DB' }}>{PLAYER_CSV_RATING_COLUMNS_LABEL}</span>
                   . Upload saves them in{' '}
                   <code className="text-xs" style={{ color: '#E5E7EB' }}>sport_ratings</code> (JSON). Optional{' '}
                   <code className="text-xs" style={{ color: '#E5E7EB' }}>sport_ratings</code> column:{' '}
-                  <span style={{ color: '#D1D5DB' }}>cricket:4,pickleball:5</span> for other sports. Re-download if
-                  your file is an older template.
+                  <span style={{ color: '#D1D5DB' }}>pickle:4,padel:5,table_tennis:3</span>. Legacy{' '}
+                  <code className="text-xs" style={{ color: '#E5E7EB' }}>rating_pickleball</code> maps to Pickle.
+                  Re-download if your file is an older template.
                 </p>
 
                 {showPlayerForm && (
@@ -1806,40 +1814,36 @@ export default function AuctionAdminPage() {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Batting Hand</label>
-                        <select
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Matches</label>
+                        <input
+                          type="text"
                           value={playerFormData.batting_hand}
                           onChange={(e) => setPlayerFormData({ ...playerFormData, batting_hand: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Right">Right</option>
-                          <option value="Left">Left</option>
-                        </select>
+                          placeholder="e.g., 42"
+                        />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Bowling Hand</label>
-                        <select
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Runs</label>
+                        <input
+                          type="text"
                           value={playerFormData.bowling_hand}
                           onChange={(e) => setPlayerFormData({ ...playerFormData, bowling_hand: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Right">Right</option>
-                          <option value="Left">Left</option>
-                        </select>
+                          placeholder="e.g., 850"
+                        />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Wing</label>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Wickets</label>
                         <input
                           type="text"
                           value={playerFormData.wing}
                           onChange={(e) => setPlayerFormData({ ...playerFormData, wing: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
-                          placeholder="e.g., A Wing, B Wing"
+                          placeholder="e.g., 12"
                         />
                       </div>
                       <div>
@@ -1916,7 +1920,7 @@ export default function AuctionAdminPage() {
                           onChange={(e) => setPlayerFormData({ ...playerFormData, sport_ratings: e.target.value })}
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
-                          placeholder='cricket:4,pickleball:5,badminton:3,carrom:2,chess:5'
+                          placeholder='pickle:4,padel:5,table_tennis:3,badminton:4,carrom:2,chess:5'
                         />
                         <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
                           Top 5 by rating show on the auction card. Use sport:rating pairs or JSON.

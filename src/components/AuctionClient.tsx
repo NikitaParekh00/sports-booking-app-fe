@@ -19,13 +19,13 @@ interface Player {
     experience?: string; // Experience
     active_sport?: string; // Active sport practiced
     skill?: string; // Skill (Fielder, Bowler, All Rounder, etc.)
-    batting_hand?: string; // Right/Left
-    bowling_hand?: string; // Right/Left
-    wing?: string; // Wicketkeeper (Yes/No)
+    batting_hand?: string; // Matches (DB column name: batting_hand)
+    bowling_hand?: string; // Runs
+    wing?: string; // Wickets
     flat_no?: string; // Flat number
     phone?: string; // Player phone number
     category?: string; // Player category
-    sport_ratings?: Record<string, number>; // Sport name → 1–5 stars (top 5 shown on card)
+    sport_ratings?: Record<string, number>; // Pickle, Padel, Table tennis, Badminton, Carrom, Chess (1–5)
     player_order?: number; // Player order in the auction
 }
 

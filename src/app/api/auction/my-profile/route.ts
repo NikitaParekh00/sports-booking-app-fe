@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { findAuctionPlayerPoolByPhone } from '@/lib/auctionPlayerByPhone';
+import { mapSportRatingsField } from '@/lib/sportRatings';
 
 const POOL_FIELDS =
-    'id, player_order, name, photo, age, skill, category, phone, experience, active_sport';
+    'id, player_order, name, photo, age, skill, category, phone, experience, active_sport, played_s1, batting_hand, bowling_hand, wing, flat_no, sport_ratings';
 
 function getServiceSupabase() {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/+$/, '');
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
 
         const { data: session } = await supabase
             .from('auction_sessions')
-            .select('session_name')
+            .select('session_name, tournament_logo')
             .eq('id', sessionId)
             .maybeSingle();
 
@@ -79,9 +80,18 @@ export async function POST(request: NextRequest) {
             approval = approvalRes.data;
         }
 
+        const player = {
+            ...fullPlayer,
+            sport_ratings: mapSportRatingsField(fullPlayer.sport_ratings),
+        };
+
         return NextResponse.json({
             sessionName: session?.session_name ?? null,
-            player: fullPlayer,
+            tournamentLogo:
+                typeof session?.tournament_logo === 'string' && session.tournament_logo.trim()
+                    ? session.tournament_logo.trim()
+                    : null,
+            player,
             approval: approval
                 ? { approvedAt: approval.approved_at, approverName: approval.approver_name }
                 : null,

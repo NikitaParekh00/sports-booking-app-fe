@@ -60,8 +60,7 @@ export default function OwnerLoginPage() {
 				phone: formattedMobileNumber
 			}));
 
-			// Redirect to OTP verification (with hardcoded OTP for development)
-			router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=owner-login`);
+			router.push('/owner');
 		} catch (error) {
 			console.error('Unexpected error:', error);
 			alert('An unexpected error occurred. Please try again.');

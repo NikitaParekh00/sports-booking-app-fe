@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
+import { isValidAdminLoginCode, requiresAdminLoginCode } from '@/lib/adminLoginCode';
 
 const OTP_LEN = 5;
 
@@ -19,12 +20,15 @@ function VerifyOtpContent() {
 
     useEffect(() => {
         const phoneParam = searchParams.get('phone');
-        const typeParam = searchParams.get('type');
+        const typeParam = searchParams.get('type') ?? 'login';
         if (phoneParam) setPhone(phoneParam);
-        if (typeParam) setLoginType(typeParam);
-    }, [searchParams]);
+        setLoginType(typeParam);
 
-    // One real input over the digit row keeps the mobile numeric keyboard open (no focus hopping).
+        if (phoneParam && typeParam === 'login' && !requiresAdminLoginCode(phoneParam)) {
+            router.replace('/login');
+        }
+    }, [searchParams, router]);
+
     useEffect(() => {
         const t = window.setTimeout(() => otpInputRef.current?.focus(), 100);
         return () => window.clearTimeout(t);
@@ -43,28 +47,21 @@ function VerifyOtpContent() {
 
     const handleVerifyOtp = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
+        if (!phone || loginType !== 'login') return;
 
+        setLoading(true);
         try {
-            // Validate OTP format
             const otpString = otp;
             if (otpString.length !== OTP_LEN) {
                 alert('Please enter a valid 5-digit code.');
                 return;
             }
 
-            // Hardcoded OTP validation
-            // For phone 7506256356, use code 90123
-            // For all other phones, use code 234556 (first 5 digits: 23455)
-            const phoneNumber = phone.replace(/\D/g, ''); // Remove all non-digits
-            const expectedCode = phoneNumber.includes('7506256356') ? '90123' : '23455';
-
-            if (otpString !== expectedCode) {
+            if (!isValidAdminLoginCode(phone, otpString)) {
                 alert('Invalid code. Please try again.');
                 return;
             }
 
-            // Find user in profiles table (standard format: +91-XXXXXXXXXX)
             const { data: existingUsers, error: checkError } = await supabase
                 .from('profiles')
                 .select('user_id, full_name, role')
@@ -76,49 +73,26 @@ function VerifyOtpContent() {
                 return;
             }
 
-            const userData = existingUsers && existingUsers.length > 0 ? existingUsers[0] : null;
-
+            const userData = existingUsers?.[0];
             if (!userData) {
                 alert('User not found. Please try signing up again.');
                 return;
             }
 
-            // Handle owner login separately
-            if (loginType === 'owner-login') {
-                // Check if user is an owner or admin
-                if (userData.role !== 'owner' && userData.role !== 'admin') {
-                    alert('Access denied. This dashboard is only for turf owners and admins.');
-                    router.push('/owner/login');
-                    return;
-                }
-
-                // Store owner session in localStorage (separate from app login)
-                localStorage.setItem('sf:owner', JSON.stringify({
+            localStorage.setItem(
+                'sf:user',
+                JSON.stringify({
                     user_id: userData.user_id,
                     full_name: userData.full_name,
-                    role: userData.role,
-                    phone: phone
-                }));
+                    email: '',
+                    phone,
+                })
+            );
 
-                // Success! Redirect to owner dashboard
-                router.push('/owner');
-                return;
-            }
-
-            // Regular app login
-            // Store user data in localStorage for development
-            localStorage.setItem('sf:user', JSON.stringify({
-                user_id: userData.user_id,
-                full_name: userData.full_name,
-                email: '',
-                phone: phone,
-            }));
-
-            // Success! Land on return URL or homepage
-            const returnTo = searchParams.get("returnTo");
+            const returnTo = searchParams.get('returnTo');
             const safeReturn =
-                returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : null;
-            router.push(safeReturn ?? "/dashboard");
+                returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null;
+            router.push(safeReturn ?? '/dashboard');
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');
@@ -127,23 +101,24 @@ function VerifyOtpContent() {
         }
     };
 
-
-    const formatPhoneNumber = (phone: string) => {
-        // Format +91XXXXXXXXXX to +91 XXXXX XXXXX
-        const cleaned = phone.replace(/\D/g, '');
+    const formatPhoneNumber = (raw: string) => {
+        const cleaned = raw.replace(/\D/g, '');
         if (cleaned.length === 12 && cleaned.startsWith('91')) {
             return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 7)} ${cleaned.slice(7)}`;
         }
-        return phone;
+        return raw;
     };
+
+    if (phone && loginType === 'login' && !requiresAdminLoginCode(phone)) {
+        return null;
+    }
 
     return (
         <div className="min-h-screen bg-white">
-
-            {/* Header */}
             <div className="bg-white px-4 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-3">
                     <button
+                        type="button"
                         onClick={() => router.back()}
                         className="p-2 hover:bg-gray-50 rounded-full transition-colors duration-200"
                     >
@@ -155,21 +130,13 @@ function VerifyOtpContent() {
                 </div>
             </div>
 
-            {/* Content */}
             <div className="px-6 py-8">
-                {/* Instructions */}
                 <div className="text-center mb-8">
-                    <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                        Enter unique code
-                    </h2>
-                    <p className="text-lg text-gray-700 font-medium">
-                        {formatPhoneNumber(phone)}
-                    </p>
+                    <h2 className="text-xl font-semibold text-gray-900 mb-2">Enter unique code</h2>
+                    <p className="text-lg text-gray-700 font-medium">{formatPhoneNumber(phone)}</p>
                 </div>
 
-                {/* OTP Form */}
                 <form onSubmit={handleVerifyOtp} className="space-y-6">
-                    {/* OTP Input Boxes */}
                     <div
                         className="relative mx-auto flex w-fit justify-center gap-3"
                         onPointerDown={() => otpInputRef.current?.focus()}
@@ -178,17 +145,17 @@ function VerifyOtpContent() {
                             const activeIndex = Math.min(otp.length, OTP_LEN - 1);
                             const isActive = index === activeIndex;
                             return (
-                            <div
-                                key={index}
-                                className={`pointer-events-none flex h-12 w-12 items-center justify-center rounded-xl border text-2xl font-bold text-gray-900 transition-colors duration-200 ${
-                                    isActive
-                                        ? 'border-red-500 ring-2 ring-red-500 ring-offset-0'
-                                        : 'border-gray-200'
-                                }`}
-                                aria-hidden
-                            >
-                                {otp[index] ?? ''}
-                            </div>
+                                <div
+                                    key={index}
+                                    className={`pointer-events-none flex h-12 w-12 items-center justify-center rounded-xl border text-2xl font-bold text-gray-900 transition-colors duration-200 ${
+                                        isActive
+                                            ? 'border-red-500 ring-2 ring-red-500 ring-offset-0'
+                                            : 'border-gray-200'
+                                    }`}
+                                    aria-hidden
+                                >
+                                    {otp[index] ?? ''}
+                                </div>
                             );
                         })}
                         <input
@@ -208,7 +175,6 @@ function VerifyOtpContent() {
                         />
                     </div>
 
-                    {/* Verify Button */}
                     <button
                         type="submit"
                         disabled={loading || otp.length !== OTP_LEN}
@@ -219,19 +185,20 @@ function VerifyOtpContent() {
                 </form>
             </div>
 
-            {/* Home Indicator */}
-            <div className="w-24 h-1 bg-gray-200 rounded-full mx-auto mb-6"></div>
+            <div className="w-24 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
         </div>
     );
 }
 
 export default function VerifyOtpPage() {
     return (
-        <Suspense fallback={
-            <div className="min-h-screen bg-white flex items-center justify-center">
-                <div className="text-gray-500">Loading...</div>
-            </div>
-        }>
+        <Suspense
+            fallback={
+                <div className="min-h-screen bg-white flex items-center justify-center">
+                    <div className="text-gray-500">Loading...</div>
+                </div>
+            }
+        >
             <VerifyOtpContent />
         </Suspense>
     );

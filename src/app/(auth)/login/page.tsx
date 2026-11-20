@@ -4,6 +4,7 @@ import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import PhoneInput from '@/components/PhoneInput';
+import { requiresAdminLoginCode } from '@/lib/adminLoginCode';
 
 function LoginContent() {
 	const router = useRouter();
@@ -12,6 +13,7 @@ function LoginContent() {
 	const supabase = createClient();
 	const [mobileNumber, setMobileNumber] = useState('');
 	const [isPhoneValid, setIsPhoneValid] = useState(false);
+	const [loading, setLoading] = useState(false);
 
 	const handleLogin = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -26,9 +28,7 @@ function LoginContent() {
 			const cleanMobileNumber = mobileNumber.replace(/\D/g, '');
 			const formattedMobileNumber = `+91-${cleanMobileNumber}`; // Standard format: +91-XXXXXXXXXX
 
-			// For development: Skip actual OTP sending and go directly to verification
-			// In production, you would use: supabase.auth.signInWithOtp({ phone: formattedMobileNumber })
-
+		setLoading(true);
 		try {
 			// Check if user exists in profiles table
 			const { data: existingUsers, error: checkError } = await supabase
@@ -50,12 +50,29 @@ function LoginContent() {
 				return;
 			}
 
-			// Redirect to OTP verification (with hardcoded OTP)
-			const returnQs = returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : "";
-			router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=login${returnQs}`);
+			if (requiresAdminLoginCode(formattedMobileNumber)) {
+				const returnQs = returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : '';
+				router.push(
+					`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=login${returnQs}`
+				);
+				return;
+			}
+
+			localStorage.setItem('sf:user', JSON.stringify({
+				user_id: existingUser.user_id,
+				full_name: existingUser.full_name,
+				email: '',
+				phone: formattedMobileNumber,
+			}));
+
+			const safeReturn =
+				returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null;
+			router.push(safeReturn ?? '/dashboard');
 		} catch (error) {
 			console.error('Unexpected error:', error);
 			alert('An unexpected error occurred. Please try again.');
+		} finally {
+			setLoading(false);
 		}
 	};
 
@@ -92,10 +109,10 @@ function LoginContent() {
 				{/* Login Button */}
 				<button
 					type="submit"
-					disabled={!isPhoneValid}
+					disabled={!isPhoneValid || loading}
 					className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
-					LOGIN
+					{loading ? 'Signing in…' : 'LOGIN'}
 				</button>
 
 				{/* Signup Link */}

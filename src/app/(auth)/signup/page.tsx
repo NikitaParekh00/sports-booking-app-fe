@@ -97,8 +97,13 @@ export default function SignupPage() {
                 return;
             }
 
-            // Redirect to OTP verification
-            router.push(`/verify-otp?phone=${encodeURIComponent(formattedMobileNumber)}&type=signup`);
+            localStorage.setItem('sf:user', JSON.stringify({
+                user_id: tempUserId,
+                full_name: formData.fullName.trim(),
+                email: formData.email.trim(),
+                phone: formattedMobileNumber,
+            }));
+            router.push('/dashboard');
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');
