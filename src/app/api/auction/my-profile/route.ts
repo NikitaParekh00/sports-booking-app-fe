@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
         const { data: session } = await supabase
             .from('auction_sessions')
-            .select('session_name, tournament_logo')
+            .select('session_name, tournament_logo, tournament_dates')
             .eq('id', sessionId)
             .maybeSingle();
 
@@ -90,6 +90,10 @@ export async function POST(request: NextRequest) {
             tournamentLogo:
                 typeof session?.tournament_logo === 'string' && session.tournament_logo.trim()
                     ? session.tournament_logo.trim()
+                    : null,
+            tournamentDates:
+                typeof session?.tournament_dates === 'string' && session.tournament_dates.trim()
+                    ? session.tournament_dates.trim()
                     : null,
             player,
             approval: approval

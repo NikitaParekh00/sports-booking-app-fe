@@ -123,6 +123,7 @@ function AuctionConfirmContent() {
     const [player, setPlayer] = useState<MyPlayer | null>(null);
     const [sessionName, setSessionName] = useState<string | null>(null);
     const [tournamentLogo, setTournamentLogo] = useState<string | null>(null);
+    const [tournamentDates, setTournamentDates] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
     const [userId, setUserId] = useState<string | null>(null);
     const [userName, setUserName] = useState<string | null>(null);
@@ -206,6 +207,7 @@ function AuctionConfirmContent() {
         setPlayer(null);
         setSessionName(null);
         setTournamentLogo(null);
+        setTournamentDates(null);
         setApprovedAt(null);
         try {
             const res = await fetch('/api/auction/my-profile', {
@@ -220,6 +222,7 @@ function AuctionConfirmContent() {
             }
             setSessionName(json.sessionName ?? null);
             setTournamentLogo((json.tournamentLogo as string | null) ?? null);
+            setTournamentDates((json.tournamentDates as string | null) ?? null);
             setPlayer(json.player as MyPlayer);
             const approval = json.approval as { approvedAt?: string } | null | undefined;
             setApprovedAt(approval?.approvedAt ?? null);
@@ -323,7 +326,8 @@ function AuctionConfirmContent() {
 
                 <h1 className="text-xl font-bold mb-1">My auction profile</h1>
                 <p className="text-sm mb-6" style={{ color: '#9CA3AF' }}>
-                    If anything is wrong, use Report an issue below — the auction admin will review it.
+                    This profile is from the Google Form you submitted. If anything is wrong, use Report an issue below
+                    — the auction admin will review it.
                 </p>
 
                 {ready && sessions.length === 0 && (
@@ -376,10 +380,35 @@ function AuctionConfirmContent() {
                             className="p-4 md:p-6 rounded-lg border space-y-4"
                             style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
                         >
-                            <div className="flex items-center justify-between gap-3 pb-3 border-b" style={{ borderColor: '#374151' }}>
-                                <p className="text-sm sm:text-base font-semibold truncate min-w-0" style={{ color: '#E5E7EB' }}>
-                                    {sessionName ?? 'Auction session'}
-                                </p>
+                            <div className="flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#374151' }}>
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                                        <p className="text-sm sm:text-base font-semibold" style={{ color: '#E5E7EB' }}>
+                                            {sessionName ?? 'Auction session'}
+                                        </p>
+                                        {tournamentDates && (
+                                            <>
+                                                <span className="text-sm hidden sm:inline" style={{ color: '#4B5563' }}>
+                                                    |
+                                                </span>
+                                                <p
+                                                    className="text-xs sm:text-sm font-semibold uppercase tracking-wide"
+                                                    style={{ color: '#9CA3AF' }}
+                                                >
+                                                    Tournament dates
+                                                </p>
+                                            </>
+                                        )}
+                                    </div>
+                                    {tournamentDates && (
+                                        <p
+                                            className="text-xs sm:text-sm mt-1.5 leading-relaxed whitespace-pre-line"
+                                            style={{ color: '#9CA3AF' }}
+                                        >
+                                            {tournamentDates}
+                                        </p>
+                                    )}
+                                </div>
                                 <TournamentLogoSlot url={tournamentLogo} alt={sessionName ?? 'Tournament'} />
                             </div>
                             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
@@ -494,14 +523,27 @@ function AuctionConfirmContent() {
                     >
                         <h3 className="text-base font-semibold mb-2">Report an issue</h3>
                         <p className="text-xs mb-3" style={{ color: '#9CA3AF' }}>
-                            Describe what is wrong (e.g. wrong age, photo, category, or missing profile). Admin updates
-                            data in the auction dashboard.
+                            Describe what is wrong (age, photo, federation, sport ratings, or{' '}
+                            <strong className="font-semibold" style={{ color: '#D1D5DB' }}>
+                                matches / runs / wickets
+                            </strong>
+                            ). If stats are wrong, paste your{' '}
+                            <a
+                                href="https://cricheroes.com/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline"
+                                style={{ color: '#93C5FD' }}
+                            >
+                                CricHeroes
+                            </a>{' '}
+                            profile link so admin can verify. Admin updates data in the auction dashboard.
                         </p>
                         <textarea
                             value={issueText}
                             onChange={(e) => setIssueText(e.target.value)}
-                            rows={4}
-                            placeholder="Example: My category should be B, not Emerging. My age is 27."
+                            rows={5}
+                            placeholder={`Example: Matches should be 14, runs 620, wickets 6 (not 0). CricHeroes: https://cricheroes.com/player/your-name-xxxxx\nMy federation should be Jain CA Federation. Age is 28.`}
                             className="w-full px-3 py-2 rounded-lg border-2 text-sm mb-3 resize-y"
                             style={{
                                 backgroundColor: '#0F172A',
