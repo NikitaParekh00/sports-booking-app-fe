@@ -8,6 +8,7 @@ import BottomSheet from './BottomSheet';
 import { processImageUrl } from '@/lib/imageUrlHelper';
 import { mapSportRatingsField } from '@/lib/sportRatings';
 import PlayerSportRatings from './PlayerSportRatings';
+import { AUCTION_STATS_FIELD_LABELS } from '@/lib/auctionPlayerStatsFields';
 import { isAuctionAdminPhone } from '@/lib/auctionAccess';
 
 interface Player {
@@ -38,6 +39,18 @@ const AUCTION_PLAYER_POOL_FIELDS_ALT =
 const AUCTION_PLAYER_POOL_FIELDS_NO_ORDER =
     'id, name, photo, age, played_s1, experience, active_sport, skill, batting_hand, bowling_hand, wing, flat_no, phone, category, sport_ratings';
 
+function TournamentHeaderLogo({ url, alt }: { url: string | null; alt: string }) {
+    const processed = processImageUrl(url);
+    if (!processed) return null;
+    return (
+        <img
+            src={processed}
+            alt={alt}
+            className="object-contain w-20 h-20 md:w-[160px] md:h-[120px]"
+        />
+    );
+}
+
 interface Team {
     id: number;
     name: string;
@@ -53,6 +66,175 @@ interface Team {
 const formatIndianNumber = (num: number): string => {
     return num.toLocaleString('en-IN');
 };
+
+function factText(value: string | number | null | undefined) {
+    if (value == null) return '—';
+    const text = String(value).trim();
+    return text ? text : '—';
+}
+
+function FactTable({
+    columns,
+    panel,
+    labelColor,
+    valueColor,
+    divider,
+}: {
+    columns: { heading: string; value: string | number }[];
+    panel: { backgroundColor: string; border: string };
+    labelColor: string;
+    valueColor: string;
+    divider: string;
+}) {
+    return (
+        <div className="overflow-x-auto">
+            <table className="w-full border-collapse table-fixed text-left" style={panel}>
+                <thead>
+                    <tr>
+                        {columns.map((column, index) => (
+                            <th
+                                key={column.heading}
+                                className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide"
+                                style={{
+                                    color: labelColor,
+                                    borderBottom: `1px solid ${divider}`,
+                                    borderRight: index < columns.length - 1 ? `1px solid ${divider}` : undefined,
+                                }}
+                            >
+                                {column.heading}
+                            </th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        {columns.map((column, index) => (
+                            <td
+                                key={column.heading}
+                                className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug break-words"
+                                style={{
+                                    color: valueColor,
+                                    borderRight: index < columns.length - 1 ? `1px solid ${divider}` : undefined,
+                                }}
+                            >
+                                {column.value}
+                            </td>
+                        ))}
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+function AuctionPlayerFacts({
+    player,
+    sessionName,
+    hasColorMapping,
+    contrastColor,
+}: {
+    player: Player;
+    sessionName?: string | null;
+    hasColorMapping: boolean;
+    contrastColor: string;
+}) {
+    const panel = hasColorMapping
+        ? { backgroundColor: 'rgba(255, 255, 255, 0.2)', border: '3px solid #FFFFFF' }
+        : { backgroundColor: '#1F2937', border: '2px solid #374151' };
+    const labelColor = hasColorMapping ? contrastColor : '#9CA3AF';
+    const valueColor = hasColorMapping ? contrastColor : '#E5E7EB';
+    const divider = hasColorMapping ? 'rgba(255, 255, 255, 0.45)' : '#374151';
+    const showPlayedS1 = Boolean(
+        player.played_s1 && sessionName && !sessionName.toLowerCase().includes('women')
+    );
+    const statTiles = [
+        { label: AUCTION_STATS_FIELD_LABELS.batting_hand, value: factText(player.batting_hand) },
+        { label: AUCTION_STATS_FIELD_LABELS.bowling_hand, value: factText(player.bowling_hand) },
+        { label: AUCTION_STATS_FIELD_LABELS.wing, value: factText(player.wing) },
+    ];
+    const tiles = [
+        player.active_sport ? { label: 'Profession', value: player.active_sport } : null,
+        showPlayedS1 ? { label: 'Played S1', value: player.played_s1 as string } : null,
+    ].filter((tile): tile is { label: string; value: string } => tile !== null);
+
+    return (
+        <div className="flex flex-col gap-2 md:gap-3">
+            <FactTable
+                columns={[
+                    { heading: 'Age', value: factText(player.age) },
+                    { heading: 'Skill', value: factText(player.skill) },
+                    { heading: 'Federation', value: factText(player.experience) },
+                    { heading: 'Phone', value: factText(player.phone) },
+                ]}
+                panel={panel}
+                labelColor={labelColor}
+                valueColor={valueColor}
+                divider={divider}
+            />
+            <div className="flex flex-wrap gap-2">
+                {statTiles.map((tile) => (
+                    <div
+                        key={tile.label}
+                        className="rounded-lg p-2.5 min-w-[7rem] flex-1"
+                        style={{
+                            backgroundColor: panel.backgroundColor,
+                            border: panel.border,
+                        }}
+                    >
+                        <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-0.5" style={{ color: labelColor }}>
+                            {tile.label}
+                        </div>
+                        <div className="text-base md:text-lg font-medium" style={{ color: valueColor }}>
+                            {tile.value}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="mt-3 md:mt-4">
+                <p className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-1.5" style={{ color: labelColor }}>
+                    Sport ratings
+                </p>
+                <PlayerSportRatings
+                    ratings={player.sport_ratings}
+                    textColor={valueColor}
+                    panelStyle={panel}
+                    filledStarColor="#FACC15"
+                    emptyStarColor={
+                        hasColorMapping
+                            ? contrastColor === '#000000'
+                                ? 'rgba(0, 0, 0, 0.25)'
+                                : 'rgba(255, 255, 255, 0.35)'
+                            : 'rgba(156, 163, 175, 0.45)'
+                    }
+                    showAllRatedSports
+                />
+            </div>
+
+            {tiles.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                    {tiles.map((tile) => (
+                        <div
+                            key={tile.label}
+                            className="rounded-lg p-2.5 min-w-[7rem] flex-1"
+                            style={{
+                                backgroundColor: panel.backgroundColor,
+                                border: panel.border,
+                            }}
+                        >
+                            <div className="text-xs md:text-sm font-semibold uppercase tracking-wide mb-0.5" style={{ color: labelColor }}>
+                                {tile.label}
+                            </div>
+                            <div className="text-base md:text-lg font-medium" style={{ color: valueColor }}>
+                                {tile.value}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
 
 // Default values (used as fallback ONLY if settings not loaded and database has no value)
 // These should rarely be used - always prefer database values
@@ -538,6 +720,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     if (session) {
                         finalSession = session;
                         setSessionName(session.session_name); // Store session name for logo mapping
+                        setTournamentLogo((session as { tournament_logo?: string | null }).tournament_logo || null);
                     } else if (sessionError) {
                         console.error('Error fetching specified session:', sessionError);
                         alert(`Session not found. Please check the URL.`);
@@ -5287,11 +5470,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <div className="rounded-xl p-1.5 md:p-2 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
                                     <div className="flex flex-col md:flex-row md:items-start gap-1.5 md:gap-2 mb-0">
                                         {/* Player Photo - Top on mobile, Left on desktop */}
-                                        <div className="w-full md:w-[34%] lg:w-[32%] md:shrink-0 flex justify-center md:justify-start">
+                                        <div className="w-full md:w-[42%] lg:w-[38%] md:shrink-0 flex justify-center md:justify-start">
                                             {currentPlayer.photo && (
                                                 <div
                                                     key={`player-image-${currentPlayer.name}-${currentPlayerIndex}`}
-                                                    className={`relative w-full max-w-[17.5rem] mx-auto md:mx-0 h-96 md:h-[27rem] rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100 ${
+                                                    className={`relative w-full max-w-[24rem] mx-auto md:mx-0 h-[32rem] md:h-[38rem] rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100 ${
                                                         desktopLayoutMode === 'player' ? 'md:max-w-none md:w-full' : ''
                                                     }`}
                                                 >
@@ -5339,9 +5522,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         {/* Player Info - Below image on mobile, Right side on desktop */}
                                         <div className="w-full md:flex-1 md:min-w-[300px] flex flex-col">
                                             {/* Header: Name and Logo */}
-                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-1">
+                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-4 md:mb-5">
                                                 <h2 className="text-4xl md:text-6xl font-bold leading-tight" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
-                                                <div className="flex-shrink-0">
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <TournamentHeaderLogo url={tournamentLogo} alt={sessionName ?? 'Tournament'} />
                                                     <Image
                                                         src="/logo.jpeg"
                                                         alt="Logo"
@@ -5352,69 +5536,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Age, skill, category */}
-                                            <div className="mb-2 md:mb-3 overflow-x-auto">
-                                                <table className="w-full border-collapse table-fixed" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                    <thead>
-                                                        <tr>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-
-                                            <PlayerSportRatings
-                                                ratings={currentPlayer.sport_ratings}
-                                                textColor={hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB'}
-                                                panelStyle={{
-                                                    backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937',
-                                                    border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151',
-                                                }}
-                                                filledStarColor="#FACC15"
-                                                emptyStarColor={
-                                                    hasColorMapping
-                                                        ? getContrastColor(categoryColor) === '#000000'
-                                                            ? 'rgba(0, 0, 0, 0.25)'
-                                                            : 'rgba(255, 255, 255, 0.35)'
-                                                        : 'rgba(156, 163, 175, 0.45)'
-                                                }
+                                            <AuctionPlayerFacts
+                                                player={currentPlayer}
+                                                sessionName={sessionName}
+                                                hasColorMapping={hasColorMapping}
+                                                contrastColor={hasColorMapping ? getContrastColor(categoryColor) : '#FFFFFF'}
                                             />
-
-                                            {/* Player Details - Additional Info */}
-                                            <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                                {/* Membership No (was Experience) */}
-                                                {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-1.5 md:p-2 w-auto inline-block" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.experience}</div>
-                                                    </div>
-                                                )}
-
-                                                {/* Profession */}
-                                                {currentPlayer.active_sport && (
-                                                    <div className="rounded-lg p-1.5 md:p-2" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Profession</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.active_sport}</div>
-                                                    </div>
-                                                )}
-
-                                                {/* Played Previous MBBL Season - Only for Men's auction */}
-                                                {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                                    <div className="rounded-lg p-1.5 md:p-2" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF' }}>Played S1</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.played_s1}</div>
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -5631,11 +5758,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <div className="rounded-xl p-1.5 md:p-2 border-2 shadow-lg" style={{ backgroundColor, borderColor }}>
                                     <div className="flex flex-col md:flex-row md:items-start gap-1.5 md:gap-2 mb-0">
                                         {/* Player Photo - Top on mobile, Left on desktop */}
-                                        <div className="w-full md:w-[34%] lg:w-[32%] md:shrink-0 flex justify-center md:justify-start">
+                                        <div className="w-full md:w-[42%] lg:w-[38%] md:shrink-0 flex justify-center md:justify-start">
                                             {currentPlayer.photo && (
                                                 <div
                                                     key={`player-image-mobile-${currentPlayer.name}-${currentPlayerIndex}`}
-                                                    className="relative w-full max-w-[17.5rem] mx-auto md:mx-0 h-96 md:h-[27rem] md:max-w-none md:w-full rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100"
+                                                    className="relative w-full max-w-[24rem] mx-auto md:mx-0 h-[32rem] md:h-[38rem] md:max-w-none md:w-full rounded-xl overflow-hidden border-4 border-white shadow-2xl bg-gray-100"
                                                 >
                                                     {(() => {
                                                         const imageUrl = processImageUrl(currentPlayer.photo);
@@ -5673,9 +5800,10 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                         {/* Player Info - Below image on mobile, Right side on desktop */}
                                         <div className="w-full md:flex-1 md:min-w-[300px] flex flex-col">
                                             {/* Header: Name and Logo */}
-                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-1">
+                                            <div className="flex items-center justify-center md:justify-between gap-1.5 md:gap-2 mb-4 md:mb-5">
                                                 <h2 className="text-4xl md:text-6xl font-bold leading-tight" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.name}</h2>
-                                                <div className="flex-shrink-0">
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <TournamentHeaderLogo url={tournamentLogo} alt={sessionName ?? 'Tournament'} />
                                                     <Image
                                                         src="/logo.jpeg"
                                                         alt="Logo"
@@ -5686,64 +5814,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                                 </div>
                                             </div>
 
-                                            {/* Age, skill, category */}
-                                            <div className="mb-2 md:mb-3 overflow-x-auto">
-                                                <table className="w-full border-collapse table-fixed" style={{ backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937', border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151' }}>
-                                                    <thead>
-                                                        <tr>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Age</th>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151', borderRight: '1px solid #374151' }}>Skill</th>
-                                                            <th className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide text-left" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#9CA3AF', borderBottom: '1px solid #374151' }}>Category</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        <tr>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.age ?? '—'}</td>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB', borderRight: '1px solid #374151' }}>{currentPlayer.skill || '—'}</td>
-                                                            <td className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug" style={{ color: hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB' }}>{currentPlayer.category || '—'}</td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-
-                                            <PlayerSportRatings
-                                                ratings={currentPlayer.sport_ratings}
-                                                textColor={hasColorMapping ? getContrastColor(categoryColor) : '#E5E7EB'}
-                                                panelStyle={{
-                                                    backgroundColor: hasColorMapping ? 'rgba(255, 255, 255, 0.2)' : '#1F2937',
-                                                    border: hasColorMapping ? '3px solid #FFFFFF' : '2px solid #374151',
-                                                }}
-                                                filledStarColor="#FACC15"
-                                                emptyStarColor={
-                                                    hasColorMapping
-                                                        ? getContrastColor(categoryColor) === '#000000'
-                                                            ? 'rgba(0, 0, 0, 0.25)'
-                                                            : 'rgba(255, 255, 255, 0.35)'
-                                                        : 'rgba(156, 163, 175, 0.45)'
-                                                }
+                                            <AuctionPlayerFacts
+                                                player={currentPlayer}
+                                                sessionName={sessionName}
+                                                hasColorMapping={hasColorMapping}
+                                                contrastColor={hasColorMapping ? getContrastColor(categoryColor) : '#FFFFFF'}
                                             />
-
-                                            {/* Player Details - Additional Info */}
-                                            <div className="flex flex-wrap gap-1 md:gap-1.5">
-                                                {currentPlayer.experience && (
-                                                    <div className="rounded-lg p-1.5 md:p-2 border w-auto inline-block" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Membership No</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.experience}</div>
-                                                    </div>
-                                                )}
-                                                {currentPlayer.active_sport && (
-                                                    <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Profession</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.active_sport}</div>
-                                                    </div>
-                                                )}
-                                                {currentPlayer.played_s1 && sessionName && !sessionName.toLowerCase().includes('women') && (
-                                                    <div className="rounded-lg p-1.5 md:p-2 border" style={{ backgroundColor: '#1F2937', borderColor: '#374151' }}>
-                                                        <div className="text-sm md:text-base font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#9CA3AF' }}>Played S1</div>
-                                                        <div className="text-base md:text-lg font-medium" style={{ color: '#E5E7EB' }}>{currentPlayer.played_s1}</div>
-                                                    </div>
-                                                )}
-                                            </div>
                                         </div>
                                     </div>
                                 </div>

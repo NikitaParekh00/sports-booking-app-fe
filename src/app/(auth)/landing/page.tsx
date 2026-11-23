@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabaseClient';
 import { isAppAdmin } from '@/lib/postLoginRedirect';
+import PhoneInput from '@/components/PhoneInput';
 
 export default function LandingPage() {
     const router = useRouter();
-    const [loading] = useState(false);
     const [allowed, setAllowed] = useState(false);
+    const [mobileNumber, setMobileNumber] = useState('');
+    const [isPhoneValid, setIsPhoneValid] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -66,22 +68,9 @@ export default function LandingPage() {
         );
     }
 
-    const handleSignup = () => {
-        router.push('/signup');
-    };
-
-    const handleLogin = () => {
-        router.push('/login');
-    };
-
-    const handleContinueWithoutLogin = () => {
-        // Drop any prior app login so guest browsing is not treated as edit/admin (sf:user drives canEdit on tournament pages).
-        try {
-            localStorage.removeItem("sf:user");
-        } catch {
-            /* ignore */
-        }
-        router.push("/scoring/tournaments");
+    const handleGetStarted = () => {
+        if (!isPhoneValid) return;
+        router.push(`/login?phone=${encodeURIComponent(mobileNumber)}`);
     };
 
     return (
@@ -117,34 +106,20 @@ export default function LandingPage() {
 
                 {/* Action Buttons */}
                 <div className="w-full max-w-xs space-y-6">
-                    {/* Primary CTA Button */}
+                    <PhoneInput
+                        value={mobileNumber}
+                        onChange={setMobileNumber}
+                        placeholder="Mobile number"
+                        onValidationChange={setIsPhoneValid}
+                        className="px-4 py-4 rounded-xl text-gray-900 text-base"
+                    />
                     <button
-                        onClick={handleSignup}
-                        disabled={loading}
+                        onClick={handleGetStarted}
+                        disabled={!isPhoneValid}
                         className="w-full bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-base shadow-lg hover:bg-red-700 hover:shadow-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        {loading ? 'Creating Account...' : 'GET STARTED'}
+                        GET STARTED
                     </button>
-
-                    {/* Login Link */}
-                    <div className="text-center">
-                        <button
-                            onClick={handleLogin}
-                            className="text-gray-700 font-medium hover:text-red-600 transition-colors duration-200 text-base"
-                        >
-                            Already have an account? <span className="text-red-600 font-semibold">Sign In</span>
-                        </button>
-                    </div>
-
-                    {/* Continue without login */}
-                    <div className="text-center pt-2">
-                        <button
-                            onClick={handleContinueWithoutLogin}
-                            className="text-gray-500 text-sm hover:text-gray-700 transition-colors duration-200"
-                        >
-                            Continue as guest
-                        </button>
-                    </div>
                 </div>
 
                 {/* Features Section */}

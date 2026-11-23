@@ -512,11 +512,15 @@ function AuctionConfirmContent() {
                                 </div>
                             </div>
 
-                            <div className="flex flex-wrap gap-2">
-                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.batting_hand} value={player.batting_hand} />
-                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.bowling_hand} value={player.bowling_hand} />
-                                <DetailTile label={AUCTION_STATS_FIELD_LABELS.wing} value={player.wing} />
-                                <DetailTile label="Phone" value={player.phone} />
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#93C5FD' }}>
+                                    Cricket stats
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    <DetailTile label={AUCTION_STATS_FIELD_LABELS.batting_hand} value={player.batting_hand} />
+                                    <DetailTile label={AUCTION_STATS_FIELD_LABELS.bowling_hand} value={player.bowling_hand} />
+                                    <DetailTile label={AUCTION_STATS_FIELD_LABELS.wing} value={player.wing} />
+                                </div>
                             </div>
 
                             <div>
