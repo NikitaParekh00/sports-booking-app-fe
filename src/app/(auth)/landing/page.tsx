@@ -1,12 +1,70 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { createClient } from '@/lib/supabaseClient';
+import { isAppAdmin } from '@/lib/postLoginRedirect';
 
 export default function LandingPage() {
     const router = useRouter();
     const [loading] = useState(false);
+    const [allowed, setAllowed] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function gate() {
+            try {
+                const raw = localStorage.getItem('sf:user');
+                if (!raw) {
+                    if (!cancelled) setAllowed(true);
+                    return;
+                }
+
+                const user = JSON.parse(raw) as {
+                    role?: string;
+                    phone?: string;
+                    user_id?: string;
+                };
+                let role = user.role;
+                let phone = user.phone;
+
+                if (!isAppAdmin(role, phone) && !role && user.user_id) {
+                    const supabase = createClient();
+                    const { data } = await supabase
+                        .from('profiles')
+                        .select('role, phone')
+                        .eq('user_id', user.user_id)
+                        .maybeSingle();
+                    role = data?.role ?? role;
+                    phone = data?.phone ?? phone;
+                }
+
+                if (!isAppAdmin(role, phone)) {
+                    router.replace('/auction/confirm');
+                    return;
+                }
+
+                router.replace('/dashboard');
+            } catch {
+                if (!cancelled) setAllowed(true);
+            }
+        }
+
+        gate();
+        return () => {
+            cancelled = true;
+        };
+    }, [router]);
+
+    if (!allowed) {
+        return (
+            <div className="min-h-screen bg-white flex items-center justify-center">
+                <div className="text-gray-500">Loading...</div>
+            </div>
+        );
+    }
 
     const handleSignup = () => {
         router.push('/signup');

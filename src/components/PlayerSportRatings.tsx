@@ -14,10 +14,12 @@ function StarIcon({
     filled,
     filledColor,
     emptyColor,
+    strokeColor,
 }: {
     filled: boolean;
     filledColor: string;
     emptyColor: string;
+    strokeColor: string;
 }) {
     return (
         <svg
@@ -28,7 +30,7 @@ function StarIcon({
             <path
                 d="M12 2.5l2.86 5.79 6.39.93-4.62 4.51 1.09 6.36L12 17.6l-5.72 3.01 1.09-6.36-4.62-4.51 6.39-.93L12 2.5z"
                 fill={filled ? filledColor : emptyColor}
-                stroke={STAR_STROKE}
+                stroke={strokeColor}
                 strokeWidth={1.35}
                 strokeLinejoin="round"
             />
@@ -40,10 +42,12 @@ function StarRow({
     rating,
     filledColor,
     emptyColor,
+    strokeColor,
 }: {
     rating: number;
     filledColor: string;
     emptyColor: string;
+    strokeColor: string;
 }) {
     const filled = Math.min(STAR_COUNT, Math.max(0, Math.round(rating)));
     return (
@@ -54,6 +58,7 @@ function StarRow({
                     filled={i < filled}
                     filledColor={filledColor}
                     emptyColor={emptyColor}
+                    strokeColor={strokeColor}
                 />
             ))}
         </span>
@@ -66,6 +71,7 @@ export interface PlayerSportRatingsProps {
     panelStyle: React.CSSProperties;
     filledStarColor?: string;
     emptyStarColor?: string;
+    strokeColor?: string;
     /** List every canonical sport (Pickle … Chess), including unrated as empty stars */
     showAllRatedSports?: boolean;
 }
@@ -76,6 +82,7 @@ export default function PlayerSportRatings({
     panelStyle,
     filledStarColor = '#FACC15',
     emptyStarColor = 'rgba(156, 163, 175, 0.45)',
+    strokeColor = STAR_STROKE,
     showAllRatedSports = false,
 }: PlayerSportRatingsProps) {
     const topSports = showAllRatedSports
@@ -97,7 +104,12 @@ export default function PlayerSportRatings({
                         <span className="text-base md:text-lg font-semibold truncate" style={{ color: textColor }}>
                             {formatSportLabel(sport)}
                         </span>
-                        <StarRow rating={rating} filledColor={filledStarColor} emptyColor={emptyStarColor} />
+                        <StarRow
+                            rating={rating}
+                            filledColor={filledStarColor}
+                            emptyColor={emptyStarColor}
+                            strokeColor={strokeColor}
+                        />
                     </li>
                 ))}
             </ul>

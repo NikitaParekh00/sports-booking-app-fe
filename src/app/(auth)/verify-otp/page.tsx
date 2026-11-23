@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import { isValidAdminLoginCode, requiresAdminLoginCode } from '@/lib/adminLoginCode';
+import { defaultPostLoginPath } from '@/lib/postLoginRedirect';
 
 const OTP_LEN = 5;
 
@@ -86,13 +87,14 @@ function VerifyOtpContent() {
                     full_name: userData.full_name,
                     email: '',
                     phone,
+                    role: userData.role ?? 'player',
                 })
             );
 
             const returnTo = searchParams.get('returnTo');
             const safeReturn =
                 returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null;
-            router.push(safeReturn ?? '/dashboard');
+            router.push(safeReturn ?? defaultPostLoginPath(userData.role, phone));
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');

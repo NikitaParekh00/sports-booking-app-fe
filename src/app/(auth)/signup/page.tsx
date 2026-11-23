@@ -102,8 +102,9 @@ export default function SignupPage() {
                 full_name: formData.fullName.trim(),
                 email: formData.email.trim(),
                 phone: formattedMobileNumber,
+                role: 'player',
             }));
-            router.push('/dashboard');
+            router.push('/auction/confirm');
         } catch (error) {
             console.error('Unexpected error:', error);
             alert('An unexpected error occurred. Please try again.');

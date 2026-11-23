@@ -8,6 +8,7 @@ import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
 import { isAuctionAdminPhone } from "@/lib/auctionAccess";
+import { isAppAdmin } from "@/lib/postLoginRedirect";
 
 interface User {
   id: string;
@@ -49,24 +50,31 @@ export default function Dashboard() {
         try {
           const userData = JSON.parse(storedUser);
           console.log('Parsed user data:', userData);
+          let phone = userData.phone as string | undefined;
+          let role = userData.role as string | undefined;
+          if (userData.user_id && (!phone || !role)) {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('phone, role')
+              .eq('user_id', userData.user_id)
+              .maybeSingle();
+            phone = phone ?? profile?.phone ?? undefined;
+            role = role ?? profile?.role ?? undefined;
+          }
+          if (!isAppAdmin(role, phone)) {
+            router.replace('/auction/confirm');
+            return;
+          }
           setUser({
             id: userData.user_id,
             full_name: userData.full_name,
             email: userData.email || ''
           });
-          let phone = userData.phone as string | undefined;
-          if (!phone && userData.user_id) {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('phone')
-              .eq('user_id', userData.user_id)
-              .maybeSingle();
-            phone = profile?.phone ?? undefined;
-          }
           setCanViewLiveAuction(isAuctionAdminPhone(phone));
         } catch (error) {
           console.error('Error parsing stored user:', error);
-          setUser(null);
+          router.replace('/landing');
+          return;
         }
       } else {
         console.log('No stored user found, trying Supabase auth...');
@@ -83,6 +91,10 @@ export default function Dashboard() {
             .single();
 
           console.log('User profile from database:', profile);
+          if (!isAppAdmin(profile?.role, profile?.phone)) {
+            router.replace('/auction/confirm');
+            return;
+          }
           setUser({
             id: authUser.id,
             full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
@@ -91,15 +103,15 @@ export default function Dashboard() {
           setCanViewLiveAuction(isAuctionAdminPhone(profile?.phone));
         } else {
           console.log('No authenticated user found');
-          // No user found
-          setUser(null);
+          router.replace('/landing');
+          return;
         }
       }
       setLoading(false);
     }
 
     getUser();
-  }, [supabase]);
+  }, [supabase, router]);
 
   // Load saved location from localStorage and auto-open sheet on first load if not set
   useEffect(() => {

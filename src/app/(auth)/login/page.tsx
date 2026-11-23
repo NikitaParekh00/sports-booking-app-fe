@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import PhoneInput from '@/components/PhoneInput';
 import { requiresAdminLoginCode } from '@/lib/adminLoginCode';
+import { defaultPostLoginPath } from '@/lib/postLoginRedirect';
 
 function LoginContent() {
 	const router = useRouter();
@@ -33,7 +34,7 @@ function LoginContent() {
 			// Check if user exists in profiles table
 			const { data: existingUsers, error: checkError } = await supabase
 				.from('profiles')
-				.select('user_id, full_name')
+				.select('user_id, full_name, role')
 				.eq('phone', formattedMobileNumber);
 
 			if (checkError) {
@@ -63,11 +64,12 @@ function LoginContent() {
 				full_name: existingUser.full_name,
 				email: '',
 				phone: formattedMobileNumber,
+				role: existingUser.role ?? 'player',
 			}));
 
 			const safeReturn =
 				returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null;
-			router.push(safeReturn ?? '/dashboard');
+			router.push(safeReturn ?? defaultPostLoginPath(existingUser.role, formattedMobileNumber));
 		} catch (error) {
 			console.error('Unexpected error:', error);
 			alert('An unexpected error occurred. Please try again.');

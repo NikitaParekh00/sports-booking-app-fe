@@ -29,9 +29,19 @@ interface MyPlayer {
     sport_ratings?: SportRatingsMap;
 }
 
-const panelStyle = { backgroundColor: '#1F2937', border: '2px solid #374151' };
-const labelStyle = { color: '#9CA3AF' };
-const valueStyle = { color: '#E5E7EB' };
+/** Same blues as auction team cards that can bid. */
+const PAGE_BG = '#1E3A8A';
+const CARD_BLUE = '#0F172A';
+const BLUE_BORDER = '#3B82F6';
+const TEXT = '#E5E7EB';
+const TEXT_STRONG = '#FFFFFF';
+
+const valueStyle = { color: TEXT_STRONG };
+
+const pageBackground = {
+    backgroundColor: '#0F172A',
+    color: TEXT,
+};
 
 function dash(value: string | number | null | undefined) {
     if (value == null) return '—';
@@ -41,11 +51,14 @@ function dash(value: string | number | null | undefined) {
 
 function DetailTile({ label, value }: { label: string; value: string | number | null | undefined }) {
     return (
-        <div className="rounded-lg p-2.5 border min-w-[7rem] flex-1" style={panelStyle}>
-            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={labelStyle}>
+        <div
+            className="rounded-lg p-2.5 border min-w-[7rem] flex-1"
+            style={{ backgroundColor: PAGE_BG, borderColor: BLUE_BORDER }}
+        >
+            <div className="text-xs font-semibold uppercase tracking-wide mb-0.5" style={{ color: '#93C5FD' }}>
                 {label}
             </div>
-            <div className="text-sm font-medium" style={valueStyle}>
+            <div className="text-sm font-medium" style={{ color: TEXT_STRONG }}>
                 {dash(value)}
             </div>
         </div>
@@ -57,7 +70,7 @@ function TournamentLogoSlot({ url, alt }: { url?: string | null; alt: string }) 
     return (
         <div
             className="w-24 h-16 sm:w-32 sm:h-20 shrink-0 rounded-lg border flex items-center justify-center overflow-hidden"
-            style={{ borderColor: '#374151', backgroundColor: '#1F2937' }}
+            style={{ backgroundColor: PAGE_BG, borderColor: BLUE_BORDER }}
         >
             {processed ? (
                 processed.startsWith('/api/proxy-image') ? (
@@ -179,22 +192,26 @@ function AuctionConfirmContent() {
                 const active = data ?? [];
                 setSessions(active);
                 setSelectedSessionId((current) => {
-                    if (active.length === 1) {
-                        const onlyId = active[0].id;
-                        if (current !== onlyId) {
-                            router.replace(`/auction/confirm?session=${onlyId}`);
-                            return onlyId;
-                        }
-                        return current;
-                    }
-                    if (current && !active.some((s) => s.id === current)) {
-                        router.replace('/auction/confirm');
-                        return '';
-                    }
+                    if (active.length === 1) return active[0].id;
+                    if (current && !active.some((s) => s.id === current)) return '';
                     return current;
                 });
             });
-    }, [ready, supabase, router]);
+    }, [ready, supabase]);
+
+    useEffect(() => {
+        if (!ready || sessions.length === 0) return;
+        if (sessions.length === 1) {
+            const onlyId = sessions[0].id;
+            if (sessionIdFromUrl !== onlyId) {
+                router.replace(`/auction/confirm?session=${onlyId}`);
+            }
+            return;
+        }
+        if (sessionIdFromUrl && !sessions.some((s) => s.id === sessionIdFromUrl)) {
+            router.replace('/auction/confirm');
+        }
+    }, [ready, sessions, sessionIdFromUrl, router]);
 
     useEffect(() => {
         if (sessionIdFromUrl) setSelectedSessionId(sessionIdFromUrl);
@@ -238,6 +255,17 @@ function AuctionConfirmContent() {
             loadMyProfile(selectedSessionId);
         }
     }, [ready, userPhone, selectedSessionId]);
+
+    const handleLogout = () => {
+        try {
+            localStorage.removeItem('sf:user');
+            localStorage.removeItem('sf:selectedLocation');
+            localStorage.removeItem('sf:selectedLocationObj');
+        } catch {
+            /* ignore */
+        }
+        window.location.href = '/login';
+    };
 
     const submitIssue = async () => {
         if (!userPhone || !issueText.trim()) return;
@@ -306,32 +334,42 @@ function AuctionConfirmContent() {
 
     if (!ready) {
         return (
-            <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0F172A' }}>
-                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white" />
+            <div className="min-h-screen flex items-center justify-center" style={pageBackground}>
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: BLUE_BORDER }} />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen px-4 py-6" style={{ backgroundColor: '#0F172A', color: '#E5E7EB' }}>
+        <div className="min-h-screen px-4 py-6" style={pageBackground}>
             <div className="max-w-lg mx-auto">
-                <button
-                    type="button"
-                    onClick={() => router.push('/dashboard')}
-                    className="text-sm mb-4"
-                    style={{ color: '#9CA3AF' }}
-                >
-                    ← Dashboard
-                </button>
+                <div className="flex items-center justify-between mb-4">
+                    <button
+                        type="button"
+                        onClick={() => router.push('/dashboard')}
+                        className="text-sm"
+                        style={{ color: TEXT }}
+                    >
+                        ← Dashboard
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="text-sm font-semibold px-3 py-1.5 rounded-lg border"
+                        style={{ color: TEXT_STRONG, borderColor: BLUE_BORDER, backgroundColor: BLUE_BORDER }}
+                    >
+                        Logout
+                    </button>
+                </div>
 
                 <h1 className="text-xl font-bold mb-1">My auction profile</h1>
-                <p className="text-sm mb-6" style={{ color: '#9CA3AF' }}>
+                <p className="text-sm mb-6" style={{ color: TEXT }}>
                     This profile is from the Google Form you submitted. If anything is wrong, use Report an issue below
                     — the auction admin will review it.
                 </p>
 
                 {ready && sessions.length === 0 && (
-                    <p className="text-sm mb-6 text-center" style={{ color: '#9CA3AF' }}>
+                    <p className="text-sm mb-6 text-center" style={{ color: TEXT }}>
                         No active auction sessions right now. Check back when your league opens profile
                         confirmation.
                     </p>
@@ -339,7 +377,7 @@ function AuctionConfirmContent() {
 
                 {sessions.length > 0 && (
                     <label className="block mb-6">
-                        <span className="text-sm font-medium mb-1 block" style={{ color: '#E5E7EB' }}>
+                        <span className="text-sm font-medium mb-1 block" style={{ color: TEXT }}>
                             Auction session
                         </span>
                         <select
@@ -350,7 +388,7 @@ function AuctionConfirmContent() {
                                 router.replace(id ? `/auction/confirm?session=${id}` : '/auction/confirm');
                             }}
                             className="w-full px-3 py-2 rounded-lg border-2 text-sm"
-                            style={{ backgroundColor: '#111827', borderColor: '#374151', color: '#E5E7EB' }}
+                            style={{ backgroundColor: '#111827', borderColor: BLUE_BORDER, color: TEXT }}
                         >
                             <option value="">Select session…</option>
                             {sessions.map((s) => (
@@ -364,12 +402,12 @@ function AuctionConfirmContent() {
 
                 {loading && (
                     <div className="flex justify-center py-12">
-                        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white" />
+                        <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: BLUE_BORDER }} />
                     </div>
                 )}
 
                 {!loading && message && (
-                    <p className="text-center py-8 text-sm" style={{ color: '#F87171' }}>
+                    <p className="text-center py-8 text-sm" style={{ color: TEXT }}>
                         {message}
                     </p>
                 )}
@@ -378,22 +416,22 @@ function AuctionConfirmContent() {
                     <>
                         <div
                             className="p-4 md:p-6 rounded-lg border space-y-4"
-                            style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}
+                            style={{ backgroundColor: CARD_BLUE, borderColor: BLUE_BORDER }}
                         >
-                            <div className="flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: '#374151' }}>
+                            <div className="flex items-start justify-between gap-3 pb-3 border-b" style={{ borderColor: BLUE_BORDER }}>
                                 <div className="min-w-0 flex-1">
                                     <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                                        <p className="text-sm sm:text-base font-semibold" style={{ color: '#E5E7EB' }}>
+                                        <p className="text-sm sm:text-base font-semibold" style={{ color: TEXT_STRONG }}>
                                             {sessionName ?? 'Auction session'}
                                         </p>
                                         {tournamentDates && (
                                             <>
-                                                <span className="text-sm hidden sm:inline" style={{ color: '#4B5563' }}>
+                                                <span className="text-sm hidden sm:inline" style={{ color: BLUE_BORDER }}>
                                                     |
                                                 </span>
                                                 <p
                                                     className="text-xs sm:text-sm font-semibold uppercase tracking-wide"
-                                                    style={{ color: '#9CA3AF' }}
+                                                    style={{ color: '#93C5FD' }}
                                                 >
                                                     Tournament dates
                                                 </p>
@@ -403,7 +441,7 @@ function AuctionConfirmContent() {
                                     {tournamentDates && (
                                         <p
                                             className="text-xs sm:text-sm mt-1.5 leading-relaxed whitespace-pre-line"
-                                            style={{ color: '#9CA3AF' }}
+                                            style={{ color: TEXT }}
                                         >
                                             {tournamentDates}
                                         </p>
@@ -414,11 +452,13 @@ function AuctionConfirmContent() {
                             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
                                 <PlayerPhoto name={player.name} photo={player.photo} />
                                 <div className="flex-1 w-full min-w-0 text-center sm:text-left">
-                                    <h2 className="text-xl md:text-2xl font-semibold mb-3">{player.name}</h2>
+                                    <h2 className="text-xl md:text-2xl font-semibold mb-3" style={{ color: TEXT_STRONG }}>
+                                        {player.name}
+                                    </h2>
                                     <div className="overflow-x-auto">
                                         <table
                                             className="w-full border-collapse table-fixed text-left"
-                                            style={panelStyle}
+                                            style={{ backgroundColor: PAGE_BG, border: `2px solid ${BLUE_BORDER}` }}
                                         >
                                             <colgroup>
                                                 <col className="w-[20%] min-w-[3.25rem]" />
@@ -434,9 +474,10 @@ function AuctionConfirmContent() {
                                                                 i === 0 ? 'px-1.5 py-2' : 'p-2'
                                                             } ${i === 2 ? 'break-words leading-snug' : ''}`}
                                                             style={{
-                                                                ...labelStyle,
-                                                                borderBottom: '1px solid #374151',
-                                                                borderRight: i < 2 ? '1px solid #374151' : undefined,
+                                                                color: TEXT_STRONG,
+                                                                backgroundColor: BLUE_BORDER,
+                                                                borderBottom: `1px solid ${PAGE_BG}`,
+                                                                borderRight: i < 2 ? `1px solid ${PAGE_BG}` : undefined,
                                                             }}
                                                         >
                                                             {h}
@@ -448,13 +489,13 @@ function AuctionConfirmContent() {
                                                 <tr>
                                                     <td
                                                         className="px-1.5 py-2 text-sm font-semibold text-center sm:text-left"
-                                                        style={{ ...valueStyle, borderRight: '1px solid #374151' }}
+                                                        style={{ ...valueStyle, borderRight: `1px solid ${BLUE_BORDER}` }}
                                                     >
                                                         {dash(player.age)}
                                                     </td>
                                                     <td
                                                         className="p-2 text-sm font-semibold break-words leading-snug"
-                                                        style={{ ...valueStyle, borderRight: '1px solid #374151' }}
+                                                        style={{ ...valueStyle, borderRight: `1px solid ${BLUE_BORDER}` }}
                                                     >
                                                         {dash(player.skill)}
                                                     </td>
@@ -479,13 +520,13 @@ function AuctionConfirmContent() {
                             </div>
 
                             <div>
-                                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={labelStyle}>
+                                <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: '#93C5FD' }}>
                                     Sport ratings
                                 </p>
                                 <PlayerSportRatings
                                     ratings={player.sport_ratings}
-                                    textColor="#E5E7EB"
-                                    panelStyle={panelStyle}
+                                    textColor={TEXT}
+                                    panelStyle={{ backgroundColor: PAGE_BG, border: `2px solid ${BLUE_BORDER}` }}
                                     showAllRatedSports
                                 />
                             </div>
@@ -494,7 +535,7 @@ function AuctionConfirmContent() {
                         {approvedAt ? (
                             <p
                                 className="mt-4 py-2.5 px-3 rounded-lg text-sm text-center font-medium"
-                                style={{ backgroundColor: '#14532D', color: '#86EFAC' }}
+                                style={{ backgroundColor: PAGE_BG, color: TEXT, border: `2px solid ${BLUE_BORDER}` }}
                             >
                                 You approved this profile on{' '}
                                 {new Date(approvedAt).toLocaleString(undefined, {
@@ -508,7 +549,7 @@ function AuctionConfirmContent() {
                                 disabled={approveSubmitting}
                                 onClick={approveProfile}
                                 className="mt-4 w-full py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
-                                style={{ backgroundColor: '#22C55E', color: '#0F172A' }}
+                                style={{ backgroundColor: BLUE_BORDER, color: TEXT_STRONG }}
                             >
                                 {approveSubmitting ? 'Saving…' : 'Approve — my details are correct'}
                             </button>
@@ -519,12 +560,12 @@ function AuctionConfirmContent() {
                 {showIssueForm && (
                     <div
                         className="mt-6 p-4 rounded-lg border"
-                        style={{ backgroundColor: '#111827', borderColor: '#374151' }}
+                        style={{ backgroundColor: '#111827', borderColor: BLUE_BORDER }}
                     >
                         <h3 className="text-base font-semibold mb-2">Report an issue</h3>
-                        <p className="text-xs mb-3" style={{ color: '#9CA3AF' }}>
+                        <p className="text-xs mb-3" style={{ color: TEXT }}>
                             Describe what is wrong (age, photo, federation, sport ratings, or{' '}
-                            <strong className="font-semibold" style={{ color: '#D1D5DB' }}>
+                            <strong className="font-semibold" style={{ color: '#FFFFFF' }}>
                                 matches / runs / wickets
                             </strong>
                             ). If stats are wrong, paste your{' '}
@@ -533,7 +574,7 @@ function AuctionConfirmContent() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="underline"
-                                style={{ color: '#93C5FD' }}
+                                style={{ color: TEXT }}
                             >
                                 CricHeroes
                             </a>{' '}
@@ -546,9 +587,9 @@ function AuctionConfirmContent() {
                             placeholder={`Example: Matches should be 14, runs 620, wickets 6 (not 0). CricHeroes: https://cricheroes.com/player/your-name-xxxxx\nMy federation should be Jain CA Federation. Age is 28.`}
                             className="w-full px-3 py-2 rounded-lg border-2 text-sm mb-3 resize-y"
                             style={{
-                                backgroundColor: '#0F172A',
-                                borderColor: '#374151',
-                                color: '#E5E7EB',
+                                backgroundColor: PAGE_BG,
+                                borderColor: BLUE_BORDER,
+                                color: TEXT,
                             }}
                         />
                         <button
@@ -556,12 +597,12 @@ function AuctionConfirmContent() {
                             disabled={issueSubmitting || issueText.trim().length < 5}
                             onClick={submitIssue}
                             className="w-full py-2.5 rounded-lg font-semibold text-sm disabled:opacity-50"
-                            style={{ backgroundColor: '#E11D48', color: '#FFFFFF' }}
+                            style={{ backgroundColor: BLUE_BORDER, color: TEXT_STRONG }}
                         >
                             {issueSubmitting ? 'Sending…' : 'Submit issue'}
                         </button>
                         {issueSent && (
-                            <p className="text-sm mt-3 text-center" style={{ color: '#22C55E' }}>
+                            <p className="text-sm mt-3 text-center" style={{ color: TEXT }}>
                                 Thanks — your report was sent to the admin.
                             </p>
                         )}
@@ -576,8 +617,8 @@ export default function AuctionConfirmPage() {
     return (
         <Suspense
             fallback={
-                <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#0F172A' }}>
-                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-white" />
+                <div className="min-h-screen flex items-center justify-center" style={pageBackground}>
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: BLUE_BORDER }} />
                 </div>
             }
         >
