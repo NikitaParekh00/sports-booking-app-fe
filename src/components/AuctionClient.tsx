@@ -11,6 +11,24 @@ import PlayerSportRatings from './PlayerSportRatings';
 import { AUCTION_STATS_FIELD_LABELS } from '@/lib/auctionPlayerStatsFields';
 import { isAuctionAdminPhone } from '@/lib/auctionAccess';
 
+type AuctionSuccessMessage = {
+    playerName: string;
+    teamName?: string;
+    amount?: number;
+    timedReveal?: boolean;
+    sold?: boolean;
+    bids?: Array<{ teamName: string; amount: number }>;
+};
+
+function normalizeSoldPlayerInfo(raw: unknown): AuctionSuccessMessage | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const o = raw as AuctionSuccessMessage;
+    if (!o.playerName) return null;
+    if (o.timedReveal) return o;
+    if (o.teamName && o.amount != null && o.amount > 0) return o;
+    return null;
+}
+
 interface Player {
     name: string;
     bidAmount?: number; // Optional for players in team (bought players have bid amount)
@@ -86,15 +104,25 @@ function FactTable({
     valueColor: string;
     divider: string;
 }) {
+    const colWidths =
+        columns.length === 3
+            ? ['22%', '28%', '50%']
+            : columns.map(() => `${Math.floor(100 / columns.length)}%`);
+
     return (
-        <div className="overflow-x-auto">
-            <table className="w-full border-collapse table-fixed text-left" style={panel}>
+        <div className="overflow-x-auto min-w-0">
+            <table className="w-full border-collapse text-left" style={panel}>
+                <colgroup>
+                    {colWidths.map((w, i) => (
+                        <col key={i} style={{ width: w }} />
+                    ))}
+                </colgroup>
                 <thead>
                     <tr>
                         {columns.map((column, index) => (
                             <th
                                 key={column.heading}
-                                className="p-1.5 md:p-2 text-base md:text-lg font-bold uppercase tracking-wide"
+                                className="p-1.5 md:p-2 text-[11px] sm:text-sm md:text-lg font-bold uppercase tracking-wide leading-tight break-words whitespace-normal"
                                 style={{
                                     color: labelColor,
                                     borderBottom: `1px solid ${divider}`,
@@ -111,7 +139,7 @@ function FactTable({
                         {columns.map((column, index) => (
                             <td
                                 key={column.heading}
-                                className="p-1.5 md:p-2 text-lg md:text-xl font-semibold leading-snug break-words"
+                                className="p-1.5 md:p-2 text-sm sm:text-lg md:text-xl font-semibold leading-snug break-words whitespace-normal align-top"
                                 style={{
                                     color: valueColor,
                                     borderRight: index < columns.length - 1 ? `1px solid ${divider}` : undefined,
@@ -164,7 +192,6 @@ function AuctionPlayerFacts({
                     { heading: 'Age', value: factText(player.age) },
                     { heading: 'Skill', value: factText(player.skill) },
                     { heading: 'Federation', value: factText(player.experience) },
-                    { heading: 'Phone', value: factText(player.phone) },
                 ]}
                 panel={panel}
                 labelColor={labelColor}
@@ -394,6 +421,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     // Initialize with default - will be immediately updated from database settings when loaded
     const [currentBid, setCurrentBid] = useState(DEFAULT_MINIMUM_BID);
     const [auctionComplete, setAuctionComplete] = useState(false);
+    const [auctionMode, setAuctionMode] = useState<string>('live_admin');
+    const [timedLotSnapshot, setTimedLotSnapshot] = useState<{
+        lotOpen?: boolean;
+        lotPlayer?: { name?: string } | null;
+        highBid?: number | null;
+        bidCount?: number;
+        lot_ends_at?: string | null;
+    } | null>(null);
+
+    const liveAdminCanEdit = canEdit && auctionMode !== 'timed_owner';
 
     // Track previous player index to detect changes
     const prevPlayerIndexRef = useRef<number>(-1);
@@ -624,7 +661,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [selectedTeamFilters, setSelectedTeamFilters] = useState<Set<number>>(new Set()); // Empty set means "All" selected
     const [loadingState, setLoadingState] = useState(true);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [successMessage, setSuccessMessage] = useState<{ playerName: string; teamName: string; amount: number } | null>(null);
+    const [successMessage, setSuccessMessage] = useState<AuctionSuccessMessage | null>(null);
+    const [timedLotCountdown, setTimedLotCountdown] = useState('');
     const [skippedPlayers, setSkippedPlayers] = useState<Player[]>([]);
     const [boughtPlayerNames, setBoughtPlayerNames] = useState<Set<string>>(new Set());
     const [isSkippedPlayersMode, setIsSkippedPlayersMode] = useState(false); // Track if we're showing only skipped players
@@ -783,6 +821,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 }
 
                 setSessionId(finalSession.id);
+                setAuctionMode((finalSession as { auction_mode?: string }).auction_mode || 'live_admin');
                 const initialPlayerIndex = finalSession.current_player_index;
                 // Don't set currentPlayerIndex yet - we need to load players first
                 // Then we'll find the correct index in the players array
@@ -792,16 +831,13 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 setAuctionComplete(finalSession.is_complete);
 
                 // Check if there's a sold player info to show and modal is not acknowledged
-                const soldPlayerInfo = (finalSession as any).sold_player_info;
-                const congratulationsAcknowledged = (finalSession as any).congratulations_modal_acknowledged;
-                
-                // Show modal if sold_player_info exists and congratulations_modal_acknowledged is false
-                if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && congratulationsAcknowledged === false) {
-                    setSuccessMessage({
-                        playerName: soldPlayerInfo.playerName,
-                        teamName: soldPlayerInfo.teamName,
-                        amount: soldPlayerInfo.amount
-                    });
+                const soldPlayerInfo = normalizeSoldPlayerInfo((finalSession as { sold_player_info?: unknown })
+                    .sold_player_info);
+                const congratulationsAcknowledged = (finalSession as { congratulations_modal_acknowledged?: boolean })
+                    .congratulations_modal_acknowledged;
+
+                if (soldPlayerInfo && congratulationsAcknowledged === false) {
+                    setSuccessMessage(soldPlayerInfo);
                     setShowSuccessModal(true);
                 }
 
@@ -1358,6 +1394,74 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             prevPlayerIndexRef.current = currentPlayerIndex;
     }, [currentPlayerIndex, auctionSettings, sessionId, supabase, isSkippedPlayersMode, players.length]);
 
+    useEffect(() => {
+        if (!sessionId || auctionMode !== 'timed_owner') {
+            setTimedLotSnapshot(null);
+            return;
+        }
+        const poll = async () => {
+            try {
+                const stored = localStorage.getItem('sf:user');
+                const phone = stored ? (JSON.parse(stored).phone as string | undefined) : undefined;
+                const res = await fetch('/api/auction/timed/state', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sessionId, phone: phone ?? '' }),
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    setTimedLotSnapshot({
+                        lotOpen: json.lotOpen,
+                        lotPlayer: json.lotPlayer,
+                        highBid: json.highBid,
+                        bidCount: json.bidCount,
+                        lot_ends_at: json.session?.lot_ends_at ?? null,
+                    });
+                    if (json.lotOpen && json.lotPlayer && typeof json.lotPlayer.name === 'string') {
+                        const lotName = json.lotPlayer.name as string;
+                        const listIdx = playersRef.current.findIndex((p) => p.name === lotName);
+                        if (listIdx >= 0) {
+                            setCurrentPlayerIndex((prev) => {
+                                if (prev !== listIdx) {
+                                    prevPlayerIndexRef.current = listIdx;
+                                    return listIdx;
+                                }
+                                return prev;
+                            });
+                        }
+                    }
+                }
+            } catch {
+                /* ignore */
+            }
+        };
+        poll();
+        const id = window.setInterval(poll, 5000);
+        return () => window.clearInterval(id);
+    }, [sessionId, auctionMode]);
+
+    useEffect(() => {
+        const endsAt = timedLotSnapshot?.lot_ends_at;
+        if (!timedLotSnapshot?.lotOpen || !endsAt) {
+            setTimedLotCountdown('');
+            return;
+        }
+        const tick = () => {
+            const ms = new Date(endsAt).getTime() - Date.now();
+            if (ms <= 0) {
+                setTimedLotCountdown('Closing…');
+                return;
+            }
+            const s = Math.floor(ms / 1000);
+            const m = Math.floor(s / 60);
+            const r = s % 60;
+            setTimedLotCountdown(`${m}:${r.toString().padStart(2, '0')}`);
+        };
+        tick();
+        const id = window.setInterval(tick, 1000);
+        return () => window.clearInterval(id);
+    }, [timedLotSnapshot?.lotOpen, timedLotSnapshot?.lot_ends_at]);
+
     // Real-time subscription for auction updates
     useEffect(() => {
         if (!sessionId) return;
@@ -1381,7 +1485,11 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         sold_player_info?: { playerName: string; teamName: string; amount: number } | null;
                         congratulations_modal_acknowledged?: boolean;
                         is_skipped_players_mode?: boolean;
+                        auction_mode?: string;
                     };
+                    if (session.auction_mode) {
+                        setAuctionMode(session.auction_mode);
+                    }
                     const prevIndex = prevPlayerIndexRef.current;
 
                     // Check if skipped players mode changed
@@ -1568,18 +1676,21 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     
                     // Show modal when sold_player_info is set and not acknowledged (real-time)
                     // Only show if congratulations_modal_acknowledged is false or undefined
-                    if (soldPlayerInfo && soldPlayerInfo.playerName && soldPlayerInfo.teamName && soldPlayerInfo.amount && 
-                        congratulationsAcknowledged !== true && payload.eventType === 'UPDATE') {
-                        // Only show if it's a new sold_player_info (was null/undefined before, now has value)
-                        const isNewSoldInfo = !oldSoldInfo && soldPlayerInfo;
+                    const normalizedSold = normalizeSoldPlayerInfo(soldPlayerInfo);
+                    if (
+                        normalizedSold &&
+                        congratulationsAcknowledged !== true &&
+                        payload.eventType === 'UPDATE'
+                    ) {
+                        const isNewSoldInfo = !oldSoldInfo && normalizedSold;
                         if (isNewSoldInfo || !showSuccessModal) {
                             console.log('[MODAL DEBUG] ✅ Showing success modal - sold_player_info set (real-time)', {
-                                soldInfo: soldPlayerInfo,
+                                soldInfo: normalizedSold,
                                 acknowledged: congratulationsAcknowledged,
-                            timestamp: new Date().toISOString()
-                        });
-                            setSuccessMessage(soldPlayerInfo);
-                        setShowSuccessModal(true);
+                                timestamp: new Date().toISOString(),
+                            });
+                            setSuccessMessage(normalizedSold);
+                            setShowSuccessModal(true);
                         }
                     }
                     
@@ -2049,7 +2160,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         };
     }, [sessionId, supabase, reloadTeams]);
 
-    const currentPlayer = players[currentPlayerIndex] || null;
+    const currentPlayer = useMemo(() => {
+        const fromList = players[currentPlayerIndex] || null;
+        if (auctionMode !== 'timed_owner' || !timedLotSnapshot?.lotOpen) {
+            return fromList;
+        }
+        const lotName = (timedLotSnapshot.lotPlayer as { name?: string } | null | undefined)?.name;
+        if (!lotName) return fromList;
+        const fromPool = originalPlayerPool.find((p) => p.name === lotName);
+        return fromPool ?? fromList;
+    }, [players, currentPlayerIndex, auctionMode, timedLotSnapshot, originalPlayerPool]);
     const remainingPlayers = players.length > 0 ? players.length - currentPlayerIndex : 0;
     
     // Create a map of player name -> index in originalPlayerPool for O(1) lookup
@@ -2865,8 +2985,12 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     };
 
     const handleBuyPlayer = async () => {
-        if (!canEdit) {
-            alert('You do not have permission to edit the auction.');
+        if (!liveAdminCanEdit) {
+            if (auctionMode === 'timed_owner') {
+                alert('Timed owner mode is on — use Admin → Settings to open/close lots; owners bid from /auction/owner.');
+            } else {
+                alert('You do not have permission to edit the auction.');
+            }
             return;
         }
 
@@ -4978,23 +5102,56 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 />
                             </div>
 
-                            {/* Congratulations */}
-                            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-6">Congratulations!!</h2>
+                            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                                {successMessage.timedReveal
+                                    ? successMessage.sold
+                                        ? 'Lot closed — sold!'
+                                        : 'Lot closed'
+                                    : 'Congratulations!!'}
+                            </h2>
 
-                            {/* Player Name */}
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">
-                                {successMessage.playerName}
-                            </p>
+                            <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">{successMessage.playerName}</p>
 
-                            {/* Sold to Team */}
-                            <p className="text-lg md:text-xl text-gray-600 mb-4">
-                                Sold to <span className="font-bold text-red-600">{successMessage.teamName}</span>
-                            </p>
+                            {successMessage.timedReveal && successMessage.bids && successMessage.bids.length > 0 && (
+                                <div className="mb-6 text-left max-w-md mx-auto w-full">
+                                    <p className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">All bids</p>
+                                    <ul className="rounded-lg border border-gray-200 overflow-hidden text-base">
+                                        {successMessage.bids.map((b, i) => (
+                                            <li
+                                                key={`${b.teamName}-${i}`}
+                                                className="flex justify-between gap-3 px-4 py-2 border-b border-gray-100 last:border-0 bg-white"
+                                            >
+                                                <span className="font-medium text-gray-900">{b.teamName}</span>
+                                                <span className="font-semibold text-gray-800">₹{formatIndianNumber(b.amount)}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
 
-                            {/* Amount */}
-                            <p className="text-2xl md:text-3xl font-bold text-red-600 mb-8">
-                                for ₹{formatIndianNumber(successMessage.amount)}
-                            </p>
+                            {successMessage.timedReveal && successMessage.bids?.length === 0 && (
+                                <p className="text-lg text-gray-600 mb-6">No bids received.</p>
+                            )}
+
+                            {successMessage.timedReveal && successMessage.sold === false && (
+                                <p className="text-xl font-semibold text-gray-700 mb-6">
+                                    Unsold — no valid winning bid.
+                                </p>
+                            )}
+
+                            {successMessage.sold !== false &&
+                                successMessage.teamName &&
+                                successMessage.amount != null && (
+                                    <>
+                                        <p className="text-lg md:text-xl text-gray-600 mb-4">
+                                            Sold to{' '}
+                                            <span className="font-bold text-red-600">{successMessage.teamName}</span>
+                                        </p>
+                                        <p className="text-2xl md:text-3xl font-bold text-red-600 mb-8">
+                                            for ₹{formatIndianNumber(successMessage.amount)}
+                                        </p>
+                                    </>
+                                )}
                         </div>
 
                         {/* Button - Only show for admin users */}
@@ -5211,6 +5368,22 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     </div>
                 )}
             </div>
+
+            {auctionMode === 'timed_owner' && timedLotSnapshot?.lotOpen && !showSuccessModal && (
+                <div
+                    className="px-3 py-2 text-center text-sm border-b"
+                    style={{ backgroundColor: '#064E3B', borderColor: '#065F46', color: '#D1FAE5' }}
+                >
+                    Timed lot: <strong>{(timedLotSnapshot.lotPlayer as { name?: string })?.name ?? '—'}</strong>
+                    {timedLotCountdown && (
+                        <>
+                            {' '}
+                            · Time left <strong className="font-mono">{timedLotCountdown}</strong>
+                        </>
+                    )}
+                    <span className="block text-xs mt-0.5 opacity-90">Owners bid privately at /auction/owner — results when the timer ends.</span>
+                </div>
+            )}
 
             <div className="w-full px-2 md:px-3 flex-1 overflow-hidden xl:overflow-hidden overflow-y-auto min-h-0">
                 <div
@@ -5687,17 +5860,17 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <div className="flex flex-col gap-1.5 md:gap-2 justify-start md:min-w-[200px]">
                                     <button
                                         onClick={handleBuyPlayer}
-                                        disabled={!canEdit || !selectedTeamId}
+                                        disabled={!liveAdminCanEdit || !selectedTeamId}
                                         className="w-full py-2.5 md:py-3 px-3 md:px-5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg md:text-xl"
                                         style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
-                                        onMouseEnter={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
-                                        onMouseLeave={(e) => !canEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
+                                        onMouseEnter={(e) => !liveAdminCanEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#BE185D')}
+                                        onMouseLeave={(e) => !liveAdminCanEdit || !selectedTeamId || (e.currentTarget.style.backgroundColor = '#E11D48')}
                                     >
                                         Buy Player
                                     </button>
                                     <button
                                         onClick={handleSkip}
-                                        disabled={!canEdit}
+                                        disabled={!liveAdminCanEdit}
                                         className="w-full py-2.5 md:py-3 px-3 md:px-5 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg md:text-xl"
                                         style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
                                         onMouseEnter={(e) => !canEdit || (e.currentTarget.style.backgroundColor = '#374151')}
@@ -5964,7 +6137,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 <div className="flex flex-col gap-2">
                                     <button
                                         onClick={handleBuyPlayer}
-                                        disabled={!canEdit || !selectedTeamId}
+                                        disabled={!liveAdminCanEdit || !selectedTeamId}
                                         className="px-6 py-3 rounded-lg font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         style={{
                                             backgroundColor: selectedTeamId ? '#E11D48' : '#1F2937',
@@ -5976,7 +6149,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     </button>
                                     <button
                                         onClick={handleSkip}
-                                        disabled={!canEdit}
+                                        disabled={!liveAdminCanEdit}
                                         className="px-6 py-3 rounded-lg font-semibold text-base transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                         style={{
                                             backgroundColor: '#1F2937',

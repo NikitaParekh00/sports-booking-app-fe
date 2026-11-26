@@ -145,6 +145,7 @@ function AuctionConfirmContent() {
     const [issueSent, setIssueSent] = useState(false);
     const [approvedAt, setApprovedAt] = useState<string | null>(null);
     const [approveSubmitting, setApproveSubmitting] = useState(false);
+    const [showOwnerBiddingLink, setShowOwnerBiddingLink] = useState(false);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sf:user');
@@ -180,6 +181,32 @@ function AuctionConfirmContent() {
         };
         init();
     }, [router, supabase]);
+
+    useEffect(() => {
+        if (!ready || !userPhone || !selectedSessionId) {
+            setShowOwnerBiddingLink(false);
+            return;
+        }
+        let cancelled = false;
+        fetch('/api/auction/timed/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: selectedSessionId, phone: userPhone }),
+        })
+            .then((r) => r.json())
+            .then((json) => {
+                if (cancelled) return;
+                setShowOwnerBiddingLink(
+                    json.session?.auction_mode === 'timed_owner' && Boolean(json.team)
+                );
+            })
+            .catch(() => {
+                if (!cancelled) setShowOwnerBiddingLink(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [ready, userPhone, selectedSessionId]);
 
     useEffect(() => {
         if (!ready) return;
@@ -400,6 +427,26 @@ function AuctionConfirmContent() {
                     </label>
                 )}
 
+                {showOwnerBiddingLink && selectedSessionId && (
+                    <div
+                        className="mb-6 p-4 rounded-lg border"
+                        style={{ backgroundColor: CARD_BLUE, borderColor: BLUE_BORDER }}
+                    >
+                        <p className="text-sm mb-3" style={{ color: TEXT }}>
+                            You are registered as a team owner for this auction. When a lot is open, submit bids
+                            before the timer ends.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => router.push(`/auction/owner?session=${selectedSessionId}`)}
+                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg font-semibold text-sm"
+                            style={{ backgroundColor: '#059669', color: '#fff' }}
+                        >
+                            Open team bidding
+                        </button>
+                    </div>
+                )}
+
                 {loading && (
                     <div className="flex justify-center py-12">
                         <div className="animate-spin rounded-full h-10 w-10 border-b-2" style={{ borderColor: BLUE_BORDER }} />
@@ -457,22 +504,22 @@ function AuctionConfirmContent() {
                                     </h2>
                                     <div className="overflow-x-auto">
                                         <table
-                                            className="w-full border-collapse table-fixed text-left"
+                                            className="w-full border-collapse text-left"
                                             style={{ backgroundColor: PAGE_BG, border: `2px solid ${BLUE_BORDER}` }}
                                         >
                                             <colgroup>
-                                                <col className="w-[20%] min-w-[3.25rem]" />
-                                                <col className="w-[38%]" />
-                                                <col className="w-[42%]" />
+                                                <col style={{ width: '22%' }} />
+                                                <col style={{ width: '28%' }} />
+                                                <col style={{ width: '50%' }} />
                                             </colgroup>
                                             <thead>
                                                 <tr>
                                                     {['Age', 'Skill', 'Federation'].map((h, i) => (
                                                         <th
                                                             key={h}
-                                                            className={`text-xs font-bold uppercase tracking-wide ${
+                                                            className={`text-[11px] sm:text-xs font-bold uppercase tracking-wide leading-tight whitespace-normal break-words ${
                                                                 i === 0 ? 'px-1.5 py-2' : 'p-2'
-                                                            } ${i === 2 ? 'break-words leading-snug' : ''}`}
+                                                            }`}
                                                             style={{
                                                                 color: TEXT_STRONG,
                                                                 backgroundColor: BLUE_BORDER,

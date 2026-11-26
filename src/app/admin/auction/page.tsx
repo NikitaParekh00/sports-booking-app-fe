@@ -25,6 +25,7 @@ interface Team {
   id: number;
   name: string;
   owner_name: string;
+  owner_phone?: string | null;
   owner_photo?: string;
   budget: number;
   session_id: string;
@@ -75,7 +76,14 @@ export default function AuctionAdminPage() {
   const [selectedSessionForTeams, setSelectedSessionForTeams] = useState<string>('');
   const [showTeamForm, setShowTeamForm] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-  const [teamFormData, setTeamFormData] = useState({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
+  const [teamFormData, setTeamFormData] = useState({
+    name: '',
+    owner_name: '',
+    owner_phone: '',
+    owner_photo: '',
+    budget: '',
+    logo_url: '',
+  });
 
   // Players state
   const [players, setPlayers] = useState<Player[]>([]);
@@ -123,6 +131,83 @@ export default function AuctionAdminPage() {
   const [categoryColorMappings, setCategoryColorMappings] = useState<Array<{ category: string, color: string }>>([]);
   const [categoryMinimumBids, setCategoryMinimumBids] = useState<Array<{ category: string, minimumBid: string }>>([]);
   const [categoryLimits, setCategoryLimits] = useState<Array<{ category: string, limit: string }>>([]);
+
+  const [timedSessionMeta, setTimedSessionMeta] = useState<{
+    auction_mode?: string | null;
+    lot_duration_seconds?: number | null;
+    lot_ends_at?: string | null;
+  } | null>(null);
+  const [lotDurationInput, setLotDurationInput] = useState('120');
+  const [timedLotPoll, setTimedLotPoll] = useState<Record<string, unknown> | null>(null);
+  const [timedAdminBusy, setTimedAdminBusy] = useState(false);
+
+  const getLoggedInPhone = (): string => {
+    try {
+      const stored = localStorage.getItem('sf:user');
+      if (!stored) return '';
+      return (JSON.parse(stored).phone as string) ?? '';
+    } catch {
+      return '';
+    }
+  };
+
+  const loadTimedSessionMeta = async (sessionId: string) => {
+    const { data } = await supabase
+      .from('auction_sessions')
+      .select('auction_mode, lot_duration_seconds, lot_ends_at')
+      .eq('id', sessionId)
+      .maybeSingle();
+    setTimedSessionMeta(data ?? null);
+    if (data?.lot_duration_seconds) {
+      setLotDurationInput(String(data.lot_duration_seconds));
+    }
+  };
+
+  const refreshTimedLotPoll = async (sessionId: string) => {
+    const phone = getLoggedInPhone();
+    if (!phone) return;
+    try {
+      const res = await fetch('/api/auction/timed/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId, phone }),
+      });
+      const json = await res.json();
+      if (res.ok) setTimedLotPoll(json);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const callTimedAdmin = async (action: string, extra: Record<string, unknown> = {}) => {
+    if (!selectedSessionForSettings) {
+      alert('Select a session first');
+      return;
+    }
+    const phone = getLoggedInPhone();
+    if (!phone) {
+      alert('No phone on login — use the admin phone account.');
+      return;
+    }
+    setTimedAdminBusy(true);
+    try {
+      const res = await fetch('/api/auction/timed/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: selectedSessionForSettings, phone, action, ...extra }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(json.error || json.message || 'Request failed');
+        return;
+      }
+      if (json.message) alert(json.message);
+      await loadTimedSessionMeta(selectedSessionForSettings);
+      await refreshTimedLotPoll(selectedSessionForSettings);
+    } finally {
+      setTimedAdminBusy(false);
+    }
+  };
 
   // Check authentication
   useEffect(() => {
@@ -186,8 +271,16 @@ export default function AuctionAdminPage() {
   useEffect(() => {
     if (selectedSessionForSettings && isAdmin) {
       loadSettings(selectedSessionForSettings);
+      loadTimedSessionMeta(selectedSessionForSettings);
+      refreshTimedLotPoll(selectedSessionForSettings);
     }
   }, [selectedSessionForSettings, isAdmin]);
+
+  useEffect(() => {
+    if (!selectedSessionForSettings || !isAdmin || timedSessionMeta?.auction_mode !== 'timed_owner') return;
+    const id = window.setInterval(() => refreshTimedLotPoll(selectedSessionForSettings), 5000);
+    return () => window.clearInterval(id);
+  }, [selectedSessionForSettings, isAdmin, timedSessionMeta?.auction_mode]);
 
   const loadSessions = async () => {
     try {
@@ -362,6 +455,7 @@ export default function AuctionAdminPage() {
           session_id: selectedSessionForTeams,
           name: teamFormData.name,
           owner_name: teamFormData.owner_name,
+          owner_phone: teamFormData.owner_phone.trim() || null,
           owner_photo: teamFormData.owner_photo || null,
           budget: parseFloat(teamFormData.budget) || 1000000,
           team_number: nextTeamNumber,
@@ -371,7 +465,7 @@ export default function AuctionAdminPage() {
       if (error) throw error;
       alert('Team created successfully!');
       setShowTeamForm(false);
-      setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
+      setTeamFormData({ name: '', owner_name: '', owner_phone: '', owner_photo: '', budget: '', logo_url: '' });
       loadTeams(selectedSessionForTeams);
     } catch (error: any) {
       console.error('Error creating team:', error);
@@ -388,6 +482,7 @@ export default function AuctionAdminPage() {
         .update({
           name: teamFormData.name,
           owner_name: teamFormData.owner_name,
+          owner_phone: teamFormData.owner_phone.trim() || null,
           owner_photo: teamFormData.owner_photo || null,
           budget: parseFloat(teamFormData.budget) || editingTeam.budget,
           logo_url: teamFormData.logo_url || null
@@ -398,7 +493,7 @@ export default function AuctionAdminPage() {
       alert('Team updated successfully!');
       setEditingTeam(null);
       setShowTeamForm(false);
-      setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '', logo_url: '' });
+      setTeamFormData({ name: '', owner_name: '', owner_phone: '', owner_photo: '', budget: '', logo_url: '' });
       loadTeams(selectedSessionForTeams);
     } catch (error: any) {
       console.error('Error updating team:', error);
@@ -843,6 +938,7 @@ export default function AuctionAdminPage() {
           session_id: selectedSessionForTeams,
           name: team.name || '',
           owner_name: team.owner_name || null,
+          owner_phone: team.owner_phone || null,
           owner_photo: team.owner_photo || null,
           budget: team.budget ? parseFloat(team.budget) : 111000,
           team_number: teamNumber,
@@ -1457,7 +1553,14 @@ export default function AuctionAdminPage() {
                     <button
                       onClick={() => {
                         setEditingTeam(null);
-                        setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '1000000', logo_url: '' });
+                        setTeamFormData({
+                          name: '',
+                          owner_name: '',
+                          owner_phone: '',
+                          owner_photo: '',
+                          budget: '1000000',
+                          logo_url: '',
+                        });
                         setShowTeamForm(true);
                       }}
                       className="px-4 py-2 md:px-6 md:py-3 rounded-lg font-semibold transition-colors w-full md:w-auto"
@@ -1502,6 +1605,20 @@ export default function AuctionAdminPage() {
                           className="w-full px-3 py-2 rounded-lg border"
                           style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
                         />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Owner phone (timed bidding)</label>
+                        <input
+                          type="text"
+                          value={teamFormData.owner_phone}
+                          onChange={(e) => setTeamFormData({ ...teamFormData, owner_phone: e.target.value })}
+                          placeholder="+91-XXXXXXXXXX (same as owner login)"
+                          className="w-full px-3 py-2 rounded-lg border"
+                          style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                        />
+                        <p className="text-xs mt-1" style={{ color: '#9CA3AF' }}>
+                          Required for timed owner mode — must match the phone the owner uses to sign in.
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium mb-1" style={{ color: '#E5E7EB' }}>Owner Photo URL</label>
@@ -1551,7 +1668,14 @@ export default function AuctionAdminPage() {
                           onClick={() => {
                             setShowTeamForm(false);
                             setEditingTeam(null);
-                            setTeamFormData({ name: '', owner_name: '', owner_photo: '', budget: '1000000', logo_url: '' });
+                            setTeamFormData({
+                              name: '',
+                              owner_name: '',
+                              owner_phone: '',
+                              owner_photo: '',
+                              budget: '1000000',
+                              logo_url: '',
+                            });
                           }}
                           className="px-4 py-2 rounded-lg font-semibold transition-colors"
                           style={{ backgroundColor: '#1F2937', color: '#9CA3AF' }}
@@ -1612,6 +1736,11 @@ export default function AuctionAdminPage() {
                         })()}
                         <p className="text-sm md:text-base" style={{ color: '#9CA3AF' }}>Owner: {team.owner_name}</p>
                       </div>
+                      {team.owner_phone && (
+                        <p className="text-xs md:text-sm mb-1" style={{ color: '#9CA3AF' }}>
+                          Owner phone: {team.owner_phone}
+                        </p>
+                      )}
                       <p className="text-sm md:text-base mb-4" style={{ color: '#9CA3AF' }}>Budget: ₹{team.budget.toLocaleString()}</p>
                       <div className="flex gap-2">
                         <button
@@ -1620,6 +1749,7 @@ export default function AuctionAdminPage() {
                             setTeamFormData({
                               name: team.name,
                               owner_name: team.owner_name,
+                              owner_phone: team.owner_phone || '',
                               owner_photo: team.owner_photo || '',
                               budget: team.budget.toString(),
                               logo_url: team.logo_url || ''
@@ -2195,6 +2325,119 @@ export default function AuctionAdminPage() {
 
             {selectedSessionForSettings && (
               <>
+                <div
+                  className="mb-6 p-4 md:p-6 rounded-lg border"
+                  style={{ backgroundColor: '#111827', borderColor: '#374151' }}
+                >
+                  <h2 className="text-lg md:text-xl font-bold mb-2" style={{ color: '#E5E7EB' }}>
+                    Timed owner auction
+                  </h2>
+                  <p className="text-xs md:text-sm mb-4" style={{ color: '#9CA3AF' }}>
+                    One player at a time with a countdown. Team owners bid from{' '}
+                    <span className="text-slate-300">/auction/owner</span> (set each team&apos;s owner phone on the
+                    Teams tab). Use Close lot to sell immediately or wait for the timer. Unsold timed lots are added to
+                    Skipped (same as live Skip). If the live auction is in <strong>Skipped only</strong> mode when you
+                    start timed mode, <strong>Open next lot</strong> runs through that skipped list from the current
+                    position.
+                  </p>
+                  <p className="text-sm mb-3" style={{ color: '#E5E7EB' }}>
+                    Mode:{' '}
+                    <strong>
+                      {timedSessionMeta?.auction_mode === 'timed_owner' ? 'Timed owner' : 'Live admin (default)'}
+                    </strong>
+                  </p>
+                  <label className="block mb-4 max-w-xs">
+                    <span className="text-sm font-medium" style={{ color: '#E5E7EB' }}>
+                      Lot duration (seconds)
+                    </span>
+                    <input
+                      type="number"
+                      min={30}
+                      max={3600}
+                      value={lotDurationInput}
+                      onChange={(e) => setLotDurationInput(e.target.value)}
+                      className="mt-1 w-full px-3 py-2 rounded-lg border text-sm"
+                      style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
+                    />
+                  </label>
+                  {timedLotPoll && Boolean(timedLotPoll.lotOpen) && (
+                    <div className="mb-4 p-3 rounded border text-sm" style={{ borderColor: '#374151', color: '#D1D5DB' }}>
+                      <p>
+                        Open lot:{' '}
+                        <strong>{(timedLotPoll.lotPlayer as { name?: string })?.name ?? '—'}</strong>
+                        {timedLotPoll.highBid != null && (
+                          <>
+                            {' '}
+                            · High bid ₹{Number(timedLotPoll.highBid as number).toLocaleString('en-IN')}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {timedSessionMeta?.auction_mode !== 'timed_owner' ? (
+                      <button
+                        type="button"
+                        disabled={timedAdminBusy}
+                        onClick={() =>
+                          callTimedAdmin('start_mode', {
+                            lotDurationSeconds: Number(lotDurationInput) || 120,
+                          })
+                        }
+                        className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                        style={{ backgroundColor: '#059669', color: '#fff' }}
+                      >
+                        Start timed mode
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled={timedAdminBusy}
+                          onClick={() => callTimedAdmin('open_lot')}
+                          className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                          style={{ backgroundColor: '#3B82F6', color: '#E5E7EB' }}
+                        >
+                          Open next lot
+                        </button>
+                        <button
+                          type="button"
+                          disabled={timedAdminBusy}
+                          onClick={() => callTimedAdmin('close_lot')}
+                          className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                          style={{ backgroundColor: '#E11D48', color: '#E5E7EB' }}
+                        >
+                          Close lot now
+                        </button>
+                        <button
+                          type="button"
+                          disabled={timedAdminBusy}
+                          onClick={() =>
+                            callTimedAdmin('set_duration', {
+                              lotDurationSeconds: Number(lotDurationInput) || 120,
+                            })
+                          }
+                          className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                          style={{ backgroundColor: '#1F2937', color: '#E5E7EB' }}
+                        >
+                          Save duration
+                        </button>
+                        <button
+                          type="button"
+                          disabled={timedAdminBusy}
+                          onClick={() => {
+                            if (!confirm('Stop timed mode and return to live admin auction?')) return;
+                            callTimedAdmin('stop_mode');
+                          }}
+                          className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
+                          style={{ backgroundColor: '#6B7280', color: '#E5E7EB' }}
+                        >
+                          Stop timed mode
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <h2 className="text-xl md:text-2xl lg:text-3xl font-bold mb-4 md:mb-6" style={{ color: '#E5E7EB' }}>Auction Settings</h2>
                 <div className="p-4 md:p-6 rounded-lg border" style={{ backgroundColor: '#111827', borderColor: '#1F2937' }}>
                   <div className="space-y-4">
