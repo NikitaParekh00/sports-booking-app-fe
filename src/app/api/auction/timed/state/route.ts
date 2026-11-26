@@ -98,6 +98,15 @@ export async function POST(request: NextRequest) {
 
         const minBid = lotPlayer ? minBidForPlayer(lotPlayer.category, settings) : null;
 
+        const lotStaged = Boolean(session.timed_lot_player_pool_id);
+        const lotBiddingOpen = Boolean(
+            session.timed_lot_player_pool_id &&
+                session.lot_ends_at &&
+                new Date(session.lot_ends_at).getTime() > Date.now()
+        );
+
+        const sealOtherBids = lotBiddingOpen && !isAdmin;
+
         return NextResponse.json({
             session: {
                 id: session.id,
@@ -108,11 +117,13 @@ export async function POST(request: NextRequest) {
                 lot_duration_seconds: session.lot_duration_seconds,
                 current_player_index: session.current_player_index,
             },
-            lotOpen: Boolean(session.timed_lot_player_pool_id && session.lot_ends_at),
+            lotStaged,
+            lotBiddingOpen,
+            lotOpen: lotBiddingOpen,
             lotPlayer,
             minBid,
-            highBid,
-            bidCount,
+            highBid: sealOtherBids ? null : highBid,
+            bidCount: sealOtherBids ? 0 : bidCount,
             isAdmin,
             team: team
                 ? { id: team.id, name: team.name, budget: team.budget, team_number: team.team_number }

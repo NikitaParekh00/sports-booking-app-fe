@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuctionAdminPhone } from '@/lib/auctionAccess';
-import { openLotAtIndex, resolveTimedLot } from '@/lib/auctionTimedLot';
+import { openLotAtIndex, resolveTimedLot, startLotTimer } from '@/lib/auctionTimedLot';
 import { getServiceSupabase } from '@/lib/supabaseService';
 
-type AdminAction = 'start_mode' | 'stop_mode' | 'open_lot' | 'close_lot' | 'set_duration';
+type AdminAction = 'start_mode' | 'stop_mode' | 'open_lot' | 'close_lot' | 'set_duration' | 'start_lot_timer';
 
 export async function POST(request: NextRequest) {
     try {
@@ -83,6 +83,11 @@ export async function POST(request: NextRequest) {
         if (action === 'close_lot') {
             const autoNext = body.autoStartNextLot !== false;
             const result = await resolveTimedLot(supabase, sessionId, autoNext);
+            return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+        }
+
+        if (action === 'start_lot_timer') {
+            const result = await startLotTimer(supabase, sessionId);
             return NextResponse.json(result, { status: result.ok ? 200 : 400 });
         }
 

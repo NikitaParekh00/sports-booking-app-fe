@@ -224,15 +224,13 @@ async function commitOpenLot(
     session: TimedSessionRow,
     target: LotTarget
 ): Promise<{ ok: boolean; message: string }> {
-    const duration = Number(session.lot_duration_seconds) || 180;
-    const endsAt = new Date(Date.now() + duration * 1000).toISOString();
     const settings = await loadTimedSettings(supabase, sessionId);
     const minBid = minBidForPlayer(target.player.category, settings);
 
     const updates: Record<string, unknown> = {
         current_player_index: target.poolIndex,
         timed_lot_player_pool_id: target.player.id,
-        lot_ends_at: endsAt,
+        lot_ends_at: null,
         current_bid_amount: minBid,
         current_bid_team_id: null,
     };
@@ -242,7 +240,40 @@ async function commitOpenLot(
     }
 
     await supabase.from('auction_sessions').update(updates).eq('id', sessionId);
-    return { ok: true, message: `Lot open for ${target.player.name}` };
+    return {
+        ok: true,
+        message: `Lot ready for ${target.player.name} — start the timer from the live auction screen.`,
+    };
+}
+
+/** Main admin starts countdown; owners can bid only after this. */
+export async function startLotTimer(
+    supabase: SupabaseClient,
+    sessionId: string
+): Promise<{ ok: boolean; message: string }> {
+    const { data: session } = await supabase
+        .from('auction_sessions')
+        .select('auction_mode, timed_lot_player_pool_id, lot_ends_at, lot_duration_seconds, is_complete')
+        .eq('id', sessionId)
+        .single();
+
+    if (!session || session.auction_mode !== 'timed_owner') {
+        return { ok: false, message: 'Timed mode is not active' };
+    }
+    if (session.is_complete) {
+        return { ok: false, message: 'Auction complete' };
+    }
+    if (!session.timed_lot_player_pool_id) {
+        return { ok: false, message: 'Open a lot first' };
+    }
+    if (session.lot_ends_at && new Date(session.lot_ends_at).getTime() > Date.now()) {
+        return { ok: false, message: 'Timer is already running' };
+    }
+
+    const duration = Number(session.lot_duration_seconds) || 180;
+    const endsAt = new Date(Date.now() + duration * 1000).toISOString();
+    await supabase.from('auction_sessions').update({ lot_ends_at: endsAt }).eq('id', sessionId);
+    return { ok: true, message: `Timer started (${duration}s)` };
 }
 
 function nextTimedLotStartIndex(session: TimedSessionRow, target: LotTarget): number {

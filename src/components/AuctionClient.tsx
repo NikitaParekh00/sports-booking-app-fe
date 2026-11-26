@@ -423,12 +423,15 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
     const [auctionComplete, setAuctionComplete] = useState(false);
     const [auctionMode, setAuctionMode] = useState<string>('live_admin');
     const [timedLotSnapshot, setTimedLotSnapshot] = useState<{
+        lotStaged?: boolean;
+        lotBiddingOpen?: boolean;
         lotOpen?: boolean;
         lotPlayer?: { name?: string } | null;
         highBid?: number | null;
         bidCount?: number;
         lot_ends_at?: string | null;
     } | null>(null);
+    const [timedTimerStarting, setTimedTimerStarting] = useState(false);
 
     const liveAdminCanEdit = canEdit && auctionMode !== 'timed_owner';
 
@@ -1411,13 +1414,16 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 const json = await res.json();
                 if (res.ok) {
                     setTimedLotSnapshot({
-                        lotOpen: json.lotOpen,
+                        lotStaged: Boolean(json.lotStaged),
+                        lotBiddingOpen: Boolean(json.lotBiddingOpen),
+                        lotOpen: Boolean(json.lotOpen),
                         lotPlayer: json.lotPlayer,
                         highBid: json.highBid,
                         bidCount: json.bidCount,
                         lot_ends_at: json.session?.lot_ends_at ?? null,
                     });
-                    if (json.lotOpen && json.lotPlayer && typeof json.lotPlayer.name === 'string') {
+                    const lotActive = Boolean(json.lotStaged || json.lotOpen);
+                    if (lotActive && json.lotPlayer && typeof json.lotPlayer.name === 'string') {
                         const lotName = json.lotPlayer.name as string;
                         const listIdx = playersRef.current.findIndex((p) => p.name === lotName);
                         if (listIdx >= 0) {
@@ -1440,9 +1446,34 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         return () => window.clearInterval(id);
     }, [sessionId, auctionMode]);
 
+    const startTimedLotTimer = async () => {
+        if (!sessionId || !canEdit) return;
+        const stored = localStorage.getItem('sf:user');
+        const phone = stored ? (JSON.parse(stored).phone as string | undefined) : undefined;
+        if (!phone) {
+            alert('No phone on login.');
+            return;
+        }
+        setTimedTimerStarting(true);
+        try {
+            const res = await fetch('/api/auction/timed/admin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId, phone, action: 'start_lot_timer' }),
+            });
+            const json = await res.json();
+            if (!res.ok) {
+                alert(json.error || json.message || 'Could not start timer');
+                return;
+            }
+        } finally {
+            setTimedTimerStarting(false);
+        }
+    };
+
     useEffect(() => {
         const endsAt = timedLotSnapshot?.lot_ends_at;
-        if (!timedLotSnapshot?.lotOpen || !endsAt) {
+        if (!timedLotSnapshot?.lotBiddingOpen || !endsAt) {
             setTimedLotCountdown('');
             return;
         }
@@ -1460,7 +1491,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         tick();
         const id = window.setInterval(tick, 1000);
         return () => window.clearInterval(id);
-    }, [timedLotSnapshot?.lotOpen, timedLotSnapshot?.lot_ends_at]);
+    }, [timedLotSnapshot?.lotBiddingOpen, timedLotSnapshot?.lot_ends_at]);
 
     // Real-time subscription for auction updates
     useEffect(() => {
@@ -2162,7 +2193,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
 
     const currentPlayer = useMemo(() => {
         const fromList = players[currentPlayerIndex] || null;
-        if (auctionMode !== 'timed_owner' || !timedLotSnapshot?.lotOpen) {
+        if (auctionMode !== 'timed_owner' || !(timedLotSnapshot?.lotStaged || timedLotSnapshot?.lotOpen)) {
             return fromList;
         }
         const lotName = (timedLotSnapshot.lotPlayer as { name?: string } | null | undefined)?.name;
@@ -5369,19 +5400,39 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                 )}
             </div>
 
-            {auctionMode === 'timed_owner' && timedLotSnapshot?.lotOpen && !showSuccessModal && (
+            {auctionMode === 'timed_owner' && timedLotSnapshot?.lotStaged && !showSuccessModal && (
                 <div
-                    className="px-3 py-2 text-center text-sm border-b"
+                    className="px-3 py-3 md:py-4 text-center border-b"
                     style={{ backgroundColor: '#064E3B', borderColor: '#065F46', color: '#D1FAE5' }}
                 >
-                    Timed lot: <strong>{(timedLotSnapshot.lotPlayer as { name?: string })?.name ?? '—'}</strong>
-                    {timedLotCountdown && (
-                        <>
-                            {' '}
-                            · Time left <strong className="font-mono">{timedLotCountdown}</strong>
-                        </>
+                    <p className="text-sm md:text-base mb-2">
+                        Timed lot:{' '}
+                        <strong className="text-lg md:text-xl">
+                            {(timedLotSnapshot.lotPlayer as { name?: string })?.name ?? '—'}
+                        </strong>
+                    </p>
+                    {timedLotSnapshot.lotBiddingOpen && timedLotCountdown ? (
+                        <p
+                            className="font-mono font-bold tracking-tight text-emerald-300"
+                            style={{ fontSize: 'clamp(2.5rem, 12vw, 4.5rem)', lineHeight: 1.1 }}
+                        >
+                            {timedLotCountdown}
+                        </p>
+                    ) : canEdit ? (
+                        <button
+                            type="button"
+                            disabled={timedTimerStarting}
+                            onClick={startTimedLotTimer}
+                            className="mt-1 px-6 py-2.5 rounded-lg font-bold text-base md:text-lg bg-emerald-400 text-slate-900 disabled:opacity-60"
+                        >
+                            {timedTimerStarting ? 'Starting…' : 'Start timer'}
+                        </button>
+                    ) : (
+                        <p className="text-sm md:text-base text-emerald-100/90">Waiting for admin to start timer…</p>
                     )}
-                    <span className="block text-xs mt-0.5 opacity-90">Owners bid privately at /auction/owner — results when the timer ends.</span>
+                    <p className="text-xs md:text-sm mt-2 opacity-90">
+                        Owners bid at /auction/owner once the timer is running.
+                    </p>
                 </div>
             )}
 

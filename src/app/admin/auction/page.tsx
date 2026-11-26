@@ -2335,7 +2335,8 @@ export default function AuctionAdminPage() {
                   <p className="text-xs md:text-sm mb-4" style={{ color: '#9CA3AF' }}>
                     One player at a time with a countdown. Team owners bid from{' '}
                     <span className="text-slate-300">/auction/owner</span> (set each team&apos;s owner phone on the
-                    Teams tab). Use Close lot to sell immediately or wait for the timer. Unsold timed lots are added to
+                    Teams tab). <strong>Open next lot</strong> stages the player; the auction admin starts the countdown on
+                    the live <strong>/auction</strong> screen. Close lot ends the lot early. Unsold timed lots are added to
                     Skipped (same as live Skip). If the live auction is in <strong>Skipped only</strong> mode when you
                     start timed mode, <strong>Open next lot</strong> runs through that skipped list from the current
                     position.

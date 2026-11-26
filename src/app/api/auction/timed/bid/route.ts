@@ -40,8 +40,14 @@ export async function POST(request: NextRequest) {
         if (!session || session.auction_mode !== 'timed_owner' || session.is_complete) {
             return NextResponse.json({ error: 'Timed bidding is not active' }, { status: 400 });
         }
-        if (!session.timed_lot_player_pool_id || !session.lot_ends_at) {
+        if (!session.timed_lot_player_pool_id) {
             return NextResponse.json({ error: 'No lot is open right now' }, { status: 400 });
+        }
+        if (!session.lot_ends_at) {
+            return NextResponse.json(
+                { error: 'Timer not started — wait for auction admin to start the timer on the live screen.' },
+                { status: 400 }
+            );
         }
         if (new Date(session.lot_ends_at).getTime() <= Date.now()) {
             return NextResponse.json({ error: 'Lot closed — wait for results' }, { status: 400 });

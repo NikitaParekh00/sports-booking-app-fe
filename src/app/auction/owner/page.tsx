@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { createClient } from '@/lib/supabaseClient';
 
 function formatCountdown(endsAt: string | null): string {
     if (!endsAt) return '—';
@@ -17,6 +18,7 @@ function OwnerBidContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const sessionIdFromUrl = searchParams.get('session') ?? '';
+    const supabase = useMemo(() => createClient(), []);
 
     const [phone, setPhone] = useState<string | null>(null);
     const [ready, setReady] = useState(false);
@@ -71,9 +73,46 @@ function OwnerBidContent() {
 
     useEffect(() => {
         if (!ready || !phone || !selectedSessionId) return;
-        refresh();
-        const id = window.setInterval(refresh, 5000);
+        void refresh();
+        const lotStaged = Boolean(state?.lotStaged);
+        const pollMs = lotStaged ? 1000 : 4000;
+        const id = window.setInterval(() => void refresh(), pollMs);
         return () => window.clearInterval(id);
+    }, [ready, phone, selectedSessionId, refresh, state?.lotStaged]);
+
+    useEffect(() => {
+        if (!ready || !selectedSessionId) return;
+        const channel = supabase
+            .channel(`owner-timed-session-${selectedSessionId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'auction_sessions',
+                    filter: `id=eq.${selectedSessionId}`,
+                },
+                () => {
+                    void refresh();
+                }
+            )
+            .subscribe();
+        return () => {
+            void supabase.removeChannel(channel);
+        };
+    }, [ready, selectedSessionId, refresh, supabase]);
+
+    useEffect(() => {
+        if (!ready || !phone || !selectedSessionId) return;
+        const onVisible = () => {
+            if (document.visibilityState === 'visible') void refresh();
+        };
+        window.addEventListener('focus', onVisible);
+        document.addEventListener('visibilitychange', onVisible);
+        return () => {
+            window.removeEventListener('focus', onVisible);
+            document.removeEventListener('visibilitychange', onVisible);
+        };
     }, [ready, phone, selectedSessionId, refresh]);
 
     useEffect(() => {
@@ -120,7 +159,8 @@ function OwnerBidContent() {
 
     const lotPlayer = state?.lotPlayer as { name?: string; skill?: string; age?: number } | null | undefined;
     const team = state?.team as { name?: string; budget?: number } | null | undefined;
-    const lotOpen = Boolean(state?.lotOpen);
+    const lotStaged = Boolean(state?.lotStaged);
+    const lotBiddingOpen = Boolean(state?.lotBiddingOpen ?? state?.lotOpen);
     const mode = (state?.session as { auction_mode?: string } | undefined)?.auction_mode;
 
     return (
@@ -131,7 +171,7 @@ function OwnerBidContent() {
                 </button>
                 <h1 className="text-xl font-bold mb-2">Team owner bidding</h1>
                 <p className="text-sm text-slate-400 mb-4">
-                    Submit your bid before the timer ends. Highest valid bid wins the player.
+                    Submit your bid before the timer ends. Other teams&apos; bids stay hidden until the lot closes.
                 </p>
 
                 <label className="block mb-4">
@@ -170,7 +210,7 @@ function OwnerBidContent() {
                     )
                 )}
 
-                {lotOpen && lotPlayer && (
+                {lotStaged && lotPlayer && (
                     <div className="rounded-lg border border-slate-700 bg-slate-800 p-4 mb-4 space-y-3">
                         <div className="flex justify-between items-start gap-2">
                             <div>
@@ -186,44 +226,49 @@ function OwnerBidContent() {
                             </div>
                             <div className="text-right">
                                 <p className="text-xs uppercase text-slate-400">Time left</p>
-                                <p className="text-2xl font-mono font-bold text-emerald-400">{countdown}</p>
+                                <p
+                                    className="font-mono font-bold text-emerald-400"
+                                    style={{ fontSize: lotBiddingOpen ? '2rem' : '1rem' }}
+                                >
+                                    {lotBiddingOpen ? countdown : '—'}
+                                </p>
                             </div>
                         </div>
-                        <p className="text-sm text-slate-300">
-                            Min bid: ₹{Number(state?.minBid ?? 0).toLocaleString('en-IN')}
-                            {state?.highBid != null && (
-                                <>
-                                    {' '}
-                                    · Current high: ₹{Number(state.highBid).toLocaleString('en-IN')} (
-                                    {state.bidCount as number} bids)
-                                </>
-                            )}
-                        </p>
-                        {state?.myBid != null && (
-                            <p className="text-sm text-emerald-300">
-                                Your bid: ₹{Number(state.myBid).toLocaleString('en-IN')}
-                            </p>
+                        {!lotBiddingOpen && (
+                            <p className="text-sm text-amber-300">Waiting for admin to start the timer on the live auction screen.</p>
                         )}
-                        <input
-                            type="number"
-                            inputMode="numeric"
-                            value={bidInput}
-                            onChange={(e) => setBidInput(e.target.value)}
-                            placeholder="Your bid (₹)"
-                            className="w-full px-3 py-2 rounded-lg border border-slate-600 bg-slate-900"
-                        />
-                        <button
-                            type="button"
-                            disabled={submitting || !team}
-                            onClick={submitBid}
-                            className="w-full py-2.5 rounded-lg font-semibold bg-emerald-600 text-slate-900 disabled:opacity-50"
-                        >
-                            {submitting ? 'Submitting…' : 'Submit bid'}
-                        </button>
+                        {lotBiddingOpen && (
+                            <>
+                                <p className="text-sm text-slate-300">
+                                    Min bid: ₹{Number(state?.minBid ?? 0).toLocaleString('en-IN')}
+                                </p>
+                                {state?.myBid != null && (
+                                    <p className="text-sm text-emerald-300">
+                                        Your bid: ₹{Number(state.myBid).toLocaleString('en-IN')}
+                                    </p>
+                                )}
+                                <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={bidInput}
+                                    onChange={(e) => setBidInput(e.target.value)}
+                                    placeholder="Your bid (₹)"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-600 bg-slate-900"
+                                />
+                                <button
+                                    type="button"
+                                    disabled={submitting || !team}
+                                    onClick={submitBid}
+                                    className="w-full py-2.5 rounded-lg font-semibold bg-emerald-600 text-slate-900 disabled:opacity-50"
+                                >
+                                    {submitting ? 'Submitting…' : 'Submit bid'}
+                                </button>
+                            </>
+                        )}
                     </div>
                 )}
 
-                {selectedSessionId && !lotOpen && mode === 'timed_owner' && (
+                {selectedSessionId && !lotStaged && mode === 'timed_owner' && (
                     <p className="text-sm text-slate-400 text-center py-8">
                         No lot open — wait for admin to start the next player.
                     </p>
