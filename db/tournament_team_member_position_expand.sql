@@ -7,3 +7,5 @@ ALTER TABLE public.tournament_team_members
 ALTER TABLE public.tournament_team_members
   ADD CONSTRAINT tournament_team_members_position_check
   CHECK (position >= 1 AND position <= 30);
+
+  
