@@ -311,11 +311,55 @@ async function lotContextForPoolId(
     return { player, poolIndex };
 }
 
+export type ResolveTimedLotOptions = {
+    /** When true (timer auto-close), refuse resolve until lot_ends_at has passed. Admin close_lot omits this. */
+    requireTimerExpired?: boolean;
+};
+
+/**
+ * Atomically take ownership of closing a lot so only one caller runs sell/skip logic
+ * (many clients poll /timed/state when the timer ends).
+ */
+async function claimTimedLotForResolve(
+    supabase: SupabaseClient,
+    sessionId: string,
+    poolId: string,
+    lotEndsAt: string | null | undefined,
+    options?: ResolveTimedLotOptions
+): Promise<boolean> {
+    if (options?.requireTimerExpired) {
+        if (!lotEndsAt || new Date(lotEndsAt).getTime() > Date.now()) {
+            return false;
+        }
+    }
+
+    let query = supabase
+        .from('auction_sessions')
+        .update({
+            timed_lot_player_pool_id: null,
+            lot_ends_at: null,
+        })
+        .eq('id', sessionId)
+        .eq('timed_lot_player_pool_id', poolId);
+
+    if (options?.requireTimerExpired && lotEndsAt) {
+        query = query.lte('lot_ends_at', new Date().toISOString());
+    }
+
+    const { data, error } = await query.select('id').maybeSingle();
+    if (error) {
+        console.error('claimTimedLotForResolve:', error);
+        return false;
+    }
+    return Boolean(data);
+}
+
 /** Pick highest valid bid and sell, or skip lot. Advance player index; optionally open next lot. */
 export async function resolveTimedLot(
     supabase: SupabaseClient,
     sessionId: string,
-    autoStartNextLot: boolean
+    autoStartNextLot: boolean,
+    options?: ResolveTimedLotOptions
 ): Promise<ResolveLotResult> {
     const { data: session, error: sessionErr } = await supabase
         .from('auction_sessions')
@@ -350,10 +394,28 @@ export async function resolveTimedLot(
         return { ok: false, sold: false, message: 'Player not found' };
     }
 
-    const bought = await boughtPlayerNames(supabase, sessionId);
-    if (bought.has(poolPlayer.name)) {
+    const boughtBeforeClaim = await boughtPlayerNames(supabase, sessionId);
+    if (boughtBeforeClaim.has(poolPlayer.name)) {
         await clearLot(supabase, sessionId);
         return { ok: true, sold: false, message: 'Player already sold' };
+    }
+
+    const claimed = await claimTimedLotForResolve(
+        supabase,
+        sessionId,
+        poolId,
+        session.lot_ends_at as string | null | undefined,
+        options
+    );
+    if (!claimed) {
+        if (options?.requireTimerExpired) {
+            return { ok: true, sold: false, message: 'Lot not ready to close yet' };
+        }
+        const boughtNow = await boughtPlayerNames(supabase, sessionId);
+        if (boughtNow.has(poolPlayer.name)) {
+            return { ok: true, sold: true, message: 'Lot already resolved', playerName: poolPlayer.name };
+        }
+        return { ok: true, sold: false, message: 'Lot already resolved' };
     }
 
     const settings = await loadTimedSettings(supabase, sessionId);
@@ -402,6 +464,22 @@ export async function resolveTimedLot(
             return { ok: false, sold: false, message: 'Winning team missing' };
         }
 
+        const { data: existingSale } = await supabase
+            .from('auction_players')
+            .select('id, team_id')
+            .eq('session_id', sessionId)
+            .eq('player_name', poolPlayer.name)
+            .maybeSingle();
+
+        if (existingSale) {
+            return {
+                ok: true,
+                sold: true,
+                message: 'Player already sold',
+                playerName: poolPlayer.name,
+            };
+        }
+
         const { error: insertErr } = await supabase.from('auction_players').insert({
             session_id: sessionId,
             team_id: team.id,
@@ -409,6 +487,14 @@ export async function resolveTimedLot(
             bid_amount: winner.amount,
         });
         if (insertErr) {
+            if (insertErr.code === '23505') {
+                return {
+                    ok: true,
+                    sold: true,
+                    message: 'Player already sold',
+                    playerName: poolPlayer.name,
+                };
+            }
             return { ok: false, sold: false, message: insertErr.message };
         }
 

@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
             new Date(session.lot_ends_at).getTime() <= Date.now() &&
             session.timed_lot_player_pool_id
         ) {
-            await resolveTimedLot(supabase, sessionId, true);
+            await resolveTimedLot(supabase, sessionId, true, { requireTimerExpired: true });
             const { data: refreshed } = await supabase
                 .from('auction_sessions')
                 .select(
