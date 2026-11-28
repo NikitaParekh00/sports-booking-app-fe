@@ -62,6 +62,7 @@ export default function AuctionAdminPage() {
 
   // Sessions state
   const [sessions, setSessions] = useState<AuctionSession[]>([]);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [editingSession, setEditingSession] = useState<AuctionSession | null>(null);
   const [sessionFormData, setSessionFormData] = useState({
@@ -290,10 +291,17 @@ export default function AuctionAdminPage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setSessions(data || []);
+      const active = (data || []).filter((session) => !session.is_complete);
+      setSessions(active);
+      const activeIds = new Set(active.map((session) => session.id));
+      setSelectedSessionForTeams((current) => (current && !activeIds.has(current) ? '' : current));
+      setSelectedSessionForPlayers((current) => (current && !activeIds.has(current) ? '' : current));
+      setSelectedSessionForSettings((current) => (current && !activeIds.has(current) ? '' : current));
     } catch (error) {
       console.error('Error loading sessions:', error);
       alert('Error loading sessions');
+    } finally {
+      setSessionsLoaded(true);
     }
   };
 
@@ -1459,6 +1467,9 @@ export default function AuctionAdminPage() {
               </div>
             )}
 
+            {sessionsLoaded && sessions.length === 0 && (
+              <p className="text-sm" style={{ color: '#9CA3AF' }}>No active sessions.</p>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sessions.map((session) => (
                 <div
