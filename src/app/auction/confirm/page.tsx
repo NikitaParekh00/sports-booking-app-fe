@@ -8,6 +8,10 @@ import { processImageUrl } from '@/lib/imageUrlHelper';
 import PlayerSportRatings from '@/components/PlayerSportRatings';
 import { AUCTION_STATS_FIELD_LABELS } from '@/lib/auctionPlayerStatsFields';
 import type { SportRatingsMap } from '@/lib/sportRatings';
+import AuctionChooseMode from '@/components/auction/AuctionChooseMode';
+import AuctionOwnerTimedBidPanel from '@/components/auction/AuctionOwnerTimedBidPanel';
+import { isAuctionAdminPhone } from '@/lib/auctionAccess';
+import { AUCTION_HUB_PATH, isAppAdmin } from '@/lib/postLoginRedirect';
 
 interface SessionOption {
     id: string;
@@ -126,6 +130,7 @@ function AuctionConfirmContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const sessionIdFromUrl = searchParams.get('session');
+    const pageMode = searchParams.get('mode') === 'choose' ? 'choose' : 'profile';
     const supabase = createClient();
 
     const [ready, setReady] = useState(false);
@@ -145,7 +150,9 @@ function AuctionConfirmContent() {
     const [issueSent, setIssueSent] = useState(false);
     const [approvedAt, setApprovedAt] = useState<string | null>(null);
     const [approveSubmitting, setApproveSubmitting] = useState(false);
-    const [showOwnerBiddingLink, setShowOwnerBiddingLink] = useState(false);
+    const [canRunLiveAuction, setCanRunLiveAuction] = useState(false);
+    const [showAppDashboard, setShowAppDashboard] = useState(false);
+    const [hubSessionId, setHubSessionId] = useState<string | null>(null);
 
     useEffect(() => {
         const storedUser = localStorage.getItem('sf:user');
@@ -158,13 +165,18 @@ function AuctionConfirmContent() {
             try {
                 const user = JSON.parse(storedUser);
                 let phone = user.phone as string | undefined;
-                if (!phone && user.user_id) {
+                let role = user.role as string | undefined;
+                if (user.user_id) {
                     const { data: profile } = await supabase
                         .from('profiles')
-                        .select('phone')
+                        .select('phone, role, full_name')
                         .eq('user_id', user.user_id)
                         .maybeSingle();
-                    phone = profile?.phone ?? undefined;
+                    phone = phone ?? profile?.phone ?? undefined;
+                    role = role ?? profile?.role ?? undefined;
+                    if (profile?.full_name && !user.full_name) {
+                        setUserName(profile.full_name);
+                    }
                 }
                 if (!phone) {
                     setMessage('Your account has no phone number on file. Contact support.');
@@ -174,6 +186,8 @@ function AuctionConfirmContent() {
                 setUserPhone(phone);
                 setUserId(user.user_id ?? null);
                 setUserName((user.full_name as string) ?? null);
+                setCanRunLiveAuction(isAuctionAdminPhone(phone));
+                setShowAppDashboard(isAppAdmin(role, phone));
                 setReady(true);
             } catch {
                 router.push('/login');
@@ -182,31 +196,6 @@ function AuctionConfirmContent() {
         init();
     }, [router, supabase]);
 
-    useEffect(() => {
-        if (!ready || !userPhone || !selectedSessionId) {
-            setShowOwnerBiddingLink(false);
-            return;
-        }
-        let cancelled = false;
-        fetch('/api/auction/timed/state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: selectedSessionId, phone: userPhone }),
-        })
-            .then((r) => r.json())
-            .then((json) => {
-                if (cancelled) return;
-                setShowOwnerBiddingLink(
-                    json.session?.auction_mode === 'timed_owner' && Boolean(json.team)
-                );
-            })
-            .catch(() => {
-                if (!cancelled) setShowOwnerBiddingLink(false);
-            });
-        return () => {
-            cancelled = true;
-        };
-    }, [ready, userPhone, selectedSessionId]);
 
     useEffect(() => {
         if (!ready) return;
@@ -218,6 +207,7 @@ function AuctionConfirmContent() {
             .then(({ data }) => {
                 const active = data ?? [];
                 setSessions(active);
+                if (active[0]?.id) setHubSessionId(active[0].id);
                 setSelectedSessionId((current) => {
                     if (active.length === 1) return active[0].id;
                     if (current && !active.some((s) => s.id === current)) return '';
@@ -227,18 +217,18 @@ function AuctionConfirmContent() {
     }, [ready, supabase]);
 
     useEffect(() => {
-        if (!ready || sessions.length === 0) return;
+        if (!ready || sessions.length === 0 || pageMode === 'choose') return;
         if (sessions.length === 1) {
             const onlyId = sessions[0].id;
             if (sessionIdFromUrl !== onlyId) {
-                router.replace(`/auction/confirm?session=${onlyId}`);
+                router.replace(`/auction/confirm?mode=profile&session=${onlyId}`);
             }
             return;
         }
         if (sessionIdFromUrl && !sessions.some((s) => s.id === sessionIdFromUrl)) {
-            router.replace('/auction/confirm');
+            router.replace('/auction/confirm?mode=profile');
         }
-    }, [ready, sessions, sessionIdFromUrl, router]);
+    }, [ready, sessions, sessionIdFromUrl, router, pageMode]);
 
     useEffect(() => {
         if (sessionIdFromUrl) setSelectedSessionId(sessionIdFromUrl);
@@ -278,10 +268,11 @@ function AuctionConfirmContent() {
     };
 
     useEffect(() => {
+        if (pageMode === 'choose') return;
         if (ready && userPhone && selectedSessionId) {
             loadMyProfile(selectedSessionId);
         }
-    }, [ready, userPhone, selectedSessionId]);
+    }, [ready, userPhone, selectedSessionId, pageMode]);
 
     const handleLogout = () => {
         try {
@@ -367,17 +358,29 @@ function AuctionConfirmContent() {
         );
     }
 
+    if (pageMode === 'choose') {
+        return (
+            <AuctionChooseMode
+                displayName={userName}
+                canRunLiveAuction={canRunLiveAuction}
+                showAppDashboard={showAppDashboard}
+                activeSessionId={hubSessionId ?? (selectedSessionId || null)}
+                onLogout={handleLogout}
+            />
+        );
+    }
+
     return (
         <div className="min-h-screen px-4 py-6" style={pageBackground}>
             <div className="max-w-lg mx-auto">
                 <div className="flex items-center justify-between mb-4">
                     <button
                         type="button"
-                        onClick={() => router.push('/dashboard')}
+                        onClick={() => router.push(AUCTION_HUB_PATH)}
                         className="text-sm"
                         style={{ color: TEXT }}
                     >
-                        ← Dashboard
+                        ← Back
                     </button>
                     <button
                         type="button"
@@ -389,10 +392,10 @@ function AuctionConfirmContent() {
                     </button>
                 </div>
 
-                <h1 className="text-xl font-bold mb-1">My auction profile</h1>
+                <h1 className="text-xl font-bold mb-1">Profile &amp; closed bidding</h1>
                 <p className="text-sm mb-6" style={{ color: TEXT }}>
-                    This profile is from the Google Form you submitted. If anything is wrong, use Report an issue below
-                    — the auction admin will review it.
+                    Confirm your player details below. Team owners can place sealed bids in the same place when timed
+                    mode is running.
                 </p>
 
                 {ready && sessions.length === 0 && (
@@ -412,7 +415,11 @@ function AuctionConfirmContent() {
                             onChange={(e) => {
                                 const id = e.target.value;
                                 setSelectedSessionId(id);
-                                router.replace(id ? `/auction/confirm?session=${id}` : '/auction/confirm');
+                                router.replace(
+                                    id
+                                        ? `/auction/confirm?mode=profile&session=${id}`
+                                        : '/auction/confirm?mode=profile'
+                                );
                             }}
                             className="w-full px-3 py-2 rounded-lg border-2 text-sm"
                             style={{ backgroundColor: '#111827', borderColor: BLUE_BORDER, color: TEXT }}
@@ -427,24 +434,8 @@ function AuctionConfirmContent() {
                     </label>
                 )}
 
-                {showOwnerBiddingLink && selectedSessionId && (
-                    <div
-                        className="mb-6 p-4 rounded-lg border"
-                        style={{ backgroundColor: CARD_BLUE, borderColor: BLUE_BORDER }}
-                    >
-                        <p className="text-sm mb-3" style={{ color: TEXT }}>
-                            You are registered as a team owner for this auction. When a lot is open, submit bids
-                            before the timer ends.
-                        </p>
-                        <button
-                            type="button"
-                            onClick={() => router.push(`/auction/owner?session=${selectedSessionId}`)}
-                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg font-semibold text-sm"
-                            style={{ backgroundColor: '#059669', color: '#fff' }}
-                        >
-                            Open team bidding
-                        </button>
-                    </div>
+                {userPhone && selectedSessionId && (
+                    <AuctionOwnerTimedBidPanel sessionId={selectedSessionId} phone={userPhone} />
                 )}
 
                 {loading && (

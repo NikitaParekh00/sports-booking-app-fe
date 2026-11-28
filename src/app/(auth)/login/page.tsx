@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import PhoneInput, { formatPhoneForDB } from '@/components/PhoneInput';
 import { requiresAdminLoginCode } from '@/lib/adminLoginCode';
-import { defaultPostLoginPath } from '@/lib/postLoginRedirect';
+import { defaultPostLoginPath, resolvePostLoginReturn } from '@/lib/postLoginRedirect';
 
 type LookupStatus = 'idle' | 'checking' | 'found' | 'new' | 'error';
 
@@ -79,8 +79,7 @@ function LoginContent() {
 		};
 	}, [isPhoneValid, mobileNumber]);
 
-	const safeReturn =
-		returnTo && returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : null;
+	const safeReturn = resolvePostLoginReturn(returnTo);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();

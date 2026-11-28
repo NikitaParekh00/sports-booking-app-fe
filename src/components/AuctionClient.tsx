@@ -10,6 +10,7 @@ import { mapSportRatingsField } from '@/lib/sportRatings';
 import PlayerSportRatings from './PlayerSportRatings';
 import { AUCTION_STATS_FIELD_LABELS } from '@/lib/auctionPlayerStatsFields';
 import { isAuctionAdminPhone } from '@/lib/auctionAccess';
+import { AUCTION_HUB_PATH } from '@/lib/postLoginRedirect';
 
 type AuctionSuccessMessage = {
     playerName: string;
@@ -367,7 +368,7 @@ interface DbPlayerPool {
 
 // Flag to control public auction access
 // Set to true to allow everyone to view auctions, false to restrict to specific phone number
-const PUBLIC_AUCTION_ACCESS = false; // false = only admin can view live auction; players use /auction/confirm
+const PUBLIC_AUCTION_ACCESS = true; // true = any logged-in user can view; only auction admin can edit (buy/skip)
 
 // Configure the allowed user for auction access (when PUBLIC_AUCTION_ACCESS is false)
 // Use the EXACT format as stored in database: +91-XXXXXXXXXX
@@ -4909,20 +4910,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                     <div className="text-6xl mb-4">⏰</div>
                     <h2 className="text-2xl font-bold text-gray-900 mb-3">Stay Tuned!</h2>
                     <p className="text-gray-600 mb-6">
-                        Live auction is for organisers only. Use &quot;My profile&quot; on the dashboard to confirm your
-                        player details.
+                        Please log in to watch or run the live auction.
                     </p>
                     <button
-                        onClick={() => router.push(initialSessionId ? `/auction/confirm?session=${initialSessionId}` : '/auction/confirm')}
+                        onClick={() => router.push('/login')}
                         className="w-full bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition-colors mb-3"
                     >
-                        My auction profile
+                        Log in
                     </button>
                     <button
-                        onClick={() => router.push('/dashboard')}
+                        onClick={() => router.push(AUCTION_HUB_PATH)}
                         className="w-full border border-gray-300 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors"
                     >
-                        Dashboard
+                        Back to auction home
                     </button>
                 </div>
             </div>

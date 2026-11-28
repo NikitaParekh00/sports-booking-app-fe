@@ -7,7 +7,6 @@ import LocationInput from "@/components/LocationInput";
 import BottomSheet from "@/components/BottomSheet";
 import SportsSelection from "@/components/SportsSelection";
 import TurfListing from "@/components/TurfListing";
-import { isAuctionAdminPhone } from "@/lib/auctionAccess";
 import { isAppAdmin } from "@/lib/postLoginRedirect";
 
 interface User {
@@ -62,7 +61,7 @@ export default function Dashboard() {
             role = role ?? profile?.role ?? undefined;
           }
           if (!isAppAdmin(role, phone)) {
-            router.replace('/auction/confirm');
+            router.replace('/auction/confirm?mode=choose');
             return;
           }
           setUser({
@@ -70,7 +69,7 @@ export default function Dashboard() {
             full_name: userData.full_name,
             email: userData.email || ''
           });
-          setCanViewLiveAuction(isAuctionAdminPhone(phone));
+          setCanViewLiveAuction(true);
         } catch (error) {
           console.error('Error parsing stored user:', error);
           router.replace('/landing');
@@ -92,7 +91,7 @@ export default function Dashboard() {
 
           console.log('User profile from database:', profile);
           if (!isAppAdmin(profile?.role, profile?.phone)) {
-            router.replace('/auction/confirm');
+            router.replace('/auction/confirm?mode=choose');
             return;
           }
           setUser({
@@ -100,7 +99,7 @@ export default function Dashboard() {
             full_name: profile?.full_name || authUser.email?.split('@')[0] || 'User',
             email: authUser.email || ''
           });
-          setCanViewLiveAuction(isAuctionAdminPhone(profile?.phone));
+          setCanViewLiveAuction(true);
         } else {
           console.log('No authenticated user found');
           router.replace('/landing');
