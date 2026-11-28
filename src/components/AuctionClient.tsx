@@ -1443,7 +1443,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
             }
         };
         poll();
-        const id = window.setInterval(poll, 5000);
+        const id = window.setInterval(poll, 2000);
         return () => window.clearInterval(id);
     }, [sessionId, auctionMode]);
 
@@ -5080,8 +5080,8 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
         <div className="h-screen flex flex-col overflow-hidden" style={{ backgroundColor: '#0F172A' }}>
             {/* Success Modal */}
             {showSuccessModal && successMessage && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 md:p-12 transform transition-all relative overflow-visible">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg sm:max-w-2xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] min-h-0 flex flex-col overflow-hidden transform transition-all relative">
                         {/* Confetti Blast Animation */}
                         <div className="absolute inset-0 pointer-events-none overflow-hidden">
                             {Array.from({ length: 100 }).map((_, i) => {
@@ -5120,20 +5120,19 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                             })}
                         </div>
 
-                        {/* Content - Centered */}
-                        <div className="relative z-10 text-center">
-                            {/* Logo on Top */}
-                            <div className="flex justify-center mb-4">
+                        {/* Content - header stays put; the bid list scrolls */}
+                        <div className="relative z-10 shrink-0 text-center px-4 pt-4 sm:px-8 sm:pt-8">
+                            <div className="flex justify-center mb-3 sm:mb-4">
                                 <Image
                                     src="/logo.jpeg"
                                     alt="Logo"
                                     width={120}
                                     height={60}
-                                    className="object-contain"
+                                    className="object-contain h-10 w-auto sm:h-14"
                                 />
                             </div>
 
-                            <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+                            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-2 sm:mb-3">
                                 {successMessage.timedReveal
                                     ? successMessage.sold
                                         ? 'Lot closed — sold!'
@@ -5141,31 +5140,14 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                     : 'Congratulations!!'}
                             </h2>
 
-                            <p className="text-2xl md:text-3xl font-bold text-gray-900 mb-4">{successMessage.playerName}</p>
-
-                            {successMessage.timedReveal && successMessage.bids && successMessage.bids.length > 0 && (
-                                <div className="mb-6 text-left max-w-md mx-auto w-full">
-                                    <p className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">All bids</p>
-                                    <ul className="rounded-lg border border-gray-200 overflow-hidden text-base">
-                                        {successMessage.bids.map((b, i) => (
-                                            <li
-                                                key={`${b.teamName}-${i}`}
-                                                className="flex justify-between gap-3 px-4 py-2 border-b border-gray-100 last:border-0 bg-white"
-                                            >
-                                                <span className="font-medium text-gray-900">{b.teamName}</span>
-                                                <span className="font-semibold text-gray-800">₹{formatIndianNumber(b.amount)}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
+                            <p className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 mb-3 sm:mb-4">{successMessage.playerName}</p>
 
                             {successMessage.timedReveal && successMessage.bids?.length === 0 && (
-                                <p className="text-lg text-gray-600 mb-6">No bids received.</p>
+                                <p className="text-base sm:text-lg text-gray-600 mb-3">No bids received.</p>
                             )}
 
                             {successMessage.timedReveal && successMessage.sold === false && (
-                                <p className="text-xl font-semibold text-gray-700 mb-6">
+                                <p className="text-lg sm:text-xl font-semibold text-gray-700 mb-3">
                                     Unsold — no valid winning bid.
                                 </p>
                             )}
@@ -5174,20 +5156,53 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                                 successMessage.teamName &&
                                 successMessage.amount != null && (
                                     <>
-                                        <p className="text-lg md:text-xl text-gray-600 mb-4">
+                                        <p className="text-base sm:text-lg md:text-xl text-gray-600 mb-1">
                                             Sold to{' '}
                                             <span className="font-bold text-red-600">{successMessage.teamName}</span>
                                         </p>
-                                        <p className="text-2xl md:text-3xl font-bold text-red-600 mb-8">
+                                        <p className="text-xl sm:text-2xl md:text-3xl font-bold text-red-600">
                                             for ₹{formatIndianNumber(successMessage.amount)}
                                         </p>
                                     </>
                                 )}
                         </div>
 
+                        {successMessage.timedReveal && successMessage.bids && successMessage.bids.length > 0 && (
+                            <div className="relative z-10 min-h-0 flex-1 px-4 sm:px-8 mt-3 sm:mt-4">
+                                <div className="max-h-[calc(100dvh-18rem)] sm:max-h-[calc(100dvh-22rem)] overflow-y-auto overscroll-contain rounded-lg border border-gray-200">
+                                <p className="sticky top-0 z-10 bg-white text-xs sm:text-sm font-semibold text-gray-700 px-3 py-2 uppercase tracking-wide text-left border-b border-gray-200">
+                                    All bids · {successMessage.bids.length}
+                                </p>
+                                <ul className="text-sm sm:text-base">
+                                    {successMessage.bids.map((b, i) => {
+                                        const isWinner =
+                                            successMessage.sold !== false &&
+                                            b.teamName === successMessage.teamName &&
+                                            b.amount === successMessage.amount;
+                                        return (
+                                            <li
+                                                key={`${b.teamName}-${i}`}
+                                                className={`flex items-center justify-between gap-3 px-3 py-2.5 border-b border-gray-100 last:border-0 ${
+                                                    isWinner ? 'bg-red-50' : 'bg-white'
+                                                }`}
+                                            >
+                                                <span className="min-w-0 flex-1 truncate text-left font-medium text-gray-900">
+                                                    {b.teamName}
+                                                </span>
+                                                <span className="shrink-0 font-semibold tabular-nums text-gray-800">
+                                                    ₹{formatIndianNumber(b.amount)}
+                                                </span>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Button - Only show for admin users */}
                         {canEdit && (
-                            <div className="relative z-10 mt-6">
+                            <div className="relative z-10 shrink-0 px-4 pb-4 pt-3 sm:px-8 sm:pb-8 sm:pt-4">
                                 <button
                                     onClick={async () => {
                                         console.log('[MODAL DEBUG] 🔘 Proceed button clicked - admin acknowledging modal', {
@@ -5224,7 +5239,7 @@ export default function AuctionClient({ initialSessionId }: AuctionClientProps) 
                         )}
                         {/* For non-admin users, show message that it will close automatically */}
                         {!canEdit && (
-                            <div className="relative z-10 mt-6">
+                            <div className="relative z-10 shrink-0 px-4 pb-4 pt-3 sm:px-8 sm:pb-8">
                                 <p className="text-sm text-gray-500 text-center">
                                     The auction will continue automatically...
                                 </p>

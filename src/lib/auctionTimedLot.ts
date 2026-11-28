@@ -246,6 +246,38 @@ async function commitOpenLot(
     };
 }
 
+/** Persist lot length. If a countdown is already running, shift its end by the difference. */
+export async function applyLotDuration(
+    supabase: SupabaseClient,
+    sessionId: string,
+    seconds: number
+): Promise<{ ok: boolean; message?: string; lot_ends_at?: string | null }> {
+    if (!Number.isFinite(seconds) || seconds < 30 || seconds > 3600) {
+        return { ok: false, message: 'Lot duration must be 30–3600 seconds' };
+    }
+    const rounded = Math.round(seconds);
+    const { data: session, error: readErr } = await supabase
+        .from('auction_sessions')
+        .select('lot_duration_seconds, lot_ends_at')
+        .eq('id', sessionId)
+        .single();
+    if (readErr || !session) {
+        return { ok: false, message: readErr?.message || 'Session not found' };
+    }
+
+    const updates: Record<string, unknown> = { lot_duration_seconds: rounded };
+    let lotEndsAt = (session.lot_ends_at as string | null) ?? null;
+    if (lotEndsAt && new Date(lotEndsAt).getTime() > Date.now()) {
+        const previous = Number(session.lot_duration_seconds) || rounded;
+        lotEndsAt = new Date(new Date(lotEndsAt).getTime() + (rounded - previous) * 1000).toISOString();
+        updates.lot_ends_at = lotEndsAt;
+    }
+
+    const { error } = await supabase.from('auction_sessions').update(updates).eq('id', sessionId);
+    if (error) return { ok: false, message: error.message };
+    return { ok: true, lot_ends_at: lotEndsAt };
+}
+
 /** Main admin starts countdown; owners can bid only after this. */
 export async function startLotTimer(
     supabase: SupabaseClient,

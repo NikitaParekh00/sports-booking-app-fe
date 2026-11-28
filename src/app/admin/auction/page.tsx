@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabaseClient';
 import Image from 'next/image';
@@ -139,6 +139,8 @@ export default function AuctionAdminPage() {
     lot_ends_at?: string | null;
   } | null>(null);
   const [lotDurationInput, setLotDurationInput] = useState('120');
+  const savedLotDurationRef = useRef<number | null>(null);
+  const durationLoadedRef = useRef(false);
   const [timedLotPoll, setTimedLotPoll] = useState<Record<string, unknown> | null>(null);
   const [timedAdminBusy, setTimedAdminBusy] = useState(false);
 
@@ -153,6 +155,7 @@ export default function AuctionAdminPage() {
   };
 
   const loadTimedSessionMeta = async (sessionId: string) => {
+    durationLoadedRef.current = false;
     const { data } = await supabase
       .from('auction_sessions')
       .select('auction_mode, lot_duration_seconds, lot_ends_at')
@@ -160,8 +163,10 @@ export default function AuctionAdminPage() {
       .maybeSingle();
     setTimedSessionMeta(data ?? null);
     if (data?.lot_duration_seconds) {
+      savedLotDurationRef.current = Number(data.lot_duration_seconds);
       setLotDurationInput(String(data.lot_duration_seconds));
     }
+    durationLoadedRef.current = true;
   };
 
   const refreshTimedLotPoll = async (sessionId: string) => {
@@ -209,6 +214,53 @@ export default function AuctionAdminPage() {
       setTimedAdminBusy(false);
     }
   };
+
+  const saveLotDuration = useCallback(async (raw: string) => {
+    if (!selectedSessionForSettings) return;
+    const seconds = Number(raw);
+    if (!Number.isFinite(seconds) || seconds < 30 || seconds > 3600) return;
+    if (savedLotDurationRef.current === seconds) return;
+    const phone = getLoggedInPhone();
+    if (!phone) return;
+    try {
+      const res = await fetch('/api/auction/timed/admin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: selectedSessionForSettings,
+          phone,
+          action: 'set_duration',
+          lotDurationSeconds: seconds,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(json.error || json.message || 'Could not save lot duration');
+        return;
+      }
+      savedLotDurationRef.current = seconds;
+      setTimedSessionMeta((prev) =>
+        prev
+          ? {
+              ...prev,
+              lot_duration_seconds: seconds,
+              lot_ends_at: (json.lot_ends_at as string | null | undefined) ?? prev.lot_ends_at,
+            }
+          : prev
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [selectedSessionForSettings]);
+
+  useEffect(() => {
+    if (!selectedSessionForSettings || timedSessionMeta?.auction_mode !== 'timed_owner') return;
+    if (!durationLoadedRef.current) return;
+    const handle = window.setTimeout(() => {
+      void saveLotDuration(lotDurationInput);
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [lotDurationInput, selectedSessionForSettings, timedSessionMeta?.auction_mode, saveLotDuration]);
 
   // Check authentication
   useEffect(() => {
@@ -2368,6 +2420,7 @@ export default function AuctionAdminPage() {
                       max={3600}
                       value={lotDurationInput}
                       onChange={(e) => setLotDurationInput(e.target.value)}
+                      onBlur={() => void saveLotDuration(lotDurationInput)}
                       className="mt-1 w-full px-3 py-2 rounded-lg border text-sm"
                       style={{ backgroundColor: '#1F2937', borderColor: '#1F2937', color: '#E5E7EB' }}
                     />
@@ -2406,7 +2459,11 @@ export default function AuctionAdminPage() {
                         <button
                           type="button"
                           disabled={timedAdminBusy}
-                          onClick={() => callTimedAdmin('open_lot')}
+                          onClick={() =>
+                            callTimedAdmin('open_lot', {
+                              lotDurationSeconds: Number(lotDurationInput),
+                            })
+                          }
                           className="px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50"
                           style={{ backgroundColor: '#3B82F6', color: '#E5E7EB' }}
                         >

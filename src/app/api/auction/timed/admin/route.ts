@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAuctionAdminPhone } from '@/lib/auctionAccess';
-import { openLotAtIndex, resolveTimedLot, startLotTimer } from '@/lib/auctionTimedLot';
+import { applyLotDuration, openLotAtIndex, resolveTimedLot, startLotTimer } from '@/lib/auctionTimedLot';
 import { getServiceSupabase } from '@/lib/supabaseService';
 
 type AdminAction = 'start_mode' | 'stop_mode' | 'open_lot' | 'close_lot' | 'set_duration' | 'start_lot_timer';
@@ -22,15 +22,11 @@ export async function POST(request: NextRequest) {
         const supabase = getServiceSupabase();
 
         if (action === 'set_duration') {
-            const seconds = Number(body.lotDurationSeconds);
-            if (!Number.isFinite(seconds) || seconds < 30 || seconds > 3600) {
-                return NextResponse.json({ error: 'lotDurationSeconds must be 30–3600' }, { status: 400 });
+            const applied = await applyLotDuration(supabase, sessionId, Number(body.lotDurationSeconds));
+            if (!applied.ok) {
+                return NextResponse.json({ error: applied.message }, { status: 400 });
             }
-            await supabase
-                .from('auction_sessions')
-                .update({ lot_duration_seconds: Math.round(seconds) })
-                .eq('id', sessionId);
-            return NextResponse.json({ ok: true });
+            return NextResponse.json({ ok: true, lot_ends_at: applied.lot_ends_at ?? null });
         }
 
         if (action === 'start_mode') {
@@ -60,6 +56,13 @@ export async function POST(request: NextRequest) {
         }
 
         if (action === 'open_lot') {
+            const seconds = Number(body.lotDurationSeconds);
+            if (Number.isFinite(seconds)) {
+                const applied = await applyLotDuration(supabase, sessionId, seconds);
+                if (!applied.ok) {
+                    return NextResponse.json({ error: applied.message }, { status: 400 });
+                }
+            }
             const { data: session } = await supabase
                 .from('auction_sessions')
                 .select(
@@ -87,7 +90,17 @@ export async function POST(request: NextRequest) {
         }
 
         if (action === 'start_lot_timer') {
+            const seconds = Number(body.lotDurationSeconds);
+            if (Number.isFinite(seconds)) {
+                const applied = await applyLotDuration(supabase, sessionId, seconds);
+                if (!applied.ok) {
+                    return NextResponse.json({ error: applied.message }, { status: 400 });
+                }
+            }
             const result = await startLotTimer(supabase, sessionId);
+            if (!result.ok && result.message === 'Timer is already running') {
+                return NextResponse.json({ ok: true, message: 'Duration updated' });
+            }
             return NextResponse.json(result, { status: result.ok ? 200 : 400 });
         }
 
